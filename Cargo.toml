@@ -1,0 +1,34 @@
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Alexandre Delanoy <al.delanoy@pm.me>"]
+
+[workspace]
+resolver = "3"
+members = [
+    "crates/kinaro",
+    "crates/workspace",
+    "crates/project_file",
+    "crates/settings",
+    "crates/assets",
+    "crates/klog",
+]
+default-members = ["crates/kinaro"]
+
+[workspace.dependencies]
+## Internals
+workspace = { path = "crates/workspace" }
+project_file = { path = "crates/project_file" }
+settings = { path = "crates/settings" }
+assets = { path = "crates/assets" }
+klog = { path = "crates/klog" }
+
+gpui = { version = "0.2.2" }
+gpui-component = { version = "0.5.1" }
+serde = { version = "1", features = ["derive"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+chrono = { version = "*", features = ["serde"] }
+thiserror = "2"
+anyhow = "1"
+log = "0.4"
+dirs = "6"

@@ -1,0 +1,13 @@
+[package]
+name = "project_file"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Externals
+serde = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+serde_yaml = "0.9.0"
+thiserror = { workspace = true }

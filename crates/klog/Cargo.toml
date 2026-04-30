@@ -1,0 +1,10 @@
+[package]
+name = "klog"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+log4rs = { version = "1", default-features = false, features = ["console_appender", "pattern_encoder", "file_appender"] }
+log.workspace = true
+anyhow.workspace = true
