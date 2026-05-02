@@ -1,4 +1,3 @@
-mod date_time;
 mod endpoint;
 mod error;
 mod test;
@@ -9,16 +8,16 @@ pub use {
     error::ProjectFileError,
     project_file::ProjectFile,
     test::{
-        TestInfo, TestsContainer,
+        test_case::{TestCase, TestCaseInfo}, test_step::{TestStep, TestStepInfo},
         test_suite::{TestSuite, TestSuiteInfo},
-        test_case::{TestCase, TestCaseInfo},
-        test_step::{TestStep, TestStepInfo},
+        TestInfo,
+        TestsContainer,
     },
-    variable::{Profile, VariableKind, Variables, Variable},
+    variable::{Profile, Variable, VariableKind, Variables},
 };
 
 mod project_file {
-    use crate::date_time::java_date_format;
+    use kutils::java_date_format;
     use crate::endpoint::Endpoint;
     use crate::error::{ProjectFileError, Result};
     use crate::test::TestsContainer;

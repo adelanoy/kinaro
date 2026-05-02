@@ -5,9 +5,12 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+#Internals
+kutils.workspace = true
+
 # Externals
-serde = { workspace = true }
-uuid = { workspace = true }
-chrono = { workspace = true }
+serde.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
 serde_yaml = "0.9.0"
-thiserror = { workspace = true }

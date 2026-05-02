@@ -7,8 +7,10 @@ edition = "2024"
 #Internals
 assets.workspace = true
 klog.workspace = true
+settings.workspace = true
 
 gpui.workspace = true
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
 gpui-component.workspace = true
 log.workspace = true
 dirs.workspace = true
