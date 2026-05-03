@@ -13,9 +13,9 @@ pub fn init(config_dir: PathBuf, cx: &mut App) {
 
 #[derive(Debug)]
 pub struct GlobalSettings {
-    app_state_save_task_queued: Option<Task<()>>,
     pub config_dir: PathBuf,
     pub app_state: AppState,
+    app_state_save_task_queued: Option<Task<()>>,
 }
 
 impl GlobalSettings {
@@ -28,9 +28,9 @@ impl GlobalSettings {
             app_state,
         }
     }
-        
+
     /// Update the app state and save the file.
-    /// Throttle the saving of the file every 500ms 
+    /// Throttle the saving of the file every 500ms
     pub fn update_app_state(&mut self, cx: &mut App, update: impl FnOnce(&mut AppState, &mut App)) {
         update(&mut self.app_state, cx);
         if self.app_state_save_task_queued.is_some() {

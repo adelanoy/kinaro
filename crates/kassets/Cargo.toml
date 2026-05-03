@@ -1,10 +1,15 @@
 [package]
-name = "assets"
+name = "kassets"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+#Internals
+log.workspace = true
+settings.workspace = true
+
+# Externals
 gpui.workspace = true
 gpui-component.workspace = true
 rust-embed = "8"

@@ -11,7 +11,7 @@ members = [
     "crates/kworkspace",
     "crates/project_file",
     "crates/settings",
-    "crates/assets",
+    "crates/kassets",
     "crates/klog",
     "crates/kutils",
 ]
@@ -22,7 +22,7 @@ default-members = ["crates/kinaro"]
 kworkspace = { path = "crates/kworkspace" }
 project_file = { path = "crates/project_file" }
 settings = { path = "crates/settings" }
-assets = { path = "crates/assets" }
+kassets = { path = "crates/kassets" }
 klog = { path = "crates/klog" }
 kutils = {path = "crates/kutils"}
 

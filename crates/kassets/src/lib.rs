@@ -1,5 +1,6 @@
 pub mod icon;
 pub mod theme;
+pub mod font;
 
 use anyhow::anyhow;
 use gpui::*;
@@ -26,4 +27,9 @@ impl AssetSource for Assets {
             .filter_map(|p| p.starts_with(path).then(|| p.into()))
             .collect())
     }
+}
+
+pub fn init(cx: &mut App) {
+    font::init(cx);
+    theme::init(cx);
 }

@@ -7,6 +7,8 @@
     {
       "name": "Ayu Light",
       "mode": "light",
+      "font.family": "Roboto",
+      "mono_font.family": "JetBrains Mono NL",
       "colors": {
         "accent.background": "#dadadc",
         "accent.foreground": "#5C6773",
@@ -234,6 +236,8 @@
     {
       "name": "Ayu Dark",
       "mode": "dark",
+      "font.family": "Roboto",
+      "mono_font.family": "JetBrains Mono NL",
       "colors": {
         "accent.background": "#20242b",
         "accent.foreground": "#B3B1AD",

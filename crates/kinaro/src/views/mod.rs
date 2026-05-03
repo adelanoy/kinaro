@@ -1,6 +1,7 @@
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::StyledExt;
+use gpui_component::label::Label;
+use gpui_component::{ActiveTheme, Root, StyledExt};
 use kworkspace::Workspace;
 use settings::GlobalSettings;
 
@@ -26,19 +27,22 @@ impl WorkspaceView {
 }
 
 impl Render for WorkspaceView {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .v_flex()
             .gap_2()
             .size_full()
             .items_center()
             .justify_center()
-            .child("Hello, World!")
+            .child(Label::new("Hello, World!")
+                .font_family(cx.theme().mono_font_family.clone()))
             .child(
                 Button::new("ok")
                     .primary()
                     .label("Let's Go!")
                     .on_click(|_, _, _| println!("Clicked!")),
             )
+            .children(Root::render_dialog_layer(window, cx))
+            .children(Root::render_notification_layer(window, cx))
     }
 }

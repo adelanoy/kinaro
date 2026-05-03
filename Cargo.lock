@@ -180,16 +180,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "assets"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "gpui",
- "gpui-component",
- "rust-embed",
-]
-
-[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3077,6 +3067,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kassets"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gpui",
+ "gpui-component",
+ "log",
+ "rust-embed",
+ "settings",
+]
+
+[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3097,11 +3099,11 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 name = "kinaro"
 version = "0.1.0"
 dependencies = [
- "assets",
  "dirs",
  "gpui",
  "gpui-component",
  "gpui_platform",
+ "kassets",
  "klog",
  "kworkspace",
  "log",

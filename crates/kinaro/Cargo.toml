@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 #Internals
-assets.workspace = true
+kassets.workspace = true
 klog.workspace = true
 settings.workspace = true
 kworkspace.workspace = true
