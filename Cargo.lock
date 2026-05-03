@@ -3103,6 +3103,7 @@ dependencies = [
  "gpui-component",
  "gpui_platform",
  "klog",
+ "kworkspace",
  "log",
  "settings",
 ]
@@ -3162,6 +3163,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0de8b303297635ad57c9f5059fd9cee7a47f8e8daa09df0fcd07dd39fb22977f"
 dependencies = [
  "log",
+]
+
+[[package]]
+name = "kworkspace"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "gpui",
+ "project_file",
+ "serde",
+ "serde_json",
+ "settings",
+ "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]
@@ -7347,10 +7362,6 @@ dependencies = [
  "unicode-xid",
  "wasmparser",
 ]
-
-[[package]]
-name = "workspace"
-version = "0.1.0"
 
 [[package]]
 name = "workspace-hack"
