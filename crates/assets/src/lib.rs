@@ -1,4 +1,5 @@
 pub mod icon;
+pub mod theme;
 
 use anyhow::anyhow;
 use gpui::*;

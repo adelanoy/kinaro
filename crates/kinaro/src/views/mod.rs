@@ -1,42 +1,25 @@
 use gpui::*;
-use gpui_component::StyledExt;
 use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::StyledExt;
 use kworkspace::Workspace;
 use settings::GlobalSettings;
-use std::time::Duration;
 
 pub struct WorkspaceView {
-    bounds_save_task_queued: Option<Task<()>>,
     workspace: Entity<Workspace>,
 }
 
 impl WorkspaceView {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        // Observe the window movement and throttle the saving of its bounds every 200ms. Heavily inspired by Zed's Workspace impl
-        cx.observe_window_bounds(window, move |this, window, cx| {
-            if this.bounds_save_task_queued.is_some() {
-                return;
-            }
-            this.bounds_save_task_queued = Some(cx.spawn_in(window, async move |this, cx| {
-                cx.background_executor()
-                    .timer(Duration::from_millis(200))
-                    .await;
-                this.update_in(cx, |this, window, cx| {
-                    cx.update_global(|settings: &mut GlobalSettings, cx| {
-                        settings.window_settings.save(window, cx)
-                    });
-                    this.bounds_save_task_queued.take();
-                })
-                .ok();
-            }));
-            cx.notify();
+        cx.observe_window_bounds(window, move |_this, window, cx| {
+            cx.update_global(|settings: &mut GlobalSettings, cx| {
+                settings.update_app_state(cx, |app_state, cx| app_state.update_bounds(window, cx))
+            })
         })
         .detach();
 
         let workspace = cx.new(|cx| Workspace::init(cx));
 
         Self {
-            bounds_save_task_queued: None,
             workspace,
         }
     }

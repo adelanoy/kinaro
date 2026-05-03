@@ -1,9 +1,10 @@
-use crate::window_settings::WindowSettings;
-use gpui::{App, Global};
+use crate::app_state::AppState;
+use gpui::{App, Global, Task};
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub mod error;
-pub mod window_settings;
+pub mod app_state;
 
 pub fn init(config_dir: PathBuf, cx: &mut App) {
     let settings = GlobalSettings::init(config_dir);
@@ -12,20 +13,40 @@ pub fn init(config_dir: PathBuf, cx: &mut App) {
 
 #[derive(Debug)]
 pub struct GlobalSettings {
+    app_state_save_task_queued: Option<Task<()>>,
     pub config_dir: PathBuf,
-    pub window_settings: WindowSettings,
+    pub app_state: AppState,
 }
 
 impl GlobalSettings {
     fn init(config_dir: PathBuf) -> Self {
-        let window_settings = WindowSettings::init(&config_dir);
+        let app_state = AppState::init(&config_dir);
 
         Self {
+            app_state_save_task_queued: None,
             config_dir,
-            window_settings,
+            app_state,
         }
     }
-    
+        
+    /// Update the app state and save the file.
+    /// Throttle the saving of the file every 500ms 
+    pub fn update_app_state(&mut self, cx: &mut App, update: impl FnOnce(&mut AppState, &mut App)) {
+        update(&mut self.app_state, cx);
+        if self.app_state_save_task_queued.is_some() {
+            return;
+        }
+
+        self.app_state_save_task_queued = Some(cx.spawn(async move |cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(500))
+                .await;
+            cx.update_global(|settings: &mut GlobalSettings, _cx| {
+                settings.app_state.save(&settings.config_dir);
+                settings.app_state_save_task_queued.take();
+            })
+        }));
+    }
 }
 
 impl Global for GlobalSettings {}

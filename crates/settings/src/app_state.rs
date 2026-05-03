@@ -1,12 +1,14 @@
-use crate::error::{SettingsError};
-use gpui::{point, px, size, App, Bounds,Window, WindowBounds};
+use crate::GlobalSettings;
+use crate::error::SettingsError;
+use gpui::{App, AppContext, Bounds, Window, WindowBounds, point, px, size, SharedString};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-const WINDOW_FILE: &str = "window.json";
+const WINDOW_FILE: &str = "state.json";
+const DEFAULT_THEME: &str = "Ayu Dark";
 
 #[derive(Serialize, Deserialize, Debug)]
 enum WindowBoundsContent {
@@ -102,46 +104,54 @@ impl From<&WindowBoundsContent> for WindowBounds {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct WindowSettingsContent {
-    display: Uuid,
-    bounds: WindowBoundsContent,
+pub struct AppState {
+    pub display: Option<Uuid>,
+    bounds: Option<WindowBoundsContent>,
+    pub theme: SharedString,
 }
 
-#[derive(Default, Debug)]
-pub struct WindowSettings {
-    file_path: PathBuf,
-    settings_content: Option<WindowSettingsContent>,
-}
-
-impl WindowSettings {
-    pub(crate) fn init(config_dir: &PathBuf) -> Self {
-        let file_path = config_dir.join(WINDOW_FILE);
-        let settings = Self::load_or_default(&file_path);
-
+impl Default for AppState {
+    fn default() -> Self {
         Self {
-            file_path,
-            settings_content: settings,
+            display: None,
+            bounds: None,
+            theme: DEFAULT_THEME.into(),
         }
     }
+}
 
-    pub fn window_bounds(&self) -> Option<WindowBounds> {
-        if let Some(settings) = &self.settings_content {
-            let bounds = WindowBounds::from(&settings.bounds);
+impl AppState {
+    pub(crate) fn init(config_dir: &PathBuf) -> Self {
+        let file_path = config_dir.join(WINDOW_FILE);
+        Self::load_or_default(&file_path)
+    }
+
+    pub fn bounds(&self) -> Option<WindowBounds> {
+        if let Some(bounds) = &self.bounds {
+            let bounds = WindowBounds::from(bounds);
             Some(bounds)
         } else {
             None
         }
     }
 
-    pub fn display(&self) -> Option<Uuid> {
-        if let Some(settings) = &self.settings_content {
-            Some(settings.display)
-        } else {
-            None
-        }
+    pub fn read<R>(cx: &mut App, read_func: impl FnOnce(&AppState) -> R) -> R {
+        cx.read_global(|settings: &GlobalSettings, _cx| read_func(&settings.app_state))
     }
 
-    fn load_or_default(file_path: &PathBuf) -> Option<WindowSettingsContent> {
+    pub fn update_bounds(&mut self, window: &mut Window, cx: &mut App) {
+        let Some(display) = window.display(cx) else {
+            return;
+        };
+        let Ok(display_uuid) = display.uuid() else {
+            return;
+        };
+        let window_bounds = window.inner_window_bounds();
+        self.display = Some(display_uuid);
+        self.bounds = Some(WindowBoundsContent::from(window_bounds));
+    }
+
+    fn load_or_default(file_path: &PathBuf) -> AppState {
         if file_path.exists() {
             debug!(
                 "Opening window settings file: {}",
@@ -150,7 +160,7 @@ impl WindowSettings {
             let settings = fs::read(&file_path)
                 .map_err(|e| SettingsError::Io(e))
                 .and_then(|file| {
-                    serde_json::from_slice::<WindowSettingsContent>(&file)
+                    serde_json::from_slice::<AppState>(&file)
                         .map_err(|err| SettingsError::ReadJson(err.to_string()))
                 });
             if let Err(err) = &settings {
@@ -160,32 +170,20 @@ impl WindowSettings {
                 );
                 Default::default()
             }
-            Some(settings.unwrap())
+            settings.unwrap()
         } else {
-            None
+            Default::default()
         }
     }
 
-    pub fn save(&mut self, window: &mut Window, cx: &mut App) {
-        debug!("Saving window settings file to {}", self.file_path.to_string_lossy());
-
-        let Some(display) = window.display(cx) else {
-            return;
-        };
-        let Ok(display_uuid) = display.uuid() else {
-            return;
-        };
-        let window_bounds = window.inner_window_bounds();
-        let settings_content = Some(WindowSettingsContent {
-            display: display_uuid,
-            bounds: WindowBoundsContent::from(window_bounds),
-        });
-        let file_path = self.file_path.clone();
+    pub(crate) fn save(&self, config_dir: &PathBuf) {
+        let file_path = config_dir.join(WINDOW_FILE);
+        debug!("Saving app state to {}", file_path.to_string_lossy());
 
         if let Err(err) = fs::File::create(file_path)
             .map_err(|err| SettingsError::from(err))
             .and_then(|file| {
-                serde_json::to_writer_pretty(file, &settings_content)
+                serde_json::to_writer_pretty(file, &self)
                     .map_err(|err| SettingsError::WriteJson(err.to_string()))
             })
         {
