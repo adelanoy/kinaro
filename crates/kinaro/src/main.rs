@@ -4,7 +4,7 @@ pub mod views;
 
 use crate::views::WorkspaceView;
 use gpui::*;
-use gpui_component::Root;
+use gpui_component::{Root};
 use kassets::Assets;
 use log::info;
 use settings::GlobalSettings;
@@ -44,7 +44,6 @@ fn init_app(config_dir: PathBuf, cx: &mut App) {
     kassets::init(cx);
 }
 
-
 fn build_window_options(cx: &mut App) -> WindowOptions {
     let (display, bounds) = cx.read_global(|settings: &GlobalSettings, _cx| {
         (
@@ -65,5 +64,10 @@ fn build_window_options(cx: &mut App) -> WindowOptions {
         appears_transparent: true,
         traffic_light_position: Some(point(px(9.0), px(9.0))),
     });
+
+    #[cfg(target_os = "linux")]
+    {
+        options.window_decorations = Some(WindowDecorations::Client)
+    }
     options
 }

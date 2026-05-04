@@ -1,6 +1,7 @@
 use crate::GlobalSettings;
 use crate::error::SettingsError;
-use gpui::{App, AppContext, Bounds, Window, WindowBounds, point, px, size, SharedString};
+use gpui::{App, AppContext, Bounds, Window, WindowBounds, point, px, size};
+use gpui_component::ThemeMode;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -8,7 +9,6 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 const WINDOW_FILE: &str = "state.json";
-const DEFAULT_THEME: &str = "Ayu Dark";
 
 #[derive(Serialize, Deserialize, Debug)]
 enum WindowBoundsContent {
@@ -107,7 +107,7 @@ impl From<&WindowBoundsContent> for WindowBounds {
 pub struct AppState {
     pub display: Option<Uuid>,
     bounds: Option<WindowBoundsContent>,
-    pub theme: SharedString,
+    pub theme: ThemeMode,
 }
 
 impl Default for AppState {
@@ -115,7 +115,7 @@ impl Default for AppState {
         Self {
             display: None,
             bounds: None,
-            theme: DEFAULT_THEME.into(),
+            theme: ThemeMode::Dark,
         }
     }
 }

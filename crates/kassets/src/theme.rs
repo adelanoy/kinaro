@@ -27,8 +27,11 @@ pub(crate) fn init(cx: &mut App) {
         return;
     }
 
-    let theme_prefs = AppState::read(cx, |app_state| app_state.theme.clone());
-    if let Some(theme) = ThemeRegistry::global(cx).themes().get(&theme_prefs).cloned() {
+    if let Some(theme) = ThemeRegistry::global(cx).themes().get("Ayu Light").cloned() {
         Theme::global_mut(cx).apply_config(&theme);
     }
+    if let Some(theme) = ThemeRegistry::global(cx).themes().get("Ayu Dark").cloned() {
+        Theme::global_mut(cx).apply_config(&theme);
+    }let theme_prefs = AppState::read(cx, |app_state| app_state.theme.clone());
+    Theme::change(theme_prefs, None, cx);
 }

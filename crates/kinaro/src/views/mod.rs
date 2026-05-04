@@ -1,12 +1,14 @@
+mod title_bar;
+
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::label::Label;
-use gpui_component::{ActiveTheme, Root, StyledExt};
+use gpui_component::{v_flex, Root};
 use kworkspace::Workspace;
 use settings::GlobalSettings;
+use crate::views::title_bar::AppTitleBar;
 
 pub struct WorkspaceView {
     workspace: Entity<Workspace>,
+    title_bar: Entity<AppTitleBar>,
 }
 
 impl WorkspaceView {
@@ -19,9 +21,11 @@ impl WorkspaceView {
         .detach();
 
         let workspace = cx.new(|cx| Workspace::init(cx));
+        let title_bar = cx.new(|cx| AppTitleBar::new(cx));
 
         Self {
             workspace,
+            title_bar
         }
     }
 }
@@ -29,18 +33,19 @@ impl WorkspaceView {
 impl Render for WorkspaceView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .v_flex()
-            .gap_2()
+            .id("kinaro-root")
             .size_full()
-            .items_center()
-            .justify_center()
-            .child(Label::new("Hello, World!")
-                .font_family(cx.theme().mono_font_family.clone()))
             .child(
-                Button::new("ok")
-                    .primary()
-                    .label("Let's Go!")
-                    .on_click(|_, _, _| println!("Clicked!")),
+                v_flex()
+                    .size_full()
+                    .child(self.title_bar.clone())
+                    .child(
+                        v_flex()
+                            .size_full()
+                            .items_center()
+                            .justify_center()
+                            .child("Hello, World!")
+                    )
             )
             .children(Root::render_dialog_layer(window, cx))
             .children(Root::render_notification_layer(window, cx))

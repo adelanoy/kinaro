@@ -14,11 +14,3 @@ pub struct TestStepInfo {
     pub info: TestInfo,
     pub data: String,
 }
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum StepData {
-    Rest(RestStep),
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct RestStep {}
