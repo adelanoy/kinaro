@@ -4,12 +4,16 @@ use gpui_component::IconNamed;
 #[derive(IntoElement, Clone)]
 pub enum IconAsset {
     Plus,
+    SidebarCollapsed,
+    SidebarOpen,
 }
 
 impl IconNamed for IconAsset {
     fn path(self) -> SharedString {
         match self {
             IconAsset::Plus => "icons/plus.svg",
+            IconAsset::SidebarCollapsed => "icons/sidebar-collapsed.svg",
+            IconAsset::SidebarOpen => "icons/sidebar-open.svg",
         }.into()
     }
 }

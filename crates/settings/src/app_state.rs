@@ -1,6 +1,6 @@
-use crate::GlobalSettings;
 use crate::error::SettingsError;
-use gpui::{App, AppContext, Bounds, Window, WindowBounds, point, px, size};
+use crate::GlobalSettings;
+use gpui::{point, px, size, App, AppContext, BorrowAppContext, Bounds, Window, WindowBounds};
 use gpui_component::ThemeMode;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
@@ -104,10 +104,31 @@ impl From<&WindowBoundsContent> for WindowBounds {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct SidebarState {
+    pub collapsed: bool,
+    pub width: f32,
+}
+
+impl Default for SidebarState {
+    fn default() -> Self {
+        Self {
+            collapsed: false,
+            width: 250.0,
+        }
+    }
+}
+
+/// Contains the application state, such as:
+/// * window bounds
+/// * active theme
+/// * sidebar state
+/// * etc...
+#[derive(Serialize, Deserialize, Debug)]
 pub struct AppState {
     pub display: Option<Uuid>,
     bounds: Option<WindowBoundsContent>,
     pub theme: ThemeMode,
+    pub sidebar: SidebarState,
 }
 
 impl Default for AppState {
@@ -116,6 +137,7 @@ impl Default for AppState {
             display: None,
             bounds: None,
             theme: ThemeMode::Dark,
+            sidebar: Default::default(),
         }
     }
 }
@@ -135,7 +157,12 @@ impl AppState {
         }
     }
 
-    pub fn read<R>(cx: &mut App, read_func: impl FnOnce(&AppState) -> R) -> R {
+    /// Update the app state with the given closure
+    pub fn update(cx: &mut App, update: impl FnOnce(&mut AppState, &mut App)) {
+        cx.update_global(|settings: &mut GlobalSettings, cx| settings.update_app_state(cx, update));
+    }
+
+    pub fn read<R>(cx: &App, read_func: impl FnOnce(&AppState) -> R) -> R {
         cx.read_global(|settings: &GlobalSettings, _cx| read_func(&settings.app_state))
     }
 

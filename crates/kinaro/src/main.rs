@@ -1,14 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 pub mod views;
+mod event;
 
 use crate::views::WorkspaceView;
 use gpui::*;
 use gpui_component::{Root};
 use kassets::Assets;
 use log::info;
-use settings::GlobalSettings;
 use std::path::PathBuf;
+use settings::app_state::AppState;
 
 fn main() {
     let config_dir = dirs::config_local_dir().unwrap().join("Kinaro_gpui");
@@ -45,15 +46,15 @@ fn init_app(config_dir: PathBuf, cx: &mut App) {
 }
 
 fn build_window_options(cx: &mut App) -> WindowOptions {
-    let (display, bounds) = cx.read_global(|settings: &GlobalSettings, _cx| {
+    let (display, bounds) = AppState::read(cx, |app_state| {
         (
-            settings.app_state.display.and_then(|id| {
+            app_state.display.and_then(|id| {
                 cx.displays()
                     .into_iter()
                     .find(|display| display.uuid().ok() == Some(id))
                     .map(|display| display.id())
             }),
-            settings.app_state.bounds(),
+            app_state.bounds(),
         )
     });
     let mut options = WindowOptions::default();

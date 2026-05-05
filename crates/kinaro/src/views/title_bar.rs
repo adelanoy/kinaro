@@ -1,20 +1,33 @@
+use crate::event::SidebarCollapseStateChanged;
 use gpui::*;
+use gpui_component::button::Toggle;
 use gpui_component::label::Label;
 use gpui_component::switch::Switch;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable, StyledExt, Theme, ThemeMode, TitleBar};
-use settings::GlobalSettings;
+use gpui_component::{
+    ActiveTheme, Icon, IconName, Sizable, StyledExt, Theme, ThemeMode, TitleBar,
+};
+use kassets::icon::IconAsset;
+use settings::app_state::AppState;
 
-pub(crate) struct AppTitleBar {}
+pub(crate) struct AppTitleBar {
+    sidebar_collapsed: bool,
+}
 
 impl AppTitleBar {
-    pub(crate) fn new(_cx: &mut Context<Self>) -> Self {
-        Self {}
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
+        let sidebar_collapsed = AppState::read(cx, |app_state| app_state.sidebar.collapsed);
+        Self { sidebar_collapsed }
     }
 }
 
 impl Render for AppTitleBar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let is_dark_mode = cx.theme().mode == ThemeMode::Dark;
+        let theme_toggler_icon = if self.sidebar_collapsed {
+            IconAsset::SidebarCollapsed
+        } else {
+            IconAsset::SidebarOpen
+        };
 
         TitleBar::new()
             .child(
@@ -30,7 +43,21 @@ impl Render for AppTitleBar {
                     .justify_end()
                     .px_2()
                     .gap_2()
-                    .child(Icon::new(IconName::Moon).small())
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .child(
+                        Toggle::new("sidebar-toggle")
+                            .icon(theme_toggler_icon)
+                            .checked(!self.sidebar_collapsed)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.sidebar_collapsed = !this.sidebar_collapsed;
+                                AppState::update(cx, |state, _| {
+                                    state.sidebar.collapsed = this.sidebar_collapsed
+                                });
+                                cx.emit(SidebarCollapseStateChanged(this.sidebar_collapsed));
+                            })),
+                    )
+                    .child(Icon::new(IconName::Moon))
                     .child(
                         Switch::new("theme-mode-selector")
                             .checked(is_dark_mode)
@@ -43,13 +70,11 @@ impl Render for AppTitleBar {
                                 };
                                 Theme::change(mode, None, cx);
                                 cx.refresh_windows();
-                                cx.update_global(|settings: &mut GlobalSettings, cx| {
-                                    settings.update_app_state(cx, |app_state, _cx| {
-                                        app_state.theme = mode
-                                    })
-                                })
+                                AppState::update(cx, |app_state, _cx| app_state.theme = mode)
                             }),
                     ),
             )
     }
 }
+
+impl EventEmitter<SidebarCollapseStateChanged> for AppTitleBar {}

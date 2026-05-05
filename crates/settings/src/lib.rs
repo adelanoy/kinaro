@@ -3,8 +3,8 @@ use gpui::{App, Global, Task};
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub mod error;
 pub mod app_state;
+pub mod error;
 
 pub fn init(config_dir: PathBuf, cx: &mut App) {
     let settings = GlobalSettings::init(config_dir);
@@ -14,7 +14,7 @@ pub fn init(config_dir: PathBuf, cx: &mut App) {
 #[derive(Debug)]
 pub struct GlobalSettings {
     pub config_dir: PathBuf,
-    pub app_state: AppState,
+    app_state: AppState,
     app_state_save_task_queued: Option<Task<()>>,
 }
 

@@ -1,0 +1,1 @@
+pub(crate) struct SidebarCollapseStateChanged(pub bool); 
