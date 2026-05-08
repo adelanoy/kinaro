@@ -3108,6 +3108,7 @@ dependencies = [
  "kworkspace",
  "log",
  "settings",
+ "uuid",
 ]
 
 [[package]]

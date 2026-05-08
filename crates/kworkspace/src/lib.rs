@@ -21,7 +21,7 @@ mod workspace {
     use crate::project::WorkspaceProjectDataStatus::{ExternallyModified, LoadError, Loaded};
     use crate::{Result, WorkspaceError, WorkspaceProject};
     use WorkspaceProjectDataStatus::{Moved, Unloaded};
-    use gpui::{AppContext, Context};
+    use gpui::{AppContext, Context, Entity};
     use serde::{Deserialize, Serialize};
     use settings::GlobalSettings;
     use std::fs;
@@ -58,7 +58,7 @@ mod workspace {
             workspace
                 .projects
                 .iter_mut()
-                .for_each(|project| project.load());
+                .for_each(|project| project.load(cx));
 
             workspace
         }

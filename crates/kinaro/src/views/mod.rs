@@ -1,6 +1,7 @@
 mod sidebar;
 mod title_bar;
 
+use std::rc::Rc;
 use crate::event::SidebarCollapseStateChanged;
 use crate::views::sidebar::ProjectSidebar;
 use crate::views::title_bar::AppTitleBar;
@@ -11,7 +12,7 @@ use kworkspace::Workspace;
 use settings::app_state::AppState;
 
 pub struct WorkspaceView {
-    workspace: Entity<Workspace>,
+    workspace: Rc<Entity<Workspace>>,
     title_bar: Entity<AppTitleBar>,
     project_sidebar: Entity<ProjectSidebar>,
     sidebar_collapsed: bool,
@@ -28,8 +29,9 @@ impl WorkspaceView {
         let mut _subscriptions = Vec::new();
 
         let sidebar_collapsed = AppState::read(cx, |app_state| app_state.sidebar.collapsed);
-        let project_sidebar = cx.new(|cx| ProjectSidebar::new(cx));
-        let workspace = cx.new(|cx| Workspace::init(cx));
+
+        let workspace = Rc::new(cx.new(|cx| Workspace::init(cx)));
+        let project_sidebar = cx.new(|cx| ProjectSidebar::new(cx, workspace.clone()));
         let title_bar = cx.new(|cx| AppTitleBar::new(cx));
 
         _subscriptions.push(cx.subscribe(

@@ -2,6 +2,7 @@
 
 pub mod views;
 mod event;
+pub mod actions;
 
 use crate::views::WorkspaceView;
 use gpui::*;

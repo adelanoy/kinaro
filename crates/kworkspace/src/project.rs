@@ -8,6 +8,7 @@ use chrono::{DateTime, Local};
 use project_file::{ProjectFile, ProjectFileError};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use gpui::App;
 use uuid::Uuid;
 use WorkspaceProjectDataStatus::ExternallyModified;
 
@@ -31,7 +32,7 @@ impl PartialEq for WorkspaceProject {
 }
 
 impl WorkspaceProject {
-    pub(crate) fn load(&mut self) {
+    pub(crate) fn load(&mut self, cx: &mut App) {
         if !self.path.exists() {
             self.data_status = WorkspaceProjectDataStatus::Moved;
             return;
