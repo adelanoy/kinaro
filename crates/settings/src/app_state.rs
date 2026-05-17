@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 const WINDOW_FILE: &str = "state.json";
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
 enum WindowBoundsContent {
     Windowed {
         x: i32,
@@ -158,7 +158,9 @@ impl AppState {
     }
 
     /// Update the app state with the given closure
-    pub fn update(cx: &mut App, update: impl FnOnce(&mut AppState, &mut App)) {
+    ///
+    /// The bool returned by the closure instructs if the state file should be saved to disk
+    pub fn update(cx: &mut App, update: impl FnOnce(&mut AppState, &mut App) -> bool) {
         cx.update_global(|settings: &mut GlobalSettings, cx| settings.update_app_state(cx, update));
     }
 
@@ -166,16 +168,22 @@ impl AppState {
         cx.read_global(|settings: &GlobalSettings, _cx| read_func(&settings.app_state))
     }
 
-    pub fn update_bounds(&mut self, window: &mut Window, cx: &mut App) {
+    pub fn update_bounds(&mut self, window: &mut Window, cx: &mut App) -> bool {
         let Some(display) = window.display(cx) else {
-            return;
+            return false;
         };
         let Ok(display_uuid) = display.uuid() else {
-            return;
+            return false;
         };
         let window_bounds = window.inner_window_bounds();
-        self.display = Some(display_uuid);
-        self.bounds = Some(WindowBoundsContent::from(window_bounds));
+        let display = Some(display_uuid);
+        let bounds = Some(WindowBoundsContent::from(window_bounds));
+        if self.display != self.display || self.bounds != bounds {
+            self.display = display;
+            self.bounds = bounds;
+            return true;
+        }
+        false
     }
 
     fn load_or_default(file_path: &PathBuf) -> AppState {

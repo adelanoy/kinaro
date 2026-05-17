@@ -1,4 +1,4 @@
-use crate::test::test_suite::WorkspaceTestSuite;
+use crate::workspace::test::test_suite::WorkspaceTestSuite;
 use project_file::{TestInfo, TestsContainer};
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
@@ -62,7 +62,7 @@ impl WorkspaceTestsContainer {
             suites: self.iter().map(|suite| suite.get_file()).collect(),
         }
     }
-    
+
     /*pub fn move_test(&mut self, action: &DragAndDrop<Vec<Uuid>>) -> Result<()> {
         if action.target.len() == 1 {
             self.move_to_suite(action)
@@ -209,7 +209,7 @@ impl WorkspaceTestsContainer {
         }
         let mut positions = vec![0; path.len()];
         let suite = self
-            
+
             .iter()
             .position(|suite| suite.info.id == path[0])
             .ok_or(WorkspaceError::from(TestError::InvalidMoveSource))?;

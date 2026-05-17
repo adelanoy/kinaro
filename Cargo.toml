@@ -8,7 +8,6 @@ publish = false
 resolver = "3"
 members = [
     "crates/kinaro",
-    "crates/kworkspace",
     "crates/project_file",
     "crates/settings",
     "crates/kassets",
@@ -19,7 +18,6 @@ default-members = ["crates/kinaro"]
 
 [workspace.dependencies]
 ## Internals
-kworkspace = { path = "crates/kworkspace" }
 project_file = { path = "crates/project_file" }
 settings = { path = "crates/settings" }
 kassets = { path = "crates/kassets" }

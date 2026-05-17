@@ -6,8 +6,10 @@ pub enum IconAsset {
     ChevronUpDown,
     Delete,
     Plus,
+    Rename,
     SidebarCollapsed,
     SidebarOpen,
+    Switch,
 }
 
 impl IconNamed for IconAsset {
@@ -16,9 +18,12 @@ impl IconNamed for IconAsset {
             IconAsset::ChevronUpDown => "icons/chevron-up-down.svg",
             IconAsset::Delete => "icons/delete.svg",
             IconAsset::Plus => "icons/plus.svg",
+            IconAsset::Rename => "icons/rename.svg",
             IconAsset::SidebarCollapsed => "icons/sidebar-collapsed.svg",
             IconAsset::SidebarOpen => "icons/sidebar-open.svg",
-        }.into()
+            IconAsset::Switch => "icons/switch.svg",
+        }
+        .into()
     }
 }
 

@@ -32,10 +32,14 @@ impl From<ProjectFileError> for WorkspaceError {
     fn from(value: ProjectFileError) -> Self {
         match value {
             ProjectFileError::Io(err) => WorkspaceError::Io(err),
-            ProjectFileError::InvalidName(name) => WorkspaceError::Project(ProjectError::InvalidName(name)),
+            ProjectFileError::InvalidName(name) => {
+                WorkspaceError::Project(ProjectError::InvalidName(name))
+            }
             ProjectFileError::WriteYaml(err) => WorkspaceError::Project(ProjectError::Write(err)),
             ProjectFileError::ReadYaml(err) => WorkspaceError::Project(ProjectError::Read(err)),
-            ProjectFileError::BadLocation(path) => WorkspaceError::Project(ProjectError::BadLocation(path)),
+            ProjectFileError::BadLocation(path) => {
+                WorkspaceError::Project(ProjectError::BadLocation(path))
+            }
         }
     }
 }

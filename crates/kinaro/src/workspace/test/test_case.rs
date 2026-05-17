@@ -1,7 +1,4 @@
-use crate::test::{
-    test_step::WorkspaceTestStep,
-    WorkspaceTestInfo,
-};
+use crate::workspace::test::{test_step::WorkspaceTestStep, WorkspaceTestInfo};
 use project_file::TestCase;
 
 #[derive(Clone, Debug)]
@@ -13,14 +10,14 @@ pub struct WorkspaceTestCase {
 
 impl WorkspaceTestCase {
     pub(crate) fn from_file(file_test_cases: &Vec<TestCase>) -> Vec<WorkspaceTestCase> {
-        file_test_cases.iter()
-            .map(|file_test_suite| {
-                Self {
-                    info: WorkspaceTestInfo::from_file(&file_test_suite.info),
-                    is_anonymous: file_test_suite.is_anonymous,
-                    steps: WorkspaceTestStep::from_file(&file_test_suite.steps),
-                }
-            }).collect()
+        file_test_cases
+            .iter()
+            .map(|file_test_suite| Self {
+                info: WorkspaceTestInfo::from_file(&file_test_suite.info),
+                is_anonymous: file_test_suite.is_anonymous,
+                steps: WorkspaceTestStep::from_file(&file_test_suite.steps),
+            })
+            .collect()
     }
 
     pub(crate) fn get_file(&self) -> TestCase {

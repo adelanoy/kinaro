@@ -1,6 +1,3 @@
-use gpui::Action;
-use uuid::Uuid;
+use gpui::actions;
 
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = workspace, no_json)]
-pub struct DeleteProject(pub Uuid);
+actions!(test, [TestAction]);

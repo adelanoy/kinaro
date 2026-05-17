@@ -12,7 +12,6 @@ pub struct WorkspaceEndpoint {
     pub path_parameters: Vec<RestParameter>,
 }
 
-
 impl WorkspaceEndpoint {
     pub(crate) fn from_file(file_endpoints: &Vec<Endpoint>) -> Vec<WorkspaceEndpoint> {
         file_endpoints

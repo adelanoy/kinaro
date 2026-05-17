@@ -1,23 +1,17 @@
 mod project_selector;
 
 use crate::views::sidebar::project_selector::ProjectSelector;
-use gpui::{
-    AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window,
-};
-use gpui_component::menu::DropdownMenu;
-use gpui_component::sidebar::{
-    Sidebar, SidebarFooter, SidebarGroup, SidebarMenu, SidebarMenuItem,
-};
+use crate::workspace::Workspace;
+use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window};
+use gpui_component::sidebar::{Sidebar, SidebarFooter, SidebarGroup, SidebarMenu, SidebarMenuItem};
 use gpui_component::Side;
-use kworkspace::Workspace;
-use std::rc::Rc;
 
 pub(crate) struct ProjectSidebar {
     project_selector: Entity<ProjectSelector>,
 }
 
 impl ProjectSidebar {
-    pub(crate) fn new(cx: &mut Context<Self>, workspace: Rc<Entity<Workspace>>) -> Self {
+    pub(crate) fn new(cx: &mut Context<Self>, workspace: Entity<Workspace>) -> Self {
         let project_selector = cx.new(|cx| ProjectSelector::new(cx, workspace));
         Self { project_selector }
     }

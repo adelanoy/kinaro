@@ -3099,15 +3099,19 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 name = "kinaro"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dirs",
  "gpui",
  "gpui-component",
  "gpui_platform",
  "kassets",
  "klog",
- "kworkspace",
  "log",
+ "project_file",
+ "serde",
+ "serde_json",
  "settings",
+ "thiserror 2.0.18",
  "uuid",
 ]
 
@@ -3166,20 +3170,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0de8b303297635ad57c9f5059fd9cee7a47f8e8daa09df0fcd07dd39fb22977f"
 dependencies = [
  "log",
-]
-
-[[package]]
-name = "kworkspace"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "gpui",
- "project_file",
- "serde",
- "serde_json",
- "settings",
- "thiserror 2.0.18",
- "uuid",
 ]
 
 [[package]]

@@ -8,7 +8,7 @@ edition = "2024"
 kassets.workspace = true
 klog.workspace = true
 settings.workspace = true
-kworkspace.workspace = true
+project_file.workspace = true
 
 gpui.workspace = true
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
@@ -16,3 +16,7 @@ gpui-component.workspace = true
 log.workspace = true
 dirs.workspace = true
 uuid.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+chrono.workspace = true
+thiserror.workspace = true

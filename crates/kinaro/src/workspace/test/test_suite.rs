@@ -1,9 +1,6 @@
 use std::fmt::Debug;
 
-use crate::test::{
-    test_case::{WorkspaceTestCase},
-    WorkspaceTestInfo,
-};
+use crate::workspace::test::{test_case::WorkspaceTestCase, WorkspaceTestInfo};
 use project_file::TestSuite;
 
 #[derive(Clone, Debug)]
@@ -14,15 +11,15 @@ pub struct WorkspaceTestSuite {
 
 impl WorkspaceTestSuite {
     pub(crate) fn from_file(file_test_suites: &Vec<TestSuite>) -> Vec<WorkspaceTestSuite> {
-        file_test_suites.iter()
-            .map(|file_test_suite| {
-                Self {
-                    info: WorkspaceTestInfo::from_file(&file_test_suite.info),
-                    cases: WorkspaceTestCase::from_file(&file_test_suite.cases),
-                }
-            }).collect()
+        file_test_suites
+            .iter()
+            .map(|file_test_suite| Self {
+                info: WorkspaceTestInfo::from_file(&file_test_suite.info),
+                cases: WorkspaceTestCase::from_file(&file_test_suite.cases),
+            })
+            .collect()
     }
-    
+
     pub(crate) fn get_file(&self) -> TestSuite {
         TestSuite {
             info: self.info.get_file(),

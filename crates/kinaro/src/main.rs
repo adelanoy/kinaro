@@ -1,16 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-pub mod views;
-mod event;
 pub mod actions;
+pub mod views;
+pub mod workspace;
 
 use crate::views::WorkspaceView;
 use gpui::*;
-use gpui_component::{Root};
+use gpui_component::Root;
 use kassets::Assets;
 use log::info;
-use std::path::PathBuf;
 use settings::app_state::AppState;
+use std::path::PathBuf;
 
 fn main() {
     let config_dir = dirs::config_local_dir().unwrap().join("Kinaro_gpui");
