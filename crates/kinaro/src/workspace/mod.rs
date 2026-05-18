@@ -25,7 +25,7 @@ actions!(workspace, [CreateProject, OpenProject]);
 
 #[derive(Action, Clone, PartialEq, Eq)]
 #[action(namespace = workspace, no_json)]
-pub struct DeleteProject(pub Uuid);
+pub struct RemoveProject(pub Uuid);
 
 #[derive(Action, Clone, PartialEq, Eq)]
 #[action(namespace = workspace, no_json)]
@@ -39,7 +39,8 @@ pub struct RenameProject(pub Uuid, pub SharedString);
 pub enum WorkspaceEvent {
     ProjectOpened(Uuid),
     ProjectCreated(Uuid),
-    SwitchProject(Uuid),
+    ProjectSwitched(Uuid),
+    ProjectRemoved,
 }
 
 impl EventEmitter<WorkspaceEvent> for Workspace {}
@@ -116,7 +117,7 @@ impl Workspace {
             }
             WorkspaceProjectDataStatus::Loaded(_) => {
                 self.active_project = Some(project_id);
-                cx.emit(WorkspaceEvent::SwitchProject(project_id));
+                cx.emit(WorkspaceEvent::ProjectSwitched(project_id));
                 Ok(())
             }
             WorkspaceProjectDataStatus::Moved => Err(WorkspaceError::from(
@@ -131,12 +132,12 @@ impl Workspace {
         };
         if result.is_ok() {
             self.save(cx);
-            cx.emit(WorkspaceEvent::SwitchProject(project_id));
+            cx.emit(WorkspaceEvent::ProjectSwitched(project_id));
         }
         result
     }
 
-    pub fn remove_project(&mut self, project_id: Uuid, cx: &App) {
+    pub fn remove_project(&mut self, project_id: Uuid, cx: &mut Context<Self>) {
         let project_pos = self
             .projects
             .iter()
@@ -149,6 +150,10 @@ impl Workspace {
         if self.active_project == Some(project.id) {
             self.active_project = self.projects.iter().next().map_or(None, |p| Some(p.id));
         }
+
+        self.save(cx);
+        
+        cx.emit(WorkspaceEvent::ProjectRemoved);
     }
 
     pub fn open_project(&mut self, path: PathBuf, cx: &mut Context<Self>) -> Result<()> {
@@ -161,6 +166,7 @@ impl Workspace {
         self.projects.push(project);
 
         self.save(cx);
+
         cx.emit(WorkspaceEvent::ProjectOpened(project_id));
 
         Ok(())
@@ -171,8 +177,11 @@ impl Workspace {
             return self.switch_project(self.projects[pos].id, cx);
         }
         let project = WorkspaceProject::create(path, name, cx)?;
-        self.active_project = Some(project.id);
+        let project_id = project.id;
+        self.active_project = Some(project_id);
         self.projects.push(project);
+
+        cx.emit(WorkspaceEvent::ProjectCreated(project_id));
 
         Ok(())
     }

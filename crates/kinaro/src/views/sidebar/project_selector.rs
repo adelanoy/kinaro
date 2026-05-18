@@ -1,5 +1,5 @@
 use crate::workspace::{
-    CreateProject, DeleteProject, OpenProject, RenameProject, SwitchActiveProject, Workspace,
+    CreateProject, RemoveProject, OpenProject, RenameProject, SwitchActiveProject, Workspace,
 };
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
@@ -31,6 +31,7 @@ impl Render for ProjectSelector {
             .on_action(cx.listener(on_rename_project))
             .on_action(cx.listener(on_open_project))
             .on_action(cx.listener(on_switch_project))
+            .on_action(cx.listener(on_remove_project))
             .w_full()
             .child(
                 Button::new("btn-project-selector")
@@ -82,7 +83,7 @@ impl Render for ProjectSelector {
                                             .menu_with_icon(
                                                 "Delete",
                                                 IconName::Delete,
-                                                Box::new(DeleteProject(project_id)),
+                                                Box::new(RemoveProject(project_id)),
                                             )
                                             .menu_with_icon(
                                                 "Rename",
@@ -211,4 +212,18 @@ fn on_rename_project(
                 }
             })
     })
+}
+
+
+fn on_remove_project(
+    project_selector: &mut ProjectSelector,
+    action: &RemoveProject,
+    window: &mut Window,
+    cx: &mut Context<ProjectSelector>,
+) {
+    let project_id = action.0;
+    project_selector.workspace.update(cx, |workspace, cx| {
+        workspace.remove_project(project_id, cx);
+        window.push_notification(Notification::success("Project has been removed"), cx);
+    });
 }
