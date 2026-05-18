@@ -127,6 +127,7 @@ impl Default for SidebarState {
 pub struct AppState {
     pub display: Option<Uuid>,
     bounds: Option<WindowBoundsContent>,
+    pub last_dir_path: PathBuf,
     pub theme: ThemeMode,
     pub sidebar: SidebarState,
 }
@@ -136,6 +137,7 @@ impl Default for AppState {
         Self {
             display: None,
             bounds: None,
+            last_dir_path: dirs::desktop_dir().unwrap(),
             theme: ThemeMode::Dark,
             sidebar: Default::default(),
         }

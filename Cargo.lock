@@ -5244,6 +5244,7 @@ dependencies = [
 name = "settings"
 version = "0.1.0"
 dependencies = [
+ "dirs",
  "gpui",
  "gpui-component",
  "log",

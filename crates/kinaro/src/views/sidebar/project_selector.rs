@@ -1,14 +1,18 @@
 use crate::workspace::{
-    CreateProject, RemoveProject, OpenProject, RenameProject, SwitchActiveProject, Workspace,
+    CreateProject, OpenProject, RemoveProject, RenameProject, SwitchActiveProject,
+    Workspace, PROJECT_FILE_EXT,
 };
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::dialog::{DialogAction, DialogClose, DialogFooter};
+use gpui_component::form::{field, v_form};
 use gpui_component::input::{Input, InputState};
 use gpui_component::menu::DropdownMenu;
 use gpui_component::notification::Notification;
-use gpui_component::{v_flex, IconName, WindowExt};
+use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, IconName, Sizable, WindowExt};
 use kassets::icon::IconAsset;
+use settings::app_state::AppState;
+use std::path::PathBuf;
 
 pub(super) struct ProjectSelector {
     workspace: Entity<Workspace>,
@@ -32,6 +36,7 @@ impl Render for ProjectSelector {
             .on_action(cx.listener(on_open_project))
             .on_action(cx.listener(on_switch_project))
             .on_action(cx.listener(on_remove_project))
+            .on_action(cx.listener(on_create_project))
             .w_full()
             .child(
                 Button::new("btn-project-selector")
@@ -154,7 +159,10 @@ fn on_open_project(
                             window.push_notification(format!("{:?}", err), cx);
                         });
                     }
-                    cx.notify();
+                    AppState::update(cx, |state, _| {
+                        state.last_dir_path = paths[0].clone();
+                        true
+                    });
                 });
             }
         }
@@ -184,7 +192,7 @@ fn on_rename_project(
             .child(
                 v_flex()
                     .gap_3()
-                    .child("Enter the new project's name:")
+                    .child("Enter the project's name:")
                     .child(Input::new(&input)),
             )
             .footer(
@@ -198,22 +206,20 @@ fn on_rename_project(
             )
             .on_ok({
                 let input = input.clone();
-                move |_, window, cx| {
+                move |_, _, cx| {
                     _ = workspace.update(cx, |workspace, cx| {
                         let name = input.read_with(cx, |input, _| input.value());
                         if let Some(current_project) =
                             workspace.projects.iter_mut().find(|p| p.id == project_id)
                         {
                             current_project.name = name;
-                            window.push_notification(Notification::success("Project renamed"), cx);
                         }
                     });
                     true
                 }
             })
-    })
+    });
 }
-
 
 fn on_remove_project(
     project_selector: &mut ProjectSelector,
@@ -226,4 +232,129 @@ fn on_remove_project(
         workspace.remove_project(project_id, cx);
         window.push_notification(Notification::success("Project has been removed"), cx);
     });
+}
+
+fn on_create_project(
+    project_selector: &mut ProjectSelector,
+    _: &CreateProject,
+    window: &mut Window,
+    cx: &mut Context<ProjectSelector>,
+) {
+    let workspace = project_selector.workspace.clone();
+    let name_input = cx.new(|cx| InputState::new(window, cx));
+    let path_input = cx.new(|cx| InputState::new(window, cx));
+    window.open_dialog(cx, move |dialog, _, cx| {
+        dialog
+            .title("Create Project")
+            .child(
+                v_form()
+                    .layout(Axis::Horizontal)
+                    .label_width(px(100.))
+                    .with_size(gpui_component::Size::Small)
+                    .child(
+                        field()
+                            .label("Name")
+                            .child(Input::new(&name_input))
+                            .required(true),
+                    )
+                    .child(
+                        field().label("Path").required(true).child(
+                            h_flex()
+                                .gap_2()
+                                .border_1()
+                                .border_color(cx.theme().input)
+                                .bg(cx.theme().input_background())
+                                .rounded(cx.theme().radius)
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .child(Input::new(&path_input).pl_0().appearance(false)),
+                                )
+                                .child(
+                                    Button::new("file")
+                                        .ghost()
+                                        .icon(IconName::FolderOpen)
+                                        .on_click(prompt_to_save_project_file(
+                                            path_input.clone(),
+                                            cx,
+                                        )),
+                                ),
+                        ),
+                    ),
+            )
+            .footer(
+                DialogFooter::new()
+                    .child(
+                        DialogClose::new().child(Button::new("cancel").label("Cancel").outline()),
+                    )
+                    .child(DialogAction::new().child(
+                        Button::new("confirm").primary().label("Create").disabled(
+                            name_input.read(cx).value().len() == 0
+                                || path_input.read_with(cx, |state, _| {
+                                    state.value().len() == 0
+                                        || !state.value().ends_with(PROJECT_FILE_EXT)
+                                }),
+                        ),
+                    )),
+            )
+            .on_ok({
+                let name = name_input.clone();
+                let path = path_input.clone();
+                let workspace = workspace.clone();
+                move |_, window, cx| {
+                    let project_name = name.read(cx).value().to_string();
+                    let project_file = PathBuf::from(path.read(cx).value().to_string());
+                    let project_dir = project_file.parent();
+                    if project_dir.is_none() || !project_dir.unwrap().exists() {
+                        window.push_notification(
+                            Notification::error("Cannot create project: invalid location"),
+                            cx,
+                        );
+                        return false;
+                    }
+
+                    if let Err(err) = workspace.update(cx, |workspace, cx| {
+                        workspace.create_project(project_name, project_file, cx)
+                    }) {
+                        window.push_notification(
+                            Notification::error(format!("Error saving file: {}", err)),
+                            cx,
+                        );
+                    }
+                    true
+                }
+            })
+    });
+}
+
+fn prompt_to_save_project_file(
+    path_input: Entity<InputState>,
+    cx: &mut App,
+) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+    let last_path = AppState::read(cx, |state| state.last_dir_path.clone());
+    move |_, window, cx| {
+        let path =
+            cx.prompt_for_new_path(&last_path, Some(&format!("project.{}", PROJECT_FILE_EXT)));
+        window
+            .spawn(cx, {
+                let path_input = path_input.clone();
+                async move |cx| {
+                    let Ok(result) = path.await else {
+                        return;
+                    };
+                    if let Some(path) = result.ok().flatten() {
+                        _ = cx.window_handle().update(cx, |_, window, cx| {
+                            let path_str = SharedString::new(path.to_string_lossy());
+                            path_input
+                                .update(cx, |state, cx| state.set_value(path_str, window, cx));
+                            AppState::update(cx, |state, _| {
+                                state.last_dir_path = path.parent().unwrap().to_owned();
+                                true
+                            });
+                        });
+                    }
+                }
+            })
+            .detach();
+    }
 }

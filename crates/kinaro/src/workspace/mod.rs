@@ -19,6 +19,7 @@ pub(crate) mod test;
 pub(crate) mod variable;
 
 pub const WORKSPACES_FILENAME: &str = "workspaces.json";
+pub const PROJECT_FILE_EXT: &str = "kpr";
 
 ///// WORKSPACE ACTIONS /////
 actions!(workspace, [CreateProject, OpenProject]);
@@ -180,6 +181,8 @@ impl Workspace {
         let project_id = project.id;
         self.active_project = Some(project_id);
         self.projects.push(project);
+
+        self.save(cx);
 
         cx.emit(WorkspaceEvent::ProjectCreated(project_id));
 
