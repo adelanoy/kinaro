@@ -3,8 +3,9 @@ use crate::workspace::error::{ProjectError, Result, WorkspaceError};
 use crate::workspace::test::WorkspaceTestsContainer;
 use crate::workspace::variable::WorkspaceVariables;
 use chrono::{DateTime, Local};
-use gpui::{App, Entity, SharedString};
+use gpui::{actions, Action, App, Entity, EventEmitter, SharedString, WeakEntity};
 use gpui::{AppContext, Context};
+use log::{debug, error, warn};
 use project_file::{ProjectFile, ProjectFileError};
 use serde::{Deserialize, Serialize};
 use settings::GlobalSettings;
@@ -19,10 +20,36 @@ pub(crate) mod variable;
 
 pub const WORKSPACES_FILENAME: &str = "workspaces.json";
 
+///// WORKSPACE ACTIONS /////
+actions!(workspace, [CreateProject, OpenProject]);
+
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = workspace, no_json)]
+pub struct DeleteProject(pub Uuid);
+
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = workspace, no_json)]
+pub struct SwitchActiveProject(pub Uuid);
+
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = workspace, no_json)]
+pub struct RenameProject(pub Uuid, pub SharedString);
+
+///// WORKSPACE EVENTS /////
+pub enum WorkspaceEvent {
+    ProjectOpened(Uuid),
+    ProjectCreated(Uuid),
+    SwitchProject(Uuid),
+}
+
+impl EventEmitter<WorkspaceEvent> for Workspace {}
+
 #[derive(Serialize, Deserialize, Default)]
 pub struct Workspace {
     active_project: Option<Uuid>,
     pub projects: Vec<WorkspaceProject>,
+    #[serde(skip)]
+    weak_self: Option<WeakEntity<Self>>,
 }
 
 impl Workspace {
@@ -44,21 +71,9 @@ impl Workspace {
             Workspace::default()
         };
         workspace.projects.iter_mut().for_each(|p| p.load(cx));
+        workspace.weak_self = Some(cx.entity().downgrade());
 
         workspace
-    }
-
-    pub fn save(&self, cx: &mut App) -> Result<()> {
-        let config_dir = cx.read_global(|settings: &GlobalSettings, _| settings.config_dir.clone());
-        let file_path = config_dir.join(WORKSPACES_FILENAME);
-
-        fs::create_dir_all(&*config_dir)
-            .map_err(|e| WorkspaceError::Io(e))
-            .and_then(|_| fs::File::create(&file_path).map_err(|e| WorkspaceError::Io(e)))
-            .and_then(|file| {
-                serde_json::to_writer_pretty(file, self).map_err(|err| WorkspaceError::Write(err))
-            })?;
-        Ok(())
     }
 
     pub fn get_active_project(&self) -> Option<&WorkspaceProject> {
@@ -85,7 +100,7 @@ impl Workspace {
         }
     }
 
-    pub fn switch_project(&mut self, project_id: Uuid, cx: &mut App) -> Result<()> {
+    pub fn switch_project(&mut self, project_id: Uuid, cx: &mut Context<Self>) -> Result<()> {
         self.save_active_project(cx)?;
 
         let info = self
@@ -95,12 +110,13 @@ impl Workspace {
             .ok_or(WorkspaceError::from(ProjectError::UnknownProject(
                 project_id,
             )))?;
-        match info.get_status() {
+        let result = match info.get_status() {
             WorkspaceProjectDataStatus::Unloaded => {
                 Err(WorkspaceError::General("Unknown".to_string()))
             }
             WorkspaceProjectDataStatus::Loaded(_) => {
                 self.active_project = Some(project_id);
+                cx.emit(WorkspaceEvent::SwitchProject(project_id));
                 Ok(())
             }
             WorkspaceProjectDataStatus::Moved => Err(WorkspaceError::from(
@@ -112,7 +128,12 @@ impl Workspace {
             WorkspaceProjectDataStatus::LoadError(_) => {
                 Err(WorkspaceError::Project(ProjectError::Invalid))
             }
+        };
+        if result.is_ok() {
+            self.save(cx);
+            cx.emit(WorkspaceEvent::SwitchProject(project_id));
         }
+        result
     }
 
     pub fn remove_project(&mut self, project_id: Uuid, cx: &App) {
@@ -130,18 +151,22 @@ impl Workspace {
         }
     }
 
-    pub fn open_project(&mut self, path: PathBuf, cx: &mut App) -> Result<()> {
+    pub fn open_project(&mut self, path: PathBuf, cx: &mut Context<Self>) -> Result<()> {
         if let Some(pos) = self.projects.iter().position(|p| p.path == path) {
             return self.switch_project(self.projects[pos].id, cx);
         }
         let project = WorkspaceProject::open(path, cx)?;
-        self.active_project = Some(project.id);
+        let project_id = project.id;
+        self.active_project = Some(project_id);
         self.projects.push(project);
+
+        self.save(cx);
+        cx.emit(WorkspaceEvent::ProjectOpened(project_id));
 
         Ok(())
     }
 
-    pub fn create_project(&mut self, name: String, path: PathBuf, cx: &mut App) -> Result<()> {
+    pub fn create_project(&mut self, name: String, path: PathBuf, cx: &mut Context<Self>) -> Result<()> {
         if let Some(pos) = self.projects.iter().position(|p| p.path == path) {
             return self.switch_project(self.projects[pos].id, cx);
         }
@@ -150,6 +175,30 @@ impl Workspace {
         self.projects.push(project);
 
         Ok(())
+    }
+
+    fn save(&self, cx: &mut App) {
+        let config_dir = cx.read_global(|settings: &GlobalSettings, _| settings.config_dir.clone());
+        let file_path = config_dir.join(WORKSPACES_FILENAME);
+        let this = self.weak_self.clone().unwrap().upgrade().unwrap();
+
+        cx.spawn(async move |cx| {
+            this.read_with(cx, |this, _| {
+                if let Err(err) = fs::create_dir_all(&*config_dir)
+                    .map_err(|e| WorkspaceError::Io(e))
+                    .and_then(|_| fs::File::create(&file_path).map_err(|e| WorkspaceError::Io(e)))
+                    .and_then(|file| {
+                        serde_json::to_writer_pretty(file, this)
+                            .map_err(|err| WorkspaceError::Write(err))
+                    })
+                {
+                    error!("Error while saving workspace file: {:?}", err);
+                } else {
+                    debug!("Saving workspace to {}", file_path.to_string_lossy());
+                }
+            });
+        })
+        .detach();
     }
 
     fn save_active_project(&mut self, cx: &App) -> Result<()> {
@@ -187,6 +236,7 @@ impl PartialEq for WorkspaceProject {
 impl WorkspaceProject {
     pub(crate) fn load(&mut self, cx: &mut App) {
         if !self.path.exists() {
+            warn!("Could not find project at: {}", self.path.to_string_lossy());
             self.data_status = WorkspaceProjectDataStatus::Moved;
             return;
         }
@@ -194,6 +244,12 @@ impl WorkspaceProject {
         match ProjectFile::load(&self.path) {
             Ok(project_file) => {
                 if project_file.id != self.id {
+                    warn!(
+                        "Project id mismatch for project at: {}. Workspace id: {}, file id: {}",
+                        self.path.to_string_lossy(),
+                        self.id,
+                        project_file.id
+                    );
                     self.data_status = WorkspaceProjectDataStatus::ExternallyModified;
                 }
                 let project = WorkspaceProjectData::from_file(&project_file, cx);
@@ -216,6 +272,11 @@ impl WorkspaceProject {
                 self.data_status = WorkspaceProjectDataStatus::Loaded(cx.new(|_| project))
             }
             Err(err) => {
+                warn!(
+                    "Error loading project at: {}. Error: {}",
+                    self.path.to_string_lossy(),
+                    err
+                );
                 self.data_status = WorkspaceProjectDataStatus::LoadError(err);
             }
         };

@@ -8,27 +8,12 @@ use gpui::*;
 use gpui_component::button::{Button, ButtonVariants, Toggle};
 use gpui_component::resizable::{h_resizable, resizable_panel};
 use gpui_component::tab::{Tab, TabBar};
-use gpui_component::{h_flex, v_flex, IconName, Root, Sizable, WindowExt};
+use gpui_component::{h_flex, v_flex, IconName, Root, Sizable};
 use kassets::icon::IconAsset;
 use settings::app_state::AppState;
-use uuid::Uuid;
-
-actions!(workspace, [CreateProject, AppendProject]);
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = workspace, no_json)]
-pub struct DeleteProject(pub Uuid);
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = workspace, no_json)]
-pub struct SwitchActiveProject(pub Uuid);
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = workspace, no_json)]
-pub struct RenameProject(pub Uuid, pub SharedString);
 
 pub struct WorkspaceView {
-    workspace: Entity<Workspace>,
+    _workspace: Entity<Workspace>,
     title_bar: Entity<AppTitleBar>,
     project_sidebar: Entity<ProjectSidebar>,
     sidebar_collapsed: bool,
@@ -47,47 +32,11 @@ impl WorkspaceView {
         let title_bar = cx.new(|_| AppTitleBar::new());
 
         Self {
-            workspace,
+            _workspace: workspace,
             title_bar,
             project_sidebar,
             sidebar_collapsed,
         }
-    }
-
-    fn prompt_open_file(
-        _: &mut WorkspaceView,
-        _: &AppendProject,
-        window: &mut Window,
-        cx: &mut Context<WorkspaceView>,
-    ) {
-        let path = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: false,
-            prompt: None,
-        });
-        cx.spawn_in(window, async move |this, cx| {
-            let Ok(result) = path.await else {
-                return;
-            };
-            if let Some(paths) = result.ok().flatten() {
-                if !paths.is_empty() {
-                    let window_handle = cx.window_handle();
-                    _ = this.update(cx, |this, cx| {
-                        if let Err(err) = this
-                            .workspace
-                            .update(cx, |this, cx| this.open_project(paths[0].clone(), cx))
-                        {
-                            _ = window_handle.update(cx, |_, window, cx| {
-                                window.push_notification(format!("{:?}", err), cx);
-                            });
-                        }
-                        cx.notify();
-                    });
-                }
-            }
-        })
-        .detach();
     }
 }
 
@@ -102,7 +51,6 @@ impl Render for WorkspaceView {
 
         div()
             .id("kinaro-root")
-            .on_action(cx.listener(Self::prompt_open_file))
             .size_full()
             .child(
                 v_flex().size_full().child(self.title_bar.clone()).child(
