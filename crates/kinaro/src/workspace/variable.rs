@@ -1,3 +1,5 @@
+use gpui::SharedString;
+use gpui_component::select::SelectItem;
 use project_file::{Profile, Variable, VariableKind, Variables};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};
@@ -114,24 +116,24 @@ impl From<&WorkspaceVariableKind> for VariableKind {
 #[derive(Eq, Ord, Clone, Debug)]
 pub struct WorkspaceProfile {
     pub id: Uuid,
-    pub name: String,
-    pub description: String,
+    pub name: SharedString,
+    pub description: SharedString,
 }
 
 impl WorkspaceProfile {
     fn from_file(file_profile: &Profile) -> Self {
         Self {
             id: file_profile.id,
-            name: file_profile.name.clone(),
-            description: file_profile.description.clone(),
+            name: SharedString::new(&file_profile.name),
+            description: SharedString::new(&file_profile.description),
         }
     }
 
     fn get_file(&self) -> Profile {
         Profile {
             id: self.id,
-            name: self.name.clone(),
-            description: self.description.clone(),
+            name: self.name.to_string(),
+            description: self.description.to_string(),
         }
     }
 }
@@ -145,5 +147,17 @@ impl PartialEq for WorkspaceProfile {
 impl PartialOrd for WorkspaceProfile {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.name.partial_cmp(&other.name)
+    }
+}
+
+impl SelectItem for WorkspaceProfile {
+    type Value = Uuid;
+
+    fn title(&self) -> SharedString {
+        self.name.clone()
+    }
+
+    fn value(&self) -> &Self::Value {
+        &self.id
     }
 }

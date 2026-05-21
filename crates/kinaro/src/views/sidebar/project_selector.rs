@@ -1,6 +1,6 @@
 use crate::workspace::{
     CreateProject, OpenProject, RemoveProject, RenameProject, SwitchActiveProject,
-    Workspace, PROJECT_FILE_EXT,
+    Workspace, WorkspaceProject, PROJECT_FILE_EXT,
 };
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
@@ -16,20 +16,33 @@ use std::path::PathBuf;
 
 pub(super) struct ProjectSelector {
     workspace: Entity<Workspace>,
+    active_project: Option<Entity<WorkspaceProject>>,
 }
 
 impl ProjectSelector {
-    pub(super) fn new(_cx: &mut Context<Self>, workspace: Entity<Workspace>) -> Self {
-        Self { workspace }
+    pub(super) fn new(workspace: Entity<Workspace>, cx: &mut Context<Self>) -> Self {
+        let active_project = workspace.read(cx).active_project();
+        cx.subscribe(&workspace, |this, workspace, event, cx| match event {
+            _ => {
+                let active_project = workspace.read(cx).active_project();
+                this.active_project = active_project.clone();
+            }
+        })
+        .detach();
+        Self {
+            workspace,
+            active_project,
+        }
     }
 }
 
 impl Render for ProjectSelector {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let current_project_name = self.workspace.read_with(cx, |w, _| {
-            w.get_active_project()
-                .map_or(SharedString::new("--"), |p| p.name.clone())
-        });
+        let current_project_name = if let Some(project) = &self.active_project {
+            project.read(cx).name.clone()
+        } else {
+            SharedString::new("--")
+        };
 
         div()
             .on_action(cx.listener(on_rename_project))
@@ -54,12 +67,12 @@ impl Render for ProjectSelector {
                     )
                     .dropdown_menu({
                         let (current_project_id, projects) =
-                            self.workspace.read_with(cx, |w, _| {
-                                let current_project_id = w.get_active_project_id();
+                            self.workspace.read_with(cx, |w, cx| {
+                                let current_project_id = w.active_project_id();
                                 let project_infos = w
                                     .projects
                                     .iter()
-                                    .map(|p| (p.id, p.name.clone()))
+                                    .map(|(_, p)| p.read_with(cx, |p, _| (p.id, p.name.clone())))
                                     .collect::<Vec<_>>();
                                 (current_project_id, project_infos)
                             });
@@ -207,12 +220,10 @@ fn on_rename_project(
             .on_ok({
                 let input = input.clone();
                 move |_, _, cx| {
-                    _ = workspace.update(cx, |workspace, cx| {
-                        let name = input.read_with(cx, |input, _| input.value());
-                        if let Some(current_project) =
-                            workspace.projects.iter_mut().find(|p| p.id == project_id)
-                        {
-                            current_project.name = name;
+                    workspace.update(cx, |workspace, cx| {
+                        if let Some(project) = workspace.projects.get(&project_id) {
+                            let name = input.read_with(cx, |input, _| input.value());
+                            project.update(cx, |this, _| this.name = name);
                         }
                     });
                     true

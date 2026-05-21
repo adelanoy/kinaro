@@ -27,6 +27,7 @@ mod project_file {
     use std::fs;
     use std::path::PathBuf;
     use uuid::Uuid;
+    use log::debug;
 
     #[derive(Serialize, Deserialize, Clone, Debug)]
     #[serde(rename_all = "camelCase")]
@@ -69,6 +70,7 @@ mod project_file {
         }
 
         pub fn save(&self, path: &PathBuf) -> Result<()> {
+            debug!("Saving project file {} to {}", self.name, path.to_string_lossy());
             fs::File::create(path)
                 .map_err(|err| ProjectFileError::from(err))
                 .and_then(|file| {

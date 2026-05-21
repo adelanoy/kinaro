@@ -3,14 +3,17 @@ use crate::workspace::error::{ProjectError, Result, WorkspaceError};
 use crate::workspace::test::WorkspaceTestsContainer;
 use crate::workspace::variable::WorkspaceVariables;
 use chrono::{DateTime, Local};
-use gpui::{actions, Action, App, Entity, EventEmitter, SharedString, WeakEntity};
+use gpui::{actions, Action, App, Entity, EventEmitter, SharedString, Window};
 use gpui::{AppContext, Context};
+use gpui_component::notification::Notification;
+use gpui_component::WindowExt;
 use log::{debug, error, warn};
 use project_file::{ProjectFile, ProjectFileError};
 use serde::{Deserialize, Serialize};
 use settings::GlobalSettings;
+use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 pub(crate) mod endpoint;
@@ -20,6 +23,29 @@ pub(crate) mod variable;
 
 pub const WORKSPACES_FILENAME: &str = "workspaces.json";
 pub const PROJECT_FILE_EXT: &str = "kpr";
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct WorkspaceFile {
+    active_project_id: Option<Uuid>,
+    pub projects: Vec<WorkspaceProject>,
+}
+
+impl WorkspaceFile {
+    fn load(file_path: &Path) -> Self {
+        if file_path.exists() {
+            fs::read(file_path)
+                .map_err(|e| WorkspaceError::Io(e))
+                .and_then(|file| {
+                    serde_json::from_slice::<WorkspaceFile>(&file)
+                        .map_err(|err| WorkspaceError::Read(err))
+                })
+                // If a project_error occurred while reading, create a new one
+                .unwrap_or_default()
+        } else {
+            WorkspaceFile::default()
+        }
+    }
+}
 
 ///// WORKSPACE ACTIONS /////
 actions!(workspace, [CreateProject, OpenProject]);
@@ -38,20 +64,14 @@ pub struct RenameProject(pub Uuid, pub SharedString);
 
 ///// WORKSPACE EVENTS /////
 pub enum WorkspaceEvent {
-    ProjectOpened(Uuid),
-    ProjectCreated(Uuid),
-    ProjectSwitched(Uuid),
-    ProjectRemoved,
+    ProjectsChanged,
 }
 
 impl EventEmitter<WorkspaceEvent> for Workspace {}
 
-#[derive(Serialize, Deserialize, Default)]
 pub struct Workspace {
-    active_project: Option<Uuid>,
-    pub projects: Vec<WorkspaceProject>,
-    #[serde(skip)]
-    weak_self: Option<WeakEntity<Self>>,
+    active_project_id: Option<Uuid>,
+    pub projects: HashMap<Uuid, Entity<WorkspaceProject>>,
 }
 
 impl Workspace {
@@ -60,69 +80,61 @@ impl Workspace {
             settings.config_dir.join(WORKSPACES_FILENAME)
         });
 
-        let mut workspace = if file_path.exists() {
-            fs::read(&file_path)
-                .map_err(|e| WorkspaceError::Io(e))
-                .and_then(|file| {
-                    serde_json::from_slice::<Workspace>(&file)
-                        .map_err(|err| WorkspaceError::Read(err))
-                })
-                // If a project_error occurred while reading, create a new one
-                .unwrap_or_default()
-        } else {
-            Workspace::default()
-        };
-        workspace.projects.iter_mut().for_each(|p| p.load(cx));
-        workspace.weak_self = Some(cx.entity().downgrade());
+        let WorkspaceFile {
+            mut active_project_id,
+            projects,
+        } = WorkspaceFile::load(&file_path);
 
-        workspace
+        let projects: HashMap<Uuid, Entity<WorkspaceProject>> = projects
+            .into_iter()
+            .map(|mut project| {
+                project.load();
+                let project_id = project.id;
+                // If active project and loading failed, reset active project
+                if Some(project_id) == active_project_id && !project.is_loaded() {
+                    active_project_id = None;
+                }
+                (project_id, cx.new(|_| project))
+            })
+            .collect();
+
+        Workspace {
+            active_project_id,
+            projects,
+        }
     }
 
-    pub fn get_active_project(&self) -> Option<&WorkspaceProject> {
-        if let Some(active_project) = self.active_project {
-            self.projects
-                .iter()
-                .find(|p| p.id == active_project && p.is_loaded())
+    pub fn active_project(&self) -> Option<Entity<WorkspaceProject>> {
+        if let Some(active_project_id) = self.active_project_id {
+            self.projects.get(&active_project_id).cloned()
         } else {
             None
         }
     }
 
-    pub fn get_active_project_id(&self) -> Option<Uuid> {
-        self.active_project.clone()
-    }
-
-    pub fn get_active_project_mut(&mut self) -> Option<&mut WorkspaceProject> {
-        if let Some(active_project) = self.active_project {
-            self.projects
-                .iter_mut()
-                .find(|p| p.id == active_project && p.is_loaded())
-        } else {
-            None
-        }
+    pub fn active_project_id(&self) -> Option<Uuid> {
+        self.active_project_id.clone()
     }
 
     pub fn switch_project(&mut self, project_id: Uuid, cx: &mut Context<Self>) -> Result<()> {
-        self.save_active_project(cx)?;
-
-        let info = self
+        let project = self
             .projects
-            .iter_mut()
-            .find(|p| p.id == project_id)
+            .get(&project_id)
+            .cloned()
             .ok_or(WorkspaceError::from(ProjectError::UnknownProject(
                 project_id,
             )))?;
-        let result = match info.get_status() {
+        let result = match project.read(cx).get_status() {
             WorkspaceProjectDataStatus::Unloaded => {
                 Err(WorkspaceError::General("Unknown".to_string()))
             }
             WorkspaceProjectDataStatus::Loaded(_) => {
-                self.active_project = Some(project_id);
-                cx.emit(WorkspaceEvent::ProjectSwitched(project_id));
+                self.active_project_id = Some(project_id);
+                cx.emit(WorkspaceEvent::ProjectsChanged);
                 Ok(())
             }
             WorkspaceProjectDataStatus::Moved => Err(WorkspaceError::from(
-                ProjectError::BadLocation(info.path.clone()),
+                ProjectError::BadLocation(project.read_with(cx, |project, _| project.path.clone())),
             )),
             WorkspaceProjectDataStatus::ExternallyModified => {
                 Err(WorkspaceError::Project(ProjectError::ExternallyModified))
@@ -133,74 +145,83 @@ impl Workspace {
         };
         if result.is_ok() {
             self.save(cx);
-            cx.emit(WorkspaceEvent::ProjectSwitched(project_id));
+            cx.emit(WorkspaceEvent::ProjectsChanged);
         }
         result
     }
 
-    pub fn remove_project(&mut self, project_id: Uuid, cx: &mut Context<Self>) {
-        let project_pos = self
-            .projects
-            .iter()
-            .position(|p| p.id == project_id)
-            .unwrap();
-        let mut project = self.projects.remove(project_pos);
-        let _ = project.save(cx);
+    pub fn switch_profile(&mut self, profile_id: Option<Uuid>, cx: &mut Context<Self>) {
+        if let Some(active_project) = self.active_project() {
+            active_project.update(cx, |project, cx| {
+                project.active_profile = profile_id;
+                cx.emit(WorkspaceProjectEvent::ProfilesModified);
+            });
 
-        // If the project was active, switch to the next project, if any
-        if self.active_project == Some(project.id) {
-            self.active_project = self.projects.iter().next().map_or(None, |p| Some(p.id));
+            self.save(cx);
+        }
+    }
+
+    pub fn remove_project(&mut self, project_id: Uuid, cx: &mut Context<Self>) {
+        self.projects.remove(&project_id);
+
+        if self.active_project_id == Some(project_id) {
+            self.active_project_id = None;
         }
 
         self.save(cx);
-        
-        cx.emit(WorkspaceEvent::ProjectRemoved);
+
+        cx.emit(WorkspaceEvent::ProjectsChanged);
     }
 
     pub fn open_project(&mut self, path: PathBuf, cx: &mut Context<Self>) -> Result<()> {
-        if let Some(pos) = self.projects.iter().position(|p| p.path == path) {
-            return self.switch_project(self.projects[pos].id, cx);
+        if let Some(project) = self.projects.values().find(|p| p.read(cx).path == path) {
+            return self.switch_project(project.read(cx).id, cx);
         }
-        let project = WorkspaceProject::open(path, cx)?;
+        let project = WorkspaceProject::open(path)?;
         let project_id = project.id;
-        self.active_project = Some(project_id);
-        self.projects.push(project);
+        self.active_project_id = Some(project_id);
+        self.projects.insert(project_id, cx.new(|_| project));
 
         self.save(cx);
 
-        cx.emit(WorkspaceEvent::ProjectOpened(project_id));
+        cx.emit(WorkspaceEvent::ProjectsChanged);
 
         Ok(())
     }
 
-    pub fn create_project(&mut self, name: String, path: PathBuf, cx: &mut Context<Self>) -> Result<()> {
-        if let Some(pos) = self.projects.iter().position(|p| p.path == path) {
-            return self.switch_project(self.projects[pos].id, cx);
+    pub fn create_project(
+        &mut self,
+        name: String,
+        path: PathBuf,
+        cx: &mut Context<Self>,
+    ) -> Result<()> {
+        if let Some(project) = self.projects.values().find(|p| p.read(cx).path == path) {
+            return self.switch_project(project.read(cx).id, cx);
         }
-        let project = WorkspaceProject::create(path, name, cx)?;
-        let project_id = project.id;
-        self.active_project = Some(project_id);
-        self.projects.push(project);
+        let project = cx.new(|_| WorkspaceProject::new(path, name));
+        let project_id = project.read(cx).id;
+        self.active_project_id = Some(project_id);
+        self.projects.insert(project_id, project);
 
         self.save(cx);
 
-        cx.emit(WorkspaceEvent::ProjectCreated(project_id));
+        cx.emit(WorkspaceEvent::ProjectsChanged);
 
         Ok(())
     }
 
-    fn save(&self, cx: &mut App) {
+    fn save(&self, cx: &mut Context<Self>) {
         let config_dir = cx.read_global(|settings: &GlobalSettings, _| settings.config_dir.clone());
         let file_path = config_dir.join(WORKSPACES_FILENAME);
-        let this = self.weak_self.clone().unwrap().upgrade().unwrap();
 
-        cx.spawn(async move |cx| {
-            this.read_with(cx, |this, _| {
+        cx.spawn(async move |this, cx| {
+            _ = this.read_with(cx, |this, cx| {
                 if let Err(err) = fs::create_dir_all(&*config_dir)
                     .map_err(|e| WorkspaceError::Io(e))
                     .and_then(|_| fs::File::create(&file_path).map_err(|e| WorkspaceError::Io(e)))
                     .and_then(|file| {
-                        serde_json::to_writer_pretty(file, this)
+                        let file_content = this.to_file(cx);
+                        serde_json::to_writer_pretty(file, &file_content)
                             .map_err(|err| WorkspaceError::Write(err))
                     })
                 {
@@ -213,18 +234,24 @@ impl Workspace {
         .detach();
     }
 
-    fn save_active_project(&mut self, cx: &App) -> Result<()> {
-        if let Some(project) = self.get_active_project_mut() {
-            if project.is_loaded() {
-                project.save(cx)
-            } else {
-                Err(WorkspaceError::Project(ProjectError::Invalid))
-            }
-        } else {
-            Ok(())
+    fn to_file(&self, cx: &App) -> WorkspaceFile {
+        WorkspaceFile {
+            active_project_id: self.active_project_id.clone(),
+            projects: self
+                .projects
+                .iter()
+                .map(|(_, p)| p.read(cx).clone())
+                .collect(),
         }
     }
 }
+
+///// WORKSPACE PROJECT EVENTS /////
+pub enum WorkspaceProjectEvent {
+    ProfilesModified,
+}
+
+impl EventEmitter<WorkspaceProjectEvent> for WorkspaceProject {}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct WorkspaceProject {
@@ -234,9 +261,24 @@ pub struct WorkspaceProject {
     pub version: u16,
     pub created: DateTime<Local>,
     pub modified: DateTime<Local>,
-    pub active_profile: Option<Uuid>,
+    active_profile: Option<Uuid>,
     #[serde(skip)]
     data_status: WorkspaceProjectDataStatus,
+}
+
+impl Clone for WorkspaceProject {
+    fn clone(&self) -> Self {
+        Self {
+            path: self.path.clone(),
+            id: self.id,
+            name: self.name.clone(),
+            version: self.version,
+            created: self.created,
+            modified: self.modified,
+            active_profile: self.active_profile.clone(),
+            data_status: Default::default(),
+        }
+    }
 }
 
 impl PartialEq for WorkspaceProject {
@@ -246,7 +288,31 @@ impl PartialEq for WorkspaceProject {
 }
 
 impl WorkspaceProject {
-    pub(crate) fn load(&mut self, cx: &mut App) {
+    #[inline]
+    pub fn active_profile(&self) -> Option<Uuid> {
+        self.active_profile.clone()
+    }
+
+    #[inline]
+    pub fn is_loaded(&self) -> bool {
+        matches!(self.data_status, WorkspaceProjectDataStatus::Loaded(_))
+    }
+
+    #[inline]
+    pub fn get_status(&self) -> &WorkspaceProjectDataStatus {
+        &self.data_status
+    }
+
+    /// Returns a reference to the data held by the project.
+    /// Care should be taken to check the project status as this method will panic if the project is not loaded
+    pub fn data(&self) -> &WorkspaceProjectData {
+        match &self.data_status {
+            WorkspaceProjectDataStatus::Loaded(data) => data,
+            _ => panic!("Tried to read an unloaded project"),
+        }
+    }
+    
+    fn load(&mut self) {
         if !self.path.exists() {
             warn!("Could not find project at: {}", self.path.to_string_lossy());
             self.data_status = WorkspaceProjectDataStatus::Moved;
@@ -264,7 +330,7 @@ impl WorkspaceProject {
                     );
                     self.data_status = WorkspaceProjectDataStatus::ExternallyModified;
                 }
-                let project = WorkspaceProjectData::from_file(&project_file, cx);
+                let project = WorkspaceProjectData::from_file(&project_file);
                 // Update the ProjectInfo with the file data (in case of modification done externally without any major impact)
                 if let Some(active_profile) = &self.active_profile {
                     if !project
@@ -281,10 +347,10 @@ impl WorkspaceProject {
                 }
                 self.created = project_file.created;
                 self.modified = project_file.modified;
-                self.data_status = WorkspaceProjectDataStatus::Loaded(cx.new(|_| project))
+                self.data_status = WorkspaceProjectDataStatus::Loaded(project)
             }
             Err(err) => {
-                warn!(
+                error!(
                     "Error loading project at: {}. Error: {}",
                     self.path.to_string_lossy(),
                     err
@@ -294,10 +360,10 @@ impl WorkspaceProject {
         };
     }
 
-    pub(crate) fn open(path: PathBuf, cx: &mut App) -> Result<Self> {
+    fn open(path: PathBuf) -> Result<Self> {
         match ProjectFile::load(&path) {
             Ok(project) => {
-                let data = WorkspaceProjectData::from_file(&project, cx);
+                let data = WorkspaceProjectData::from_file(&project);
                 Ok(Self {
                     path,
                     id: project.id,
@@ -306,15 +372,15 @@ impl WorkspaceProject {
                     created: project.created,
                     modified: project.modified,
                     active_profile: None,
-                    data_status: WorkspaceProjectDataStatus::Loaded(cx.new(|_| data)),
+                    data_status: WorkspaceProjectDataStatus::Loaded(data),
                 })
             }
             Err(err) => Err(WorkspaceError::from(err)),
         }
     }
 
-    pub(crate) fn create(path: PathBuf, name: String, cx: &mut App) -> Result<Self> {
-        let mut workspace_project = Self {
+    fn new(path: PathBuf, name: String) -> Self {
+        Self {
             path,
             id: Uuid::new_v4(),
             name: SharedString::new(name),
@@ -322,45 +388,36 @@ impl WorkspaceProject {
             created: Default::default(),
             modified: Default::default(),
             active_profile: None,
-            data_status: WorkspaceProjectDataStatus::Loaded(cx.new(|_| Default::default())),
-        };
-        workspace_project.save(cx)?;
-        Ok(workspace_project)
+            data_status: WorkspaceProjectDataStatus::Loaded(WorkspaceProjectData::new()),
+        }
     }
 
-    pub(crate) fn save(&mut self, cx: &App) -> Result<()> {
+    pub fn save(&mut self, window: &mut Window, cx: &Context<Self>) {
         if !self.is_loaded() {
-            return Err(WorkspaceError::Project(ProjectError::Invalid));
+            return;
         }
-        let project_file = self.get_file(cx);
-        project_file
-            .save(&self.path)
-            .map_err(|e| WorkspaceError::from(e))?;
-        // Update the 'modified' attribute if save was successful
-        self.modified = project_file.modified;
-
-        Ok(())
+        cx.spawn_in(window, async move |this, cx| {
+            if let Some(this) = this.upgrade() {
+                if let Err(err) = this.update(cx, |this, _| {
+                    let project_file = this.get_file();
+                    project_file
+                        .save(&this.path)
+                        .map_err(|e| WorkspaceError::from(e))?;
+                    // Update the 'modified' attribute if save was successful
+                    this.modified = project_file.modified;
+                    Ok::<(), WorkspaceError>(())
+                }) {
+                    _ = cx.update(|window, cx| {
+                        window.push_notification(Notification::error(format!("{}", err)), cx)
+                    });
+                }
+            }
+        })
+        .detach();
     }
 
-    pub fn is_loaded(&self) -> bool {
-        matches!(self.data_status, WorkspaceProjectDataStatus::Loaded(_))
-    }
-
-    pub fn get_status(&self) -> &WorkspaceProjectDataStatus {
-        &self.data_status
-    }
-
-    /// Returns a reference to the data held by the project.
-    /// Care should be taken to check the project status as this method will panic if the project is not loaded
-    pub fn data(&self) -> &Entity<WorkspaceProjectData> {
-        match &self.data_status {
-            WorkspaceProjectDataStatus::Loaded(data) => data,
-            _ => panic!("Tried to read an unloaded project"),
-        }
-    }
-
-    fn get_file(&self, cx: &App) -> ProjectFile {
-        let data = self.data().read(cx);
+    fn get_file(&self) -> ProjectFile {
+        let data = self.data();
         let variables = data.variables.get_file();
         let endpoints = data.endpoints.iter().map(|e| e.get_file()).collect();
         let tests = data.tests.get_file();
@@ -382,7 +439,7 @@ impl WorkspaceProject {
 #[derive(Debug)]
 pub enum WorkspaceProjectDataStatus {
     Unloaded,
-    Loaded(Entity<WorkspaceProjectData>),
+    Loaded(WorkspaceProjectData),
     Moved,
     ExternallyModified,
     LoadError(ProjectFileError),
@@ -394,7 +451,7 @@ impl Default for WorkspaceProjectDataStatus {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct WorkspaceProjectData {
     pub variables: WorkspaceVariables,
     pub endpoints: Vec<WorkspaceEndpoint>,
@@ -402,7 +459,15 @@ pub struct WorkspaceProjectData {
 }
 
 impl WorkspaceProjectData {
-    pub fn from_file(project_file: &ProjectFile, _cx: &mut App) -> WorkspaceProjectData {
+    fn new() -> Self {
+        Self {
+            variables: Default::default(),
+            endpoints: vec![],
+            tests: Default::default(),
+        }
+    }
+
+    fn from_file(project_file: &ProjectFile) -> WorkspaceProjectData {
         let variables = WorkspaceVariables::from_file(&project_file.variables);
         let endpoints = WorkspaceEndpoint::from_file(&project_file.endpoints);
         let tests = WorkspaceTestsContainer::from_file(&project_file.tests);

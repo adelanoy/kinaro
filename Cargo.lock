@@ -2222,8 +2222,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-component"
-version = "0.5.1"
-source = "git+https://github.com/longbridge/gpui-component#41f51428c563597af4f04fb476141d3311a1c0c4"
+version = "0.5.2"
+source = "git+https://github.com/longbridge/gpui-component?branch=main#6b8d9773392a627eed4e9b93d3b840d43e7fdf1f"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2266,7 +2266,7 @@ dependencies = [
 [[package]]
 name = "gpui-component-macros"
 version = "0.5.1"
-source = "git+https://github.com/longbridge/gpui-component#41f51428c563597af4f04fb476141d3311a1c0c4"
+source = "git+https://github.com/longbridge/gpui-component?branch=main#6b8d9773392a627eed4e9b93d3b840d43e7fdf1f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4435,6 +4435,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "kutils",
+ "log",
  "serde",
  "serde_yaml",
  "thiserror 2.0.18",
@@ -6040,9 +6041,9 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter"
-version = "0.25.10"
+version = "0.26.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78f873475d258561b06f1c595d93308a7ed124d9977cb26b148c2084a4a3cc87"
+checksum = "887bd495d0582c5e3e0d8ece2233666169fa56a9644d172fc22ad179ab2d0538"
 dependencies = [
  "cc",
  "regex",

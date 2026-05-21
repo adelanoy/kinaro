@@ -28,7 +28,7 @@ impl WorkspaceView {
         let sidebar_collapsed = AppState::read(cx, |app_state| app_state.sidebar.collapsed);
 
         let workspace = cx.new(|cx| Workspace::init(cx));
-        let project_sidebar = cx.new(|cx| ProjectSidebar::new(cx, workspace.clone()));
+        let project_sidebar = cx.new(|cx| ProjectSidebar::new(workspace.clone(), window, cx));
         let title_bar = cx.new(|_| AppTitleBar::new());
 
         Self {
@@ -66,7 +66,7 @@ impl Render for WorkspaceView {
                             resizable_panel()
                                 .visible(!self.sidebar_collapsed)
                                 .size(px(sidebar_width))
-                                .size_range(px(170.0)..px(350.0))
+                                .size_range(px(250.0)..px(400.0))
                                 .child(self.project_sidebar.clone()),
                         )
                         .child(
