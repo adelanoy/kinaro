@@ -9,7 +9,7 @@ pub struct WorkspaceTestCase {
 }
 
 impl WorkspaceTestCase {
-    pub(crate) fn from_file(file_test_cases: &Vec<TestCase>) -> Vec<WorkspaceTestCase> {
+    pub fn from_file(file_test_cases: &Vec<TestCase>) -> Vec<WorkspaceTestCase> {
         file_test_cases
             .iter()
             .map(|file_test_suite| Self {
@@ -20,7 +20,7 @@ impl WorkspaceTestCase {
             .collect()
     }
 
-    pub(crate) fn get_file(&self) -> TestCase {
+    pub fn get_file(&self) -> TestCase {
         TestCase {
             info: self.info.get_file(),
             is_anonymous: self.is_anonymous,

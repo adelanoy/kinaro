@@ -4,10 +4,10 @@ use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable, StyledExt, Theme, ThemeMode, TitleBar};
 use settings::app_state::AppState;
 
-pub(crate) struct AppTitleBar {}
+pub struct AppTitleBar {}
 
 impl AppTitleBar {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }

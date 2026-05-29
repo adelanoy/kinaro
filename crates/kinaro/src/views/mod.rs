@@ -17,10 +17,11 @@ pub struct WorkspaceView {
     title_bar: Entity<AppTitleBar>,
     project_sidebar: Entity<ProjectSidebar>,
     sidebar_collapsed: bool,
+    sidebar_width: f32,
 }
 
 impl WorkspaceView {
-    pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         cx.observe_window_bounds(window, move |_this, window, cx| {
             AppState::update(cx, |app_state, cx| app_state.update_bounds(window, cx))
         })
@@ -30,19 +31,20 @@ impl WorkspaceView {
         let workspace = cx.new(|cx| Workspace::init(cx));
         let project_sidebar = cx.new(|cx| ProjectSidebar::new(workspace.clone(), window, cx));
         let title_bar = cx.new(|_| AppTitleBar::new());
+        let sidebar_width = AppState::read(cx, |app_state| app_state.sidebar.width);
 
         Self {
             _workspace: workspace,
             title_bar,
             project_sidebar,
             sidebar_collapsed,
+            sidebar_width,
         }
     }
 }
 
 impl Render for WorkspaceView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let sidebar_width = AppState::read(cx, |app_state| app_state.sidebar.width);
         let theme_toggler_icon = if self.sidebar_collapsed {
             IconAsset::SidebarCollapsed
         } else {
@@ -55,18 +57,22 @@ impl Render for WorkspaceView {
             .child(
                 v_flex().size_full().child(self.title_bar.clone()).child(
                     h_resizable("kinaro-main-view")
-                        .on_resize(|state, _, cx| {
-                            let width = state.read_with(cx, |state, _| state.sizes()[0]);
-                            AppState::update(cx, |app_state, _| {
-                                app_state.sidebar.width = width.as_f32();
-                                true
-                            })
+                        .on_resize({
+                            let this = cx.entity();
+                            move |state, _, cx| {
+                                let width = state.read_with(cx, |state, _| state.sizes()[0]).as_f32();
+                                this.update(cx, |this, _| this.sidebar_width = width);
+                                AppState::update(cx, |app_state, _| {
+                                    app_state.sidebar.width = width;
+                                    true
+                                })
+                            }
                         })
                         .child(
                             resizable_panel()
                                 .visible(!self.sidebar_collapsed)
-                                .size(px(sidebar_width))
-                                .size_range(px(250.0)..px(400.0))
+                                .size(self.sidebar_width)
+                                .size_range(px(250.0)..px(500.0))
                                 .child(self.project_sidebar.clone()),
                         )
                         .child(
@@ -122,6 +128,7 @@ impl Render for WorkspaceView {
                 ),
             )
             .children(Root::render_dialog_layer(window, cx))
+            .children(Root::render_sheet_layer(window, cx))
             .children(Root::render_notification_layer(window, cx))
     }
 }

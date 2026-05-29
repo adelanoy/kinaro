@@ -16,10 +16,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-pub(crate) mod endpoint;
-pub(crate) mod error;
-pub(crate) mod test;
-pub(crate) mod variable;
+pub mod endpoint;
+pub mod error;
+pub mod test;
+pub mod variable;
 
 pub const WORKSPACES_FILENAME: &str = "workspaces.json";
 pub const PROJECT_FILE_EXT: &str = "kpr";
@@ -245,6 +245,10 @@ impl Workspace {
         }
     }
 }
+
+
+///// WORKSPACE PROJECTS ACTIONS /////
+actions!(project, [ShowProfilesPanel]);
 
 ///// WORKSPACE PROJECT EVENTS /////
 pub enum WorkspaceProjectEvent {

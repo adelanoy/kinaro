@@ -16,7 +16,7 @@ pub struct WorkspaceTestInfo {
 }
 
 impl WorkspaceTestInfo {
-    pub(crate) fn from_file(file_test_info: &TestInfo) -> Self {
+    pub fn from_file(file_test_info: &TestInfo) -> Self {
         Self {
             id: file_test_info.id,
             name: file_test_info.name.clone(),
@@ -25,7 +25,7 @@ impl WorkspaceTestInfo {
         }
     }
 
-    pub(crate) fn get_file(&self) -> TestInfo {
+    pub fn get_file(&self) -> TestInfo {
         TestInfo {
             id: self.id,
             name: self.name.clone(),
@@ -53,11 +53,11 @@ impl DerefMut for WorkspaceTestsContainer {
 }
 
 impl WorkspaceTestsContainer {
-    pub(crate) fn from_file(file_container: &TestsContainer) -> Self {
+    pub fn from_file(file_container: &TestsContainer) -> Self {
         Self(WorkspaceTestSuite::from_file(&file_container.suites))
     }
 
-    pub(crate) fn get_file(&self) -> TestsContainer {
+    pub fn get_file(&self) -> TestsContainer {
         TestsContainer {
             suites: self.iter().map(|suite| suite.get_file()).collect(),
         }

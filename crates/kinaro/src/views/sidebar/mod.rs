@@ -1,30 +1,24 @@
+mod profile_editor;
 mod project_configurator_panel;
 mod project_selector;
 
 use crate::views::sidebar::project_configurator_panel::ProjectConfigurator;
 use crate::views::sidebar::project_selector::ProjectSelector;
 use crate::workspace::Workspace;
-use gpui::{
-    AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled
-    , Window,
-};
+use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window};
 use gpui_component::separator::Separator;
 use gpui_component::v_flex;
 
-pub(crate) struct ProjectSidebar {
+pub struct ProjectSidebar {
     project_selector: Entity<ProjectSelector>,
     project_configurator: Entity<ProjectConfigurator>,
 }
 
 impl ProjectSidebar {
-    pub(crate) fn new(
-        workspace: Entity<Workspace>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let project_selector =
-            cx.new(|cx| ProjectSelector::new(workspace.clone(), cx));
-        let project_configurator = cx.new(|cx| ProjectConfigurator::new(workspace.clone(), window, cx));
+    pub fn new(workspace: Entity<Workspace>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let project_selector = cx.new(|cx| ProjectSelector::new(workspace.clone(), cx));
+        let project_configurator =
+            cx.new(|cx| ProjectConfigurator::new(workspace.clone(), window, cx));
 
         Self {
             project_selector,

@@ -10,7 +10,7 @@ pub struct WorkspaceTestSuite {
 }
 
 impl WorkspaceTestSuite {
-    pub(crate) fn from_file(file_test_suites: &Vec<TestSuite>) -> Vec<WorkspaceTestSuite> {
+    pub fn from_file(file_test_suites: &Vec<TestSuite>) -> Vec<WorkspaceTestSuite> {
         file_test_suites
             .iter()
             .map(|file_test_suite| Self {
@@ -20,7 +20,7 @@ impl WorkspaceTestSuite {
             .collect()
     }
 
-    pub(crate) fn get_file(&self) -> TestSuite {
+    pub fn get_file(&self) -> TestSuite {
         TestSuite {
             info: self.info.get_file(),
             cases: self.cases.iter().map(|case| case.get_file()).collect(),

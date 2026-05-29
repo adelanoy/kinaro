@@ -13,7 +13,7 @@ pub struct WorkspaceEndpoint {
 }
 
 impl WorkspaceEndpoint {
-    pub(crate) fn from_file(file_endpoints: &Vec<Endpoint>) -> Vec<WorkspaceEndpoint> {
+    pub fn from_file(file_endpoints: &Vec<Endpoint>) -> Vec<WorkspaceEndpoint> {
         file_endpoints
             .iter()
             .map(|endpoint| WorkspaceEndpoint {
@@ -26,7 +26,7 @@ impl WorkspaceEndpoint {
             .collect()
     }
 
-    pub(crate) fn get_file(&self) -> Endpoint {
+    pub fn get_file(&self) -> Endpoint {
         Endpoint {
             id: self.id,
             url: self.url.clone(),

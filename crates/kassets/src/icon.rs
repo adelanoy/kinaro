@@ -10,6 +10,7 @@ pub enum IconAsset {
     SidebarCollapsed,
     SidebarOpen,
     Switch,
+    Variable,
 }
 
 impl IconNamed for IconAsset {
@@ -22,6 +23,7 @@ impl IconNamed for IconAsset {
             IconAsset::SidebarCollapsed => "icons/sidebar-collapsed.svg",
             IconAsset::SidebarOpen => "icons/sidebar-open.svg",
             IconAsset::Switch => "icons/switch.svg",
+            IconAsset::Variable => "icons/variable.svg",
         }
         .into()
     }

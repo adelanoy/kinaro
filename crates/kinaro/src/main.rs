@@ -1,8 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-pub mod actions;
-pub mod views;
-pub mod workspace;
+pub(crate) mod actions;
+pub(crate) mod views;
+pub(crate) mod workspace;
 
 use crate::views::WorkspaceView;
 use gpui::*;
@@ -61,6 +61,7 @@ fn build_window_options(cx: &mut App) -> WindowOptions {
     let mut options = WindowOptions::default();
     options.window_bounds = bounds;
     options.display_id = display;
+    options.window_min_size = Some(Size::new(px(800.0), px(600.0)));
     options.titlebar = Some(TitlebarOptions {
         title: None,
         appears_transparent: true,

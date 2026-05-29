@@ -12,7 +12,7 @@ pub struct WorkspaceVariables {
 }
 
 impl WorkspaceVariables {
-    pub(crate) fn from_file(file_vars: &Variables) -> Self {
+    pub fn from_file(file_vars: &Variables) -> Self {
         let profiles = file_vars
             .profiles
             .iter()
@@ -44,7 +44,7 @@ impl WorkspaceVariables {
         }
     }
 
-    pub(crate) fn get_file(&self) -> Variables {
+    pub fn get_file(&self) -> Variables {
         let profiles = self
             .profiles
             .iter()

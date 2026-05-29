@@ -1,13 +1,16 @@
+use crate::views::sidebar::profile_editor::ProfileVarEditor;
 use crate::workspace::variable::WorkspaceProfile;
-use crate::workspace::{Workspace, WorkspaceProject, WorkspaceProjectEvent};
-use gpui::{
-    AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
-};
-use gpui_component::button::Button;
+use crate::workspace::{ShowProfilesPanel, Workspace, WorkspaceProject, WorkspaceProjectEvent};
+use gpui::*;
+use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::select::{Select, SelectEvent, SelectState};
-use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, IconName, IndexPath, Sizable};
+use gpui_component::{
+    ActiveTheme, Disableable, IconName, IndexPath, Placement, Sizable, WindowExt, h_flex, v_flex,
+};
+use kassets::icon::IconAsset;
 
 pub(super) struct ProjectConfigurator {
+    focus_handle: FocusHandle,
     active_project: Option<Entity<WorkspaceProject>>,
     profile_select_state: Entity<SelectState<Vec<WorkspaceProfile>>>,
     _profile_change_sub: Option<Subscription>,
@@ -34,6 +37,7 @@ impl ProjectConfigurator {
         .detach();
 
         let mut this = Self {
+            focus_handle: cx.focus_handle(),
             active_project,
             profile_select_state,
             _profile_change_sub: None,
@@ -48,7 +52,7 @@ impl ProjectConfigurator {
             |this, workspace, event, window, cx| match event {
                 _ => {
                     let active_project = workspace.read(cx).active_project();
-                    this.active_project = active_project;
+                    this.active_project = active_project.clone();
                     this.update_profiles_select_state(window, cx);
                     this.setup_profile_change_subscription(window, cx);
                 }
@@ -94,6 +98,22 @@ impl ProjectConfigurator {
             state.set_selected_index(Some(IndexPath::new(profile_index)), window, cx);
         });
     }
+
+    fn on_edit_profiles_variables_action(
+        &mut self,
+        _: &ShowProfilesPanel,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(project) = self.active_project.clone() else {
+            return;
+        };
+        window.open_sheet_at(
+            Placement::Bottom,
+            cx,
+            ProfileVarEditor::render_profile_editor(project),
+        );
+    }
 }
 
 impl Render for ProjectConfigurator {
@@ -101,6 +121,8 @@ impl Render for ProjectConfigurator {
         let disabled = self.active_project.is_none();
 
         v_flex()
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(Self::on_edit_profiles_variables_action))
             .w_full()
             .child(
                 h_flex()
@@ -116,11 +138,19 @@ impl Render for ProjectConfigurator {
                     .pb_2()
                     .child(
                         Button::new("btn-profiles-var")
-                            .icon(IconName::FolderOpen)
-                            .outline()
+                            .secondary()
                             .label("Profiles")
+                            .icon(IconAsset::Variable)
                             .with_size(gpui_component::Size::Small)
-                            .disabled(disabled),
+                            .disabled(disabled)
+                            .tooltip("Edit the profiles and variables for this project")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.on_edit_profiles_variables_action(
+                                    &ShowProfilesPanel,
+                                    window,
+                                    cx,
+                                );
+                            })),
                     )
                     .child(
                         Select::new(&self.profile_select_state)
@@ -134,6 +164,7 @@ impl Render for ProjectConfigurator {
                     .gap_x_2()
                     .child(
                         Button::new("btn-endpoint-conf")
+                            .secondary()
                             .icon(IconName::FolderOpen)
                             .label("Endpoints")
                             .flex_1()
@@ -142,6 +173,7 @@ impl Render for ProjectConfigurator {
                     )
                     .child(
                         Button::new("btn-project-conf")
+                            .secondary()
                             .icon(IconName::FolderOpen)
                             .label("Configuration")
                             .flex_1()
@@ -149,5 +181,11 @@ impl Render for ProjectConfigurator {
                             .disabled(disabled),
                     ),
             )
+    }
+}
+
+impl Focusable for ProjectConfigurator {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
     }
 }

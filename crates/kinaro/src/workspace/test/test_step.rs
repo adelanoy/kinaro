@@ -8,7 +8,7 @@ pub struct WorkspaceTestStep {
 }
 
 impl WorkspaceTestStep {
-    pub(crate) fn from_file(file_test_step: &Vec<TestStep>) -> Vec<WorkspaceTestStep> {
+    pub fn from_file(file_test_step: &Vec<TestStep>) -> Vec<WorkspaceTestStep> {
         file_test_step
             .iter()
             .map(|file_test_suite| Self {
@@ -17,7 +17,7 @@ impl WorkspaceTestStep {
             })
             .collect()
     }
-    pub(crate) fn get_file(&self) -> TestStep {
+    pub fn get_file(&self) -> TestStep {
         TestStep {
             info: self.info.get_file(),
             data: self.data.clone(),
