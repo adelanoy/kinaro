@@ -1,18 +1,17 @@
-use crate::views::sidebar::profile_editor::ProfileVarEditor;
+use crate::views::sidebar::profile_editor::ProfileVariableEditor;
 use crate::workspace::variable::WorkspaceProfile;
 use crate::workspace::{ShowProfilesPanel, Workspace, WorkspaceProject, WorkspaceProjectEvent};
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::select::{Select, SelectEvent, SelectState};
-use gpui_component::{
-    ActiveTheme, Disableable, IconName, IndexPath, Placement, Sizable, WindowExt, h_flex, v_flex,
-};
+use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, IconName, IndexPath, Sizable};
 use kassets::icon::IconAsset;
 
 pub(super) struct ProjectConfigurator {
     focus_handle: FocusHandle,
     active_project: Option<Entity<WorkspaceProject>>,
     profile_select_state: Entity<SelectState<Vec<WorkspaceProfile>>>,
+    profile_variable_editor: Entity<ProfileVariableEditor>,
     _profile_change_sub: Option<Subscription>,
 }
 
@@ -36,23 +35,30 @@ impl ProjectConfigurator {
         })
         .detach();
 
+        let profile_variable_editor =
+            cx.new(|cx| ProfileVariableEditor::new(active_project.clone(), window, cx));
+
         let mut this = Self {
             focus_handle: cx.focus_handle(),
             active_project,
             profile_select_state,
+            profile_variable_editor,
             _profile_change_sub: None,
         };
 
         this.update_profiles_select_state(window, cx);
         this.setup_profile_change_subscription(window, cx);
 
+        // On project change subscription
         cx.subscribe_in(
             &workspace,
             window,
             |this, workspace, event, window, cx| match event {
                 _ => {
                     let active_project = workspace.read(cx).active_project();
-                    this.active_project = active_project.clone();
+                    this.profile_variable_editor
+                        .update(cx, |this, cx| this.set_project(active_project.clone(), cx));
+                    this.active_project = active_project;
                     this.update_profiles_select_state(window, cx);
                     this.setup_profile_change_subscription(window, cx);
                 }
@@ -83,7 +89,9 @@ impl ProjectConfigurator {
         let (profiles, profile_index) = match active_project {
             Some(active_project) => active_project.read_with(cx, |project, _| {
                 let active_profile_id = project.active_profile();
-                let profiles = project.data().variables.profiles.clone();
+                let profiles = project.data().variables.profiles.iter()
+                    .map(|p| p.clone())
+                    .collect::<Vec<WorkspaceProfile>>();
                 let selected_profile_index = profiles
                     .iter()
                     .position(|p| Some(p.id) == active_profile_id)
@@ -105,14 +113,11 @@ impl ProjectConfigurator {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(project) = self.active_project.clone() else {
+        if self.active_project.is_none() {
             return;
         };
-        window.open_sheet_at(
-            Placement::Bottom,
-            cx,
-            ProfileVarEditor::render_profile_editor(project),
-        );
+        self.profile_variable_editor
+            .update(cx, |this, cx| this.show(window, cx));
     }
 }
 

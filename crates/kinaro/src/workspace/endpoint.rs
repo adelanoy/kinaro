@@ -26,7 +26,7 @@ impl WorkspaceEndpoint {
             .collect()
     }
 
-    pub fn get_file(&self) -> Endpoint {
+    pub fn to_file(&self) -> Endpoint {
         Endpoint {
             id: self.id,
             url: self.url.clone(),

@@ -57,7 +57,7 @@ impl WorkspaceTestsContainer {
         Self(WorkspaceTestSuite::from_file(&file_container.suites))
     }
 
-    pub fn get_file(&self) -> TestsContainer {
+    pub fn to_file(&self) -> TestsContainer {
         TestsContainer {
             suites: self.iter().map(|suite| suite.get_file()).collect(),
         }

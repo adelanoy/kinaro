@@ -12,6 +12,56 @@ pub struct WorkspaceVariables {
 }
 
 impl WorkspaceVariables {
+    /// Merge the current profiles with the new ones
+    /// 
+    /// Returns true if any merge occurred and project should notify listeners
+    pub(crate) fn update_profiles(&mut self, profiles: Vec<WorkspaceProfile>) -> bool {
+        let mut must_notify = false;
+        for profile in profiles {
+            let pos_existing = self.profiles.iter().position(|p| p.id == profile.id);
+            match pos_existing {
+                None => {
+                    self.profiles.push(profile);
+                    must_notify = true;
+                }
+                Some(pos) => {
+                    let current_profile = self.profiles.get_mut(pos).unwrap();
+                    if current_profile != &profile {
+                        current_profile.name = profile.name;
+                        current_profile.description = profile.description;
+                        must_notify = true;
+                    }
+                }
+            }
+        }
+        must_notify
+    }
+
+    /// Merge the current variables with the new ones
+    /// 
+    /// Returns true if any merge occurred and project should notify listeners
+    pub(crate) fn update_variables(&mut self, variables: Vec<WorkspaceVariable>) -> bool{
+        let mut must_notify = false;
+        for variable in variables {
+            let pos_existing = self.profiles.iter().position(|p| p.id == variable.id);
+            match pos_existing {
+                None => {
+                    self.variables.push(variable);
+                    must_notify = true;
+                }
+                Some(pos) => {
+                    let current_profile = self.variables.get_mut(pos).unwrap();
+                    if current_profile != &variable {
+                        current_profile.name = variable.name;
+                        current_profile.description = variable.description;
+                        must_notify = true;
+                    }
+                }
+            }
+        }
+        must_notify
+    }
+
     pub fn from_file(file_vars: &Variables) -> Self {
         let profiles = file_vars
             .profiles
@@ -29,14 +79,14 @@ impl WorkspaceVariables {
                     .collect::<HashMap<Uuid, Option<String>>>();
                 WorkspaceVariable {
                     id: file_var.id,
-                    name: file_var.name.clone(),
-                    description: file_var.description.clone(),
+                    name: SharedString::new(&file_var.name),
+                    description: SharedString::new(&file_var.description),
                     kind: WorkspaceVariableKind::from(&file_var.kind),
-                    reference_value: file_var.value.clone(),
+                    reference_value: SharedString::new(&file_var.value),
                     overrides,
                 }
             })
-            .collect();
+            .collect::<Vec<WorkspaceVariable>>();
 
         WorkspaceVariables {
             variables,
@@ -44,7 +94,7 @@ impl WorkspaceVariables {
         }
     }
 
-    pub fn get_file(&self) -> Variables {
+    pub fn to_file(&self) -> Variables {
         let profiles = self
             .profiles
             .iter()
@@ -53,6 +103,7 @@ impl WorkspaceVariables {
 
         let mut variables = vec![];
         for workspace_var in &self.variables {
+            let workspace_var = workspace_var;
             let overrides = workspace_var
                 .overrides
                 .iter()
@@ -61,10 +112,10 @@ impl WorkspaceVariables {
                 .collect::<HashMap<Uuid, String>>();
             variables.push(Variable {
                 id: workspace_var.id,
-                name: workspace_var.name.clone(),
-                description: workspace_var.description.clone(),
+                name: workspace_var.name.to_string(),
+                description: workspace_var.description.to_string(),
                 kind: VariableKind::from(&workspace_var.kind),
-                value: workspace_var.reference_value.clone(),
+                value: workspace_var.reference_value.to_string(),
                 overrides,
             });
         }
@@ -79,10 +130,10 @@ impl WorkspaceVariables {
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct WorkspaceVariable {
     pub id: Uuid,
-    pub name: String,
-    pub description: String,
+    pub name: SharedString,
+    pub description: SharedString,
     pub kind: WorkspaceVariableKind,
-    pub reference_value: String,
+    pub reference_value: SharedString,
     pub overrides: HashMap<Uuid, Option<String>>,
 }
 
@@ -113,7 +164,7 @@ impl From<&WorkspaceVariableKind> for VariableKind {
     }
 }
 
-#[derive(Eq, Ord, Clone, Debug)]
+#[derive(Eq, PartialEq, Ord, Clone, Debug)]
 pub struct WorkspaceProfile {
     pub id: Uuid,
     pub name: SharedString,
@@ -135,12 +186,6 @@ impl WorkspaceProfile {
             name: self.name.to_string(),
             description: self.description.to_string(),
         }
-    }
-}
-
-impl PartialEq for WorkspaceProfile {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id || self.name == other.name
     }
 }
 

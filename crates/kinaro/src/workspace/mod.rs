@@ -1,18 +1,19 @@
 use crate::workspace::endpoint::WorkspaceEndpoint;
 use crate::workspace::error::{ProjectError, Result, WorkspaceError};
 use crate::workspace::test::WorkspaceTestsContainer;
-use crate::workspace::variable::WorkspaceVariables;
+use crate::workspace::variable::{WorkspaceProfile, WorkspaceVariable, WorkspaceVariables};
 use chrono::{DateTime, Local};
-use gpui::{actions, Action, App, Entity, EventEmitter, SharedString, Window};
+use gpui::{Action, App, AsyncWindowContext, Entity, EventEmitter, SharedString, Window, actions};
 use gpui::{AppContext, Context};
-use gpui_component::notification::Notification;
 use gpui_component::WindowExt;
+use gpui_component::notification::Notification;
 use log::{debug, error, warn};
 use project_file::{ProjectFile, ProjectFileError};
 use serde::{Deserialize, Serialize};
 use settings::GlobalSettings;
 use std::collections::HashMap;
 use std::fs;
+use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -88,7 +89,7 @@ impl Workspace {
         let projects: HashMap<Uuid, Entity<WorkspaceProject>> = projects
             .into_iter()
             .map(|mut project| {
-                project.load();
+                project.load(cx);
                 let project_id = project.id;
                 // If active project and loading failed, reset active project
                 if Some(project_id) == active_project_id && !project.is_loaded() {
@@ -246,7 +247,6 @@ impl Workspace {
     }
 }
 
-
 ///// WORKSPACE PROJECTS ACTIONS /////
 actions!(project, [ShowProfilesPanel]);
 
@@ -315,8 +315,33 @@ impl WorkspaceProject {
             _ => panic!("Tried to read an unloaded project"),
         }
     }
-    
-    fn load(&mut self) {
+
+    /// Returns a reference to the data held by the project.
+    /// Care should be taken to check the project status as this method will panic if the project is not loaded
+    pub fn data_mut(&mut self) -> &mut WorkspaceProjectData {
+        match &mut self.data_status {
+            WorkspaceProjectDataStatus::Loaded(data) => data,
+            _ => panic!("Tried to read an unloaded project"),
+        }
+    }
+
+    pub fn update_variables_and_profiles(
+        &mut self,
+        profiles: Vec<WorkspaceProfile>,
+        variables: Vec<WorkspaceVariable>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let project_data = self.data_mut();
+        if project_data.variables.update_variables(variables)
+            || project_data.variables.update_profiles(profiles)
+        {
+            cx.emit(WorkspaceProjectEvent::ProfilesModified);
+            self.save(window, cx);
+        }
+    }
+
+    fn load(&mut self, cx: &mut App) {
         if !self.path.exists() {
             warn!("Could not find project at: {}", self.path.to_string_lossy());
             self.data_status = WorkspaceProjectDataStatus::Moved;
@@ -402,8 +427,8 @@ impl WorkspaceProject {
         }
         cx.spawn_in(window, async move |this, cx| {
             if let Some(this) = this.upgrade() {
-                if let Err(err) = this.update(cx, |this, _| {
-                    let project_file = this.get_file();
+                if let Err(err) = this.update(cx, |this, cx| {
+                    let project_file = this.to_file();
                     project_file
                         .save(&this.path)
                         .map_err(|e| WorkspaceError::from(e))?;
@@ -420,11 +445,11 @@ impl WorkspaceProject {
         .detach();
     }
 
-    fn get_file(&self) -> ProjectFile {
+    fn to_file(&self) -> ProjectFile {
         let data = self.data();
-        let variables = data.variables.get_file();
-        let endpoints = data.endpoints.iter().map(|e| e.get_file()).collect();
-        let tests = data.tests.get_file();
+        let variables = data.variables.to_file();
+        let endpoints = data.endpoints.iter().map(|e| e.to_file()).collect();
+        let tests = data.tests.to_file();
         let modified = Local::now();
 
         ProjectFile {
