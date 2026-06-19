@@ -6,7 +6,7 @@ mod variable;
 pub use {
     endpoint::{Endpoint, HttpMethod, RestParameter},
     error::ProjectFileError,
-    project_file::ProjectFile,
+    ki_project::ProjectFile,
     test::{
         test_case::{TestCase, TestCaseInfo}, test_step::{TestStep, TestStepInfo},
         test_suite::{TestSuite, TestSuiteInfo},
@@ -16,8 +16,8 @@ pub use {
     variable::{Profile, Variable, VariableKind, Variables},
 };
 
-mod project_file {
-    use kutils::java_date_format;
+mod ki_project {
+    use ki_utils::java_date_format;
     use crate::endpoint::Endpoint;
     use crate::error::{ProjectFileError, Result};
     use crate::test::TestsContainer;

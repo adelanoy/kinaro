@@ -9,8 +9,8 @@ use gpui_component::button::{Button, ButtonVariants, Toggle};
 use gpui_component::resizable::{h_resizable, resizable_panel};
 use gpui_component::tab::{Tab, TabBar};
 use gpui_component::{h_flex, v_flex, IconName, Root, Sizable};
-use kassets::icon::IconAsset;
-use settings::app_state::AppState;
+use ki_assets::icon::IconAsset;
+use ki_settings::app_state::AppState;
 
 pub struct WorkspaceView {
     _workspace: Entity<Workspace>,

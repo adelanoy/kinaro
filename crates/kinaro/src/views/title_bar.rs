@@ -2,7 +2,7 @@ use gpui::*;
 use gpui_component::label::Label;
 use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable, StyledExt, Theme, ThemeMode, TitleBar};
-use settings::app_state::AppState;
+use ki_settings::app_state::AppState;
 
 pub struct AppTitleBar {}
 

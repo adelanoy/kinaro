@@ -1,6 +1,6 @@
 use gpui::SharedString;
 use gpui_component::select::SelectItem;
-use project_file::{Profile, Variable, VariableKind, Variables};
+use ki_project::{Profile, Variable, VariableKind, Variables};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;

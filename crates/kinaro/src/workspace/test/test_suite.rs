@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::workspace::test::{test_case::WorkspaceTestCase, WorkspaceTestInfo};
-use project_file::TestSuite;
+use ki_project::TestSuite;
 
 #[derive(Clone, Debug)]
 pub struct WorkspaceTestSuite {

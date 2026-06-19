@@ -1,5 +1,5 @@
 [package]
-name = "kassets"
+name = "ki_assets"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -7,7 +7,7 @@ authors.workspace = true
 [dependencies]
 #Internals
 log.workspace = true
-settings.workspace = true
+ki_settings.workspace = true
 
 # Externals
 gpui.workspace = true

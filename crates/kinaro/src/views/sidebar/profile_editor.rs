@@ -13,6 +13,7 @@ use gpui_component::{
     Sizable,
     WindowExt,
 };
+use gpui_component::separator::Separator;
 use uuid::Uuid;
 
 pub struct ProfileVariableEditor {
@@ -124,6 +125,7 @@ impl ProfileVariableEditor {
                                             .icon(IconName::Delete),
                                     ),
                             )
+                            .child(Separator::horizontal())
                             .child("Edit Variables:")
                             .child(DataTable::new(&variables_table_state))
                             .child(

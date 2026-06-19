@@ -1,5 +1,5 @@
 [package]
-name = "settings"
+name = "ki_settings"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

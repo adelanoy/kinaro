@@ -1,4 +1,4 @@
-use project_file::{Endpoint, HttpMethod, RestParameter};
+use ki_project::{Endpoint, HttpMethod, RestParameter};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

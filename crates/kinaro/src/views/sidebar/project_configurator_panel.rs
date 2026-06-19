@@ -5,7 +5,7 @@ use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::select::{Select, SelectEvent, SelectState};
 use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, IconName, IndexPath, Sizable};
-use kassets::icon::IconAsset;
+use ki_assets::icon::IconAsset;
 
 pub(super) struct ProjectConfigurator {
     focus_handle: FocusHandle,

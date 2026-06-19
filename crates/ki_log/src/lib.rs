@@ -6,6 +6,10 @@ use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use std::env;
 use std::path::PathBuf;
+use log4rs::filter::Response;
+use log::Record;
+
+const FILTERED_TARGETS: &[&str] = &["kinaro", "ki_utils", "ki_assets", "ki_project", "ki_settings"];
 
 const LOG_FILE: &str = "kinaro.log";
 
@@ -35,8 +39,8 @@ pub fn init(config_dir: &PathBuf) -> Result<()> {
         .build(file_path)?;
 
     let config = Config::builder()
-        .appender(Appender::builder().build("console", Box::new(console_appender)))
-        .appender(Appender::builder().build("file", Box::new(file_appender)))
+        .appender(Appender::builder().filter(Box::new(KinaroFilter)).build("console", Box::new(console_appender)))
+        .appender(Appender::builder().filter(Box::new(KinaroFilter)).build("file", Box::new(file_appender)))
         .build(
             Root::builder()
                 .appenders(["console", "file"])
@@ -45,6 +49,19 @@ pub fn init(config_dir: &PathBuf) -> Result<()> {
 
     log4rs::init_config(config)?;
     Ok(())
+}
+
+#[derive(Debug)]
+struct KinaroFilter;
+
+impl log4rs::filter::Filter for KinaroFilter {
+    fn filter(&self, record: &Record) -> Response {
+        if FILTERED_TARGETS.contains(&record.target()) {
+            Response::Accept
+        } else {
+            Response::Reject
+        }
+    }
 }
 
 fn standard_encoder() -> PatternEncoder {

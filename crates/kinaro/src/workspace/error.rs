@@ -1,4 +1,4 @@
-use project_file::ProjectFileError;
+use ki_project::ProjectFileError;
 use std::io;
 use std::path::PathBuf;
 use uuid::Uuid;

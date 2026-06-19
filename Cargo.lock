@@ -3310,18 +3310,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kassets"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "gpui",
- "gpui-component",
- "log",
- "rust-embed",
- "settings",
-]
-
-[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3339,6 +3327,62 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
+name = "ki_assets"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gpui",
+ "gpui-component",
+ "ki_settings",
+ "log",
+ "rust-embed",
+]
+
+[[package]]
+name = "ki_log"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "log4rs",
+]
+
+[[package]]
+name = "ki_project"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "ki_utils",
+ "log",
+ "serde",
+ "serde_yaml",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
+name = "ki_settings"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "gpui",
+ "gpui-component",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
+name = "ki_utils"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+]
+
+[[package]]
 name = "kinaro"
 version = "0.1.0"
 dependencies = [
@@ -3347,24 +3391,15 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui_platform",
- "kassets",
- "klog",
+ "ki_assets",
+ "ki_log",
+ "ki_project",
+ "ki_settings",
  "log",
- "project_file",
  "serde",
  "serde_json",
- "settings",
  "thiserror 2.0.18",
  "uuid",
-]
-
-[[package]]
-name = "klog"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "log",
- "log4rs",
 ]
 
 [[package]]
@@ -3396,14 +3431,6 @@ dependencies = [
  "arrayvec",
  "euclid",
  "smallvec",
-]
-
-[[package]]
-name = "kutils"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "serde",
 ]
 
 [[package]]
@@ -4934,19 +4961,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "project_file"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "kutils",
- "log",
- "serde",
- "serde_yaml",
- "thiserror 2.0.18",
- "uuid",
-]
-
-[[package]]
 name = "psm"
 version = "0.1.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5900,20 +5914,6 @@ dependencies = [
  "ryu",
  "serde",
  "unsafe-libyaml",
-]
-
-[[package]]
-name = "settings"
-version = "0.1.0"
-dependencies = [
- "dirs",
- "gpui",
- "gpui-component",
- "log",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "uuid",
 ]
 
 [[package]]

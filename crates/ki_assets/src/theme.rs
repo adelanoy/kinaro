@@ -2,7 +2,7 @@ use gpui::App;
 use std::borrow::Cow;
 use gpui_component::{Theme, ThemeRegistry};
 use log::warn;
-use settings::app_state::AppState;
+use ki_settings::app_state::AppState;
 
 #[derive(Debug)]
 pub enum ThemeAsset {

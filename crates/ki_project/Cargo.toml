@@ -1,12 +1,12 @@
 [package]
-name = "project_file"
+name = "ki_project"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
 [dependencies]
 #Internals
-kutils.workspace = true
+ki_utils.workspace = true
 
 # Externals
 serde.workspace = true

@@ -7,9 +7,9 @@ pub(crate) mod workspace;
 use crate::views::WorkspaceView;
 use gpui::*;
 use gpui_component::Root;
-use kassets::Assets;
+use ki_assets::Assets;
 use log::info;
-use settings::app_state::AppState;
+use ki_settings::app_state::AppState;
 use std::path::PathBuf;
 
 fn main() {
@@ -35,15 +35,15 @@ fn init_app(config_dir: PathBuf, cx: &mut App) {
     if !config_dir.exists() {
         std::fs::create_dir_all(&config_dir).expect("config_dir created");
     }
-    if let Err(err) = klog::init(&config_dir) {
+    if let Err(err) = ki_log::init(&config_dir) {
         eprintln!("Failed to initialize logger: {}", err);
     }
 
-    settings::init(config_dir, cx);
+    ki_settings::init(config_dir, cx);
 
     info!("Initializing component lib");
     gpui_component::init(cx);
-    kassets::init(cx);
+    ki_assets::init(cx);
 }
 
 fn build_window_options(cx: &mut App) -> WindowOptions {

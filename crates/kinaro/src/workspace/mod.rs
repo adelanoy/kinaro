@@ -3,17 +3,16 @@ use crate::workspace::error::{ProjectError, Result, WorkspaceError};
 use crate::workspace::test::WorkspaceTestsContainer;
 use crate::workspace::variable::{WorkspaceProfile, WorkspaceVariable, WorkspaceVariables};
 use chrono::{DateTime, Local};
-use gpui::{Action, App, AsyncWindowContext, Entity, EventEmitter, SharedString, Window, actions};
+use gpui::{actions, Action, App, Entity, EventEmitter, SharedString, Window};
 use gpui::{AppContext, Context};
-use gpui_component::WindowExt;
 use gpui_component::notification::Notification;
+use gpui_component::WindowExt;
+use ki_project::{ProjectFile, ProjectFileError};
+use ki_settings::GlobalSettings;
 use log::{debug, error, warn};
-use project_file::{ProjectFile, ProjectFileError};
 use serde::{Deserialize, Serialize};
-use settings::GlobalSettings;
 use std::collections::HashMap;
 use std::fs;
-use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -89,7 +88,7 @@ impl Workspace {
         let projects: HashMap<Uuid, Entity<WorkspaceProject>> = projects
             .into_iter()
             .map(|mut project| {
-                project.load(cx);
+                project.load();
                 let project_id = project.id;
                 // If active project and loading failed, reset active project
                 if Some(project_id) == active_project_id && !project.is_loaded() {
@@ -341,7 +340,7 @@ impl WorkspaceProject {
         }
     }
 
-    fn load(&mut self, cx: &mut App) {
+    fn load(&mut self) {
         if !self.path.exists() {
             warn!("Could not find project at: {}", self.path.to_string_lossy());
             self.data_status = WorkspaceProjectDataStatus::Moved;
@@ -427,13 +426,13 @@ impl WorkspaceProject {
         }
         cx.spawn_in(window, async move |this, cx| {
             if let Some(this) = this.upgrade() {
-                if let Err(err) = this.update(cx, |this, cx| {
-                    let project_file = this.to_file();
-                    project_file
+                if let Err(err) = this.update(cx, |this, _| {
+                    let project = this.to_file();
+                    project
                         .save(&this.path)
                         .map_err(|e| WorkspaceError::from(e))?;
                     // Update the 'modified' attribute if save was successful
-                    this.modified = project_file.modified;
+                    this.modified = project.modified;
                     Ok::<(), WorkspaceError>(())
                 }) {
                     _ = cx.update(|window, cx| {
@@ -496,10 +495,10 @@ impl WorkspaceProjectData {
         }
     }
 
-    fn from_file(project_file: &ProjectFile) -> WorkspaceProjectData {
-        let variables = WorkspaceVariables::from_file(&project_file.variables);
-        let endpoints = WorkspaceEndpoint::from_file(&project_file.endpoints);
-        let tests = WorkspaceTestsContainer::from_file(&project_file.tests);
+    fn from_file(project: &ProjectFile) -> WorkspaceProjectData {
+        let variables = WorkspaceVariables::from_file(&project.variables);
+        let endpoints = WorkspaceEndpoint::from_file(&project.endpoints);
+        let tests = WorkspaceTestsContainer::from_file(&project.tests);
 
         Self {
             variables,

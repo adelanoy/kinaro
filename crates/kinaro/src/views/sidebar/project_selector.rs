@@ -10,8 +10,8 @@ use gpui_component::input::{Input, InputState};
 use gpui_component::menu::DropdownMenu;
 use gpui_component::notification::Notification;
 use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, IconName, Sizable, WindowExt};
-use kassets::icon::IconAsset;
-use settings::app_state::AppState;
+use ki_assets::icon::IconAsset;
+use ki_settings::app_state::AppState;
 use std::path::PathBuf;
 
 pub(super) struct ProjectSelector {
@@ -285,7 +285,7 @@ fn on_create_project(
                                     Button::new("file")
                                         .ghost()
                                         .icon(IconName::FolderOpen)
-                                        .on_click(prompt_to_save_project_file(
+                                        .on_click(prompt_to_save_ki_project(
                                             path_input.clone(),
                                             cx,
                                         )),
@@ -314,8 +314,8 @@ fn on_create_project(
                 let workspace = workspace.clone();
                 move |_, window, cx| {
                     let project_name = name.read(cx).value().to_string();
-                    let project_file = PathBuf::from(path.read(cx).value().to_string());
-                    let project_dir = project_file.parent();
+                    let ki_project = PathBuf::from(path.read(cx).value().to_string());
+                    let project_dir = ki_project.parent();
                     if project_dir.is_none() || !project_dir.unwrap().exists() {
                         window.push_notification(
                             Notification::error("Cannot create project: invalid location"),
@@ -325,7 +325,7 @@ fn on_create_project(
                     }
 
                     if let Err(err) = workspace.update(cx, |workspace, cx| {
-                        workspace.create_project(project_name, project_file, cx)
+                        workspace.create_project(project_name, ki_project, cx)
                     }) {
                         window.push_notification(
                             Notification::error(format!("Error saving file: {}", err)),
@@ -338,7 +338,7 @@ fn on_create_project(
     });
 }
 
-fn prompt_to_save_project_file(
+fn prompt_to_save_ki_project(
     path_input: Entity<InputState>,
     cx: &mut App,
 ) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {

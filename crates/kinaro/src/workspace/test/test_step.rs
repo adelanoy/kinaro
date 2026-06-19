@@ -1,5 +1,5 @@
 use crate::workspace::test::WorkspaceTestInfo;
-use project_file::TestStep;
+use ki_project::TestStep;
 
 #[derive(Clone, Debug)]
 pub struct WorkspaceTestStep {

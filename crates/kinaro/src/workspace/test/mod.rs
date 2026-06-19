@@ -1,5 +1,5 @@
 use crate::workspace::test::test_suite::WorkspaceTestSuite;
-use project_file::{TestInfo, TestsContainer};
+use ki_project::{TestInfo, TestsContainer};
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
 
