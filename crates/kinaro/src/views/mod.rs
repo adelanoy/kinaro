@@ -31,7 +31,11 @@ impl WorkspaceView {
         let workspace = cx.new(|cx| Workspace::init(cx));
         let project_sidebar = cx.new(|cx| ProjectSidebar::new(workspace.clone(), window, cx));
         let title_bar = cx.new(|_| AppTitleBar::new());
-        let sidebar_width = AppState::read(cx, |app_state| app_state.sidebar.width);
+        let mut sidebar_width = AppState::read(cx, |app_state| app_state.sidebar.width);
+        let max_sidebar_width = window.bounds().size.width.as_f32() * 0.8;
+        if sidebar_width > max_sidebar_width {
+            sidebar_width = max_sidebar_width;
+        }
 
         Self {
             _workspace: workspace,
@@ -50,6 +54,7 @@ impl Render for WorkspaceView {
         } else {
             IconAsset::SidebarOpen
         };
+        let max_sidebar_width = window.bounds().size.width * 0.8;
 
         div()
             .id("kinaro-root")
@@ -72,7 +77,7 @@ impl Render for WorkspaceView {
                             resizable_panel()
                                 .visible(!self.sidebar_collapsed)
                                 .size(self.sidebar_width)
-                                .size_range(px(250.0)..px(500.0))
+                                .size_range(px(250.0)..max_sidebar_width)
                                 .child(self.project_sidebar.clone()),
                         )
                         .child(

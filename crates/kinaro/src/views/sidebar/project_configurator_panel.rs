@@ -1,17 +1,13 @@
-use crate::views::sidebar::profile_editor::ProfileVariableEditor;
 use crate::workspace::variable::WorkspaceProfile;
-use crate::workspace::{ShowProfilesPanel, Workspace, WorkspaceProject, WorkspaceProjectEvent};
+use crate::workspace::{Workspace, WorkspaceProject, WorkspaceProjectEvent};
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::select::{Select, SelectEvent, SelectState};
-use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, IconName, IndexPath, Sizable};
-use ki_assets::icon::IconAsset;
+use gpui_component::{h_flex, v_flex, ActiveTheme, IndexPath, Sizable};
 
 pub(super) struct ProjectConfigurator {
     focus_handle: FocusHandle,
     active_project: Option<Entity<WorkspaceProject>>,
     profile_select_state: Entity<SelectState<Vec<WorkspaceProfile>>>,
-    profile_variable_editor: Entity<ProfileVariableEditor>,
     _profile_change_sub: Option<Subscription>,
 }
 
@@ -35,14 +31,10 @@ impl ProjectConfigurator {
         })
         .detach();
 
-        let profile_variable_editor =
-            cx.new(|cx| ProfileVariableEditor::new(active_project.clone(), window, cx));
-
         let mut this = Self {
             focus_handle: cx.focus_handle(),
             active_project,
             profile_select_state,
-            profile_variable_editor,
             _profile_change_sub: None,
         };
 
@@ -56,8 +48,6 @@ impl ProjectConfigurator {
             |this, workspace, event, window, cx| match event {
                 _ => {
                     let active_project = workspace.read(cx).active_project();
-                    this.profile_variable_editor
-                        .update(cx, |this, cx| this.set_project(active_project.clone(), cx));
                     this.active_project = active_project;
                     this.update_profiles_select_state(window, cx);
                     this.setup_profile_change_subscription(window, cx);
@@ -89,7 +79,11 @@ impl ProjectConfigurator {
         let (profiles, profile_index) = match active_project {
             Some(active_project) => active_project.read_with(cx, |project, _| {
                 let active_profile_id = project.active_profile();
-                let profiles = project.data().variables.profiles.iter()
+                let profiles = project
+                    .data()
+                    .variables
+                    .profiles
+                    .iter()
                     .map(|p| p.clone())
                     .collect::<Vec<WorkspaceProfile>>();
                 let selected_profile_index = profiles
@@ -106,28 +100,13 @@ impl ProjectConfigurator {
             state.set_selected_index(Some(IndexPath::new(profile_index)), window, cx);
         });
     }
-
-    fn on_edit_profiles_variables_action(
-        &mut self,
-        _: &ShowProfilesPanel,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.active_project.is_none() {
-            return;
-        };
-        self.profile_variable_editor
-            .update(cx, |this, cx| this.show(window, cx));
-    }
 }
 
 impl Render for ProjectConfigurator {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let disabled = self.active_project.is_none();
-
         v_flex()
             .track_focus(&self.focus_handle)
-            .on_action(cx.listener(Self::on_edit_profiles_variables_action))
             .w_full()
             .child(
                 h_flex()
@@ -137,54 +116,11 @@ impl Render for ProjectConfigurator {
                     .child("Project configuration"),
             )
             .child(
-                h_flex()
-                    .text_xs()
-                    .gap_x_2()
-                    .pb_2()
-                    .child(
-                        Button::new("btn-profiles-var")
-                            .secondary()
-                            .label("Profiles")
-                            .icon(IconAsset::Variable)
-                            .with_size(gpui_component::Size::Small)
-                            .disabled(disabled)
-                            .tooltip("Edit the profiles and variables for this project")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.on_edit_profiles_variables_action(
-                                    &ShowProfilesPanel,
-                                    window,
-                                    cx,
-                                );
-                            })),
-                    )
-                    .child(
-                        Select::new(&self.profile_select_state)
-                            .with_size(gpui_component::Size::Small)
-                            .disabled(disabled),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .w_full()
-                    .gap_x_2()
-                    .child(
-                        Button::new("btn-endpoint-conf")
-                            .secondary()
-                            .icon(IconName::FolderOpen)
-                            .label("Endpoints")
-                            .flex_1()
-                            .with_size(gpui_component::Size::Small)
-                            .disabled(disabled),
-                    )
-                    .child(
-                        Button::new("btn-project-conf")
-                            .secondary()
-                            .icon(IconName::FolderOpen)
-                            .label("Configuration")
-                            .flex_1()
-                            .with_size(gpui_component::Size::Small)
-                            .disabled(disabled),
-                    ),
+                h_flex().text_xs().gap_x_2().pb_2().child("Profile").child(
+                    Select::new(&self.profile_select_state)
+                        .with_size(gpui_component::Size::Small)
+                        .disabled(disabled),
+                ),
             )
     }
 }

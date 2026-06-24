@@ -1,3 +1,3 @@
 use gpui::actions;
 
-actions!(test, [TestAction]);
+actions!(global, [EscAction]);

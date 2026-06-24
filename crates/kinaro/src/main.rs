@@ -11,6 +11,7 @@ use ki_assets::Assets;
 use log::info;
 use ki_settings::app_state::AppState;
 use std::path::PathBuf;
+use crate::actions::EscAction;
 
 fn main() {
     let config_dir = dirs::config_local_dir().unwrap().join("Kinaro_gpui");
@@ -44,6 +45,10 @@ fn init_app(config_dir: PathBuf, cx: &mut App) {
     info!("Initializing component lib");
     gpui_component::init(cx);
     ki_assets::init(cx);
+
+    cx.bind_keys([
+        KeyBinding::new("escape", EscAction, None),
+    ]);
 }
 
 fn build_window_options(cx: &mut App) -> WindowOptions {

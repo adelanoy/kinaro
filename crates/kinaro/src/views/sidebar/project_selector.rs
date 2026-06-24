@@ -45,6 +45,7 @@ impl Render for ProjectSelector {
         };
 
         div()
+            .p_2()
             .on_action(cx.listener(on_rename_project))
             .on_action(cx.listener(on_open_project))
             .on_action(cx.listener(on_switch_project))
