@@ -104,28 +104,24 @@ impl ProjectConfigurationTab for ProfileEditor {
     }
 
     fn new(
-        active_project: Option<Entity<WorkspaceProject>>,
+        project: Entity<WorkspaceProject>,
         window: &mut Window,
         cx: &mut App,
     ) -> Entity<impl Render> {
         cx.new(|cx| {
-            let mut table_state = None;
-            let mut _table_subscriptions = None;
-            if let Some(project) = active_project {
-                let profiles_table_state = cx.new(|cx| {
-                    TableState::new(
-                        ProfileDataTableDelegate::new(project, window, cx),
-                        window,
-                        cx,
-                    )
-                    .row_selectable(true)
-                    .col_selectable(false)
-                    .cell_selectable(true)
-                });
-                _table_subscriptions =
-                    Some(cx.subscribe_in(&profiles_table_state, window, Self::on_table_event));
-                table_state = Some(profiles_table_state);
-            };
+            let profiles_table_state = cx.new(|cx| {
+                TableState::new(
+                    ProfileDataTableDelegate::new(project, window, cx),
+                    window,
+                    cx,
+                )
+                .row_selectable(true)
+                .col_selectable(false)
+                .cell_selectable(true)
+            });
+            let _table_subscriptions =
+                Some(cx.subscribe_in(&profiles_table_state, window, Self::on_table_event));
+            let table_state = Some(profiles_table_state);
 
             Self {
                 focus_handle: cx.focus_handle(),

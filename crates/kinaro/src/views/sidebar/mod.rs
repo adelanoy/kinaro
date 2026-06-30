@@ -1,33 +1,47 @@
+mod project_configuration;
 mod project_configurator_panel;
 mod project_selector;
-mod project_configuration;
 
 use crate::views::sidebar::project_configurator_panel::ProjectConfigurator;
 use crate::views::sidebar::project_selector::ProjectSelector;
-use crate::workspace::Workspace;
-use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window};
+use crate::workspace::{Workspace, WorkspaceEvent};
+use gpui::prelude::FluentBuilder;
+use gpui::*;
 use gpui_component::separator::Separator;
 use gpui_component::v_flex;
-use crate::views::sidebar::project_configuration::ProjectConfigurationTabs;
 
 pub struct ProjectSidebar {
     project_selector: Entity<ProjectSelector>,
-    project_configurator: Entity<ProjectConfigurator>,
-    project_config_tabs: Entity<ProjectConfigurationTabs>,
+    project_configurator: Option<Entity<ProjectConfigurator>>,
+    _workspace_sub: Subscription,
 }
 
 impl ProjectSidebar {
     pub fn new(workspace: Entity<Workspace>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let project_selector = cx.new(|cx| ProjectSelector::new(workspace.clone(), cx));
-        let project_configurator =
-            cx.new(|cx| ProjectConfigurator::new(workspace.clone(), window, cx));
-        let project_config_tabs =
-            cx.new(|cx| ProjectConfigurationTabs::new(workspace, window, cx));
+        let _workspace_sub = cx.subscribe_in(
+            &workspace,
+            window,
+            |this, workspace, event, window, cx| match event {
+                WorkspaceEvent::ProjectsChanged => match workspace.read(cx).active_project() {
+                    None => this.project_configurator = None,
+                    Some(project) => {
+                        this.project_configurator =
+                            Some(cx.new(|cx| ProjectConfigurator::new(project, window, cx)))
+                    }
+                },
+                _ => {}
+            },
+        );
+        let project_configurator = match workspace.read(cx).active_project() {
+            None => None,
+            Some(project) => Some(cx.new(|cx| ProjectConfigurator::new(project, window, cx))),
+        };
 
         Self {
             project_selector,
             project_configurator,
-            project_config_tabs
+            _workspace_sub,
         }
     }
 }
@@ -40,8 +54,18 @@ impl Render for ProjectSidebar {
             .gap_y_2()
             .child(self.project_selector.clone())
             .child(Separator::horizontal())
-            .child(self.project_configurator.clone())
-            .child(Separator::horizontal())
-            .child(self.project_config_tabs.clone())
+            .when_some(
+                self.project_configurator.clone(),
+                |div, project_configurator| div.child(project_configurator),
+            )
+            .when_none(&self.project_configurator, |this| {
+                this.child(
+                    v_flex()
+                        .h_full()
+                        .items_center()
+                        .justify_center()
+                        .child("Select or create a project"),
+                )
+            })
     }
 }

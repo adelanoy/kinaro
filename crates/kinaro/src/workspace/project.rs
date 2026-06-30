@@ -16,7 +16,10 @@ pub type Result<T> = std::result::Result<T, ProjectError>;
 
 ///// WORKSPACE PROJECT EVENTS /////
 pub enum WorkspaceProjectEvent {
-    ProfilesModified,
+    /// Emitted when the active profile has been modified
+    ActiveProfileChanged(Option<Uuid>),
+    /// Emitted when the list has been modified (profile added, removed, modified...)
+    ProfilesChanged,
 }
 
 impl EventEmitter<WorkspaceProjectEvent> for WorkspaceProject {}
@@ -90,6 +93,13 @@ impl WorkspaceProject {
     }
 
     /// Profile Management
+
+    /// Adds a profile with the given name
+    ///
+    /// if profiles were successfully changed, a [`WorkspaceProjectEvent::ProfilesChanged`] event will be emitted
+    ///
+    /// # Result
+    /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
     pub fn add_profile(
         &mut self,
         index: Option<usize>,
@@ -101,11 +111,22 @@ impl WorkspaceProject {
             return Err(ProjectError::Invalid);
         }
         let profiles = self.data_mut().variables.add_profile(index, name);
-        self.save(WorkspaceProjectEvent::ProfilesModified, window, cx);
+        self.save(WorkspaceProjectEvent::ProfilesChanged, window, cx);
 
         Ok(profiles)
     }
 
+    /// Duplicates a profile, attributing a new id and copying all fields. Name is appended with *_copy*.
+    ///
+    /// The copy is placed right after the original
+    ///
+    /// if profile was successfully removed, a [`WorkspaceProjectEvent::ProfilesChanged`] event will be emitted.
+    /// Additionally, a [`WorkspaceProjectEvent::ActiveProfileChanged`] event will also be emitted if the profile was active, and the active profile set to *None*
+    ///
+    /// # Result
+    /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
+    ///
+    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
     pub fn delete_profile(
         &mut self,
         index: usize,
@@ -115,29 +136,25 @@ impl WorkspaceProject {
         if !self.is_loaded() {
             return Err(ProjectError::Invalid);
         }
-        let result = self.data_mut().variables.delete_profile(index);
-        if result.is_ok() {
-            self.save(WorkspaceProjectEvent::ProfilesModified, window, cx);
+        let (profiles, removed_profile) = self.data_mut().variables.delete_profile(index)?;
+        self.save(WorkspaceProjectEvent::ProfilesChanged, window, cx);
+
+        // check if deleted profile was the active one
+        if Some(removed_profile.id) == self.active_profile {
+            self.switch_profile(None, cx);
         }
-        result
+
+        Ok(profiles)
     }
 
-    pub fn update_profile(
-        &mut self,
-        updated_profile: &WorkspaceProfile,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Result<Vec<WorkspaceProfile>> {
-        if !self.is_loaded() {
-            return Err(ProjectError::Invalid);
-        }
-        let result = self.data_mut().variables.update_profile(updated_profile);
-        if result.is_ok() {
-            self.save(WorkspaceProjectEvent::ProfilesModified, window, cx);
-        }
-        result
-    }
-
+    /// Deletes a profile a returns a copy of the new list and the removed profile, for further processing
+    ///
+    /// if profiles were successfully changed, a [`WorkspaceProjectEvent::ProfilesChanged`] event will be emitted
+    ///
+    /// # Result
+    /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
+    ///
+    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
     pub fn duplicate_profile(
         &mut self,
         row: usize,
@@ -149,11 +166,19 @@ impl WorkspaceProject {
         }
         let result = self.data_mut().variables.duplicate_profile(row);
         if result.is_ok() {
-            self.save(WorkspaceProjectEvent::ProfilesModified, window, cx);
+            self.save(WorkspaceProjectEvent::ProfilesChanged, window, cx);
         }
         result
     }
 
+    /// Moves a profile from one position to another
+    ///
+    /// if profiles were successfully changed, a [`WorkspaceProjectEvent::ProfilesChanged`] event will be emitted
+    ///
+    /// # Result
+    /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
+    ///
+    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
     pub fn move_profile(
         &mut self,
         row_from: usize,
@@ -166,7 +191,56 @@ impl WorkspaceProject {
         }
         let result = self.data_mut().variables.move_profile(row_from, row_to);
         if result.is_ok() {
-            self.save(WorkspaceProjectEvent::ProfilesModified, window, cx);
+            self.save(WorkspaceProjectEvent::ProfilesChanged, window, cx);
+        }
+        result
+    }
+
+    pub fn switch_profile(&mut self, profile_id: Option<Uuid>, cx: &mut Context<Self>) {
+        // TODO: Workspace should listen to active profile change to persist it
+        if profile_id == self.active_profile || !self.is_loaded() {
+            return;
+        }
+        match profile_id {
+            None => {
+                self.active_profile = None;
+                cx.emit(WorkspaceProjectEvent::ActiveProfileChanged(None));
+            }
+            Some(profile_id) => {
+                if self
+                    .data()
+                    .variables
+                    .profiles
+                    .iter()
+                    .any(|p| p.id == profile_id)
+                {
+                    self.active_profile = Some(profile_id);
+                    cx.emit(WorkspaceProjectEvent::ActiveProfileChanged(self.active_profile));
+                }
+            }
+        }
+    }
+
+    /// Merges a profile attributes
+    ///
+    /// if profile was successfully changed, a [`WorkspaceProjectEvent::ProfilesChanged`] event will be emitted
+    ///
+    /// # Result
+    /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
+    ///
+    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
+    pub fn update_profile(
+        &mut self,
+        updated_profile: &WorkspaceProfile,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<Vec<WorkspaceProfile>> {
+        if !self.is_loaded() {
+            return Err(ProjectError::Invalid);
+        }
+        let result = self.data_mut().variables.update_profile(updated_profile);
+        if result.is_ok() {
+            self.save(WorkspaceProjectEvent::ProfilesChanged, window, cx);
         }
         result
     }
@@ -269,9 +343,7 @@ impl WorkspaceProject {
                     this.modified = project.modified;
                     Ok::<(), ProjectError>(())
                 }) {
-                    _ = cx.update(|window, cx| {
-                        window.push_notification(err, cx)
-                    });
+                    _ = cx.update(|window, cx| window.push_notification(err, cx));
                 }
             }
         })

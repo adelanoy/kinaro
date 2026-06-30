@@ -16,7 +16,7 @@ impl ProjectConfigurationTab for VariableEditor {
     }
 
     fn new(
-        _active_project: Option<Entity<WorkspaceProject>>,
+        _active_project: Entity<WorkspaceProject>,
         _window: &mut Window,
         cx: &mut App,
     ) -> Entity<impl Render> {

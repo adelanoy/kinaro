@@ -17,22 +17,7 @@ pub struct WorkspaceVariables {
 impl WorkspaceVariables {}
 
 impl WorkspaceVariables {
-    pub(super) fn delete_profile(
-        &mut self,
-        index: usize,
-    ) -> project::Result<Vec<WorkspaceProfile>> {
-        if index > self.profiles.len() - 1 {
-            warn!(
-                "Failed to delete profile at row: {} (max: {})",
-                index,
-                self.profiles.len() - 1
-            );
-            return Err(ProjectError::ProfileNotFound.into());
-        }
-        self.profiles.remove(index);
-        Ok(self.profiles.clone())
-    }
-
+    /// Adds a profile with the given name
     pub(super) fn add_profile(
         &mut self,
         index: Option<usize>,
@@ -56,6 +41,32 @@ impl WorkspaceVariables {
         self.profiles.clone()
     }
 
+    /// Deletes a profile a returns a copy of the new list and the removed profile, for further processing 
+    /// # Result
+    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
+    pub(super) fn delete_profile(
+        &mut self,
+        index: usize,
+    ) -> project::Result<(Vec<WorkspaceProfile>, WorkspaceProfile)> {
+        if index > self.profiles.len() - 1 {
+            warn!(
+                "Failed to delete profile at row: {} (max: {})",
+                index,
+                self.profiles.len() - 1
+            );
+            return Err(ProjectError::ProfileNotFound.into());
+        }
+        let removed_profile = self.profiles.remove(index);
+        Ok((self.profiles.clone(), removed_profile))
+    }
+    
+    /// Duplicates a profile, attributing a new id and copying all fields. Name is appended with *_copy*.
+    /// 
+    /// The copy is placed right after the original
+    /// # Result
+    /// Returns a copy of the new profiles list
+    /// 
+    /// Returns a [`ProjectError::ProfileNotFound`] if the row is out of bound
     pub(super) fn duplicate_profile(
         &mut self,
         index: usize,
@@ -77,6 +88,32 @@ impl WorkspaceVariables {
         Ok(self.profiles.clone())
     }
 
+    /// Moves a profile from one position to another
+    ///
+    /// # Result
+    /// Returns a copy of the new profiles list
+    ///
+    /// Returns a [`ProjectError::ProfileNotFound`] if both indexes are identical, or if either one of them is out of bound
+    pub(crate) fn move_profile(
+        &mut self,
+        from_ix: usize,
+        to_ix: usize,
+    ) -> project::Result<Vec<WorkspaceProfile>> {
+        let max_ix = self.profiles.len() - 1;
+        if from_ix == to_ix || from_ix > max_ix || to_ix > max_ix {
+            return Err(ProjectError::ProfileNotFound.into());
+        }
+        let profile_to_move = self.profiles.remove(from_ix);
+        self.profiles.insert(to_ix, profile_to_move);
+        Ok(self.profiles.clone())
+    }
+    
+    /// Merges a profile attributes
+    ///
+    /// # Result
+    /// Returns a copy of the new profiles list
+    ///
+    /// Returns a [`ProjectError::ProfileNotFound`] if the profile could not be found by its id
     pub(super) fn update_profile(
         &mut self,
         updated_profile: &WorkspaceProfile,
@@ -97,20 +134,6 @@ impl WorkspaceVariables {
             profile.name = updated_profile.name.clone();
             profile.description = updated_profile.description.clone();
         }
-        Ok(self.profiles.clone())
-    }
-
-    pub(crate) fn move_profile(
-        &mut self,
-        from_ix: usize,
-        to_ix: usize,
-    ) -> project::Result<Vec<WorkspaceProfile>> {
-        let max_ix = self.profiles.len() - 1;
-        if from_ix == to_ix || from_ix > max_ix || to_ix > max_ix {
-            return Err(ProjectError::ProfileNotFound.into());
-        }
-        let profile_to_move = self.profiles.remove(from_ix);
-        self.profiles.insert(to_ix, profile_to_move);
         Ok(self.profiles.clone())
     }
 

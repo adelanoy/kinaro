@@ -1,10 +1,10 @@
 use crate::views::sidebar::project_configuration::profile_editor_tab::ProfileEditor;
 use crate::views::sidebar::project_configuration::project_tree_tab::ProjectTreeTab;
 use crate::views::sidebar::project_configuration::var_editor_tab::VariableEditor;
-use crate::workspace::{Workspace, WorkspaceProject};
+use crate::workspace::WorkspaceProject;
 use gpui::*;
 use gpui_component::tab::{Tab, TabBar};
-use gpui_component::{v_flex, Icon, Sizable};
+use gpui_component::{Icon, Sizable, v_flex};
 
 mod profile_editor_tab;
 mod project_tree_tab;
@@ -17,42 +17,18 @@ pub struct ProjectConfigurationTabs {
 
 impl ProjectConfigurationTabs {
     pub(super) fn new(
-        workspace: Entity<Workspace>,
+        project: Entity<WorkspaceProject>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let active_project = workspace.read(cx).active_project();
-
-        // On project change subscription
-        cx.subscribe_in(
-            &workspace,
-            window,
-            |this, workspace, event, window, cx| match event {
-                _ => {
-                    let active_project = match workspace.read(cx).active_project() {
-                        None => None,
-                        Some(project) => {
-                            if project.read(cx).is_loaded() {
-                                Some(project)
-                            } else {
-                                None
-                            }
-                        }
-                    };
-                    this.config_tabs = Self::build_tab_containers(active_project, window, cx);
-                }
-            },
-        )
-        .detach();
-
         Self {
             selected_tab_index: 0,
-            config_tabs: Self::build_tab_containers(active_project, window, cx),
+            config_tabs: Self::build_tab_containers(project, window, cx),
         }
     }
 
     fn build_tab_containers(
-        active_project: Option<Entity<WorkspaceProject>>,
+        active_project: Entity<WorkspaceProject>,
         window: &mut Window,
         cx: &mut App,
     ) -> Vec<Entity<ProjectConfigurationTabContainer>> {
@@ -84,7 +60,7 @@ struct ProjectConfigurationTabContainer {
 
 impl ProjectConfigurationTabContainer {
     fn container<T: ProjectConfigurationTab>(
-        active_project: Option<Entity<WorkspaceProject>>,
+        active_project: Entity<WorkspaceProject>,
         window: &mut Window,
         cx: &mut App,
     ) -> Entity<Self> {
@@ -106,7 +82,7 @@ trait ProjectConfigurationTab: Render {
     fn icon() -> impl Into<Icon>;
 
     fn new(
-        active_project: Option<Entity<WorkspaceProject>>,
+        active_project: Entity<WorkspaceProject>,
         window: &mut Window,
         cx: &mut App,
     ) -> Entity<impl Render>;

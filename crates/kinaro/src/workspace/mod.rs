@@ -66,6 +66,7 @@ pub struct RenameProject(pub Uuid, pub SharedString);
 ///// WORKSPACE EVENTS /////
 pub enum WorkspaceEvent {
     ProjectsChanged,
+    ActiveProjectChanged,
 }
 
 impl EventEmitter<WorkspaceEvent> for Workspace {}
@@ -147,21 +148,9 @@ impl Workspace {
         };
         if result.is_ok() {
             self.save(cx);
-            cx.emit(WorkspaceEvent::ProjectsChanged);
+            cx.emit(WorkspaceEvent::ActiveProjectChanged);
         }
         result
-    }
-
-    pub fn switch_profile(&mut self, profile_id: Option<Uuid>, cx: &mut Context<Self>) {
-        // TODO: move to project
-        if let Some(active_project) = self.active_project() {
-            active_project.update(cx, |project, cx| {
-                project.active_profile = profile_id;
-                cx.emit(WorkspaceProjectEvent::ProfilesModified);
-            });
-
-            self.save(cx);
-        }
     }
 
     pub fn remove_project(&mut self, project_id: Uuid, cx: &mut Context<Self>) {
