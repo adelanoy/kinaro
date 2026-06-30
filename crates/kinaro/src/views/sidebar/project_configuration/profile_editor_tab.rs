@@ -1,7 +1,7 @@
 use crate::actions::EscAction;
 use crate::views::sidebar::project_configuration::ProjectConfigurationTab;
-use crate::workspace::WorkspaceProject;
-use crate::workspace::variable::WorkspaceProfile;
+use crate::workspace::Project;
+use crate::workspace::variable::Profile;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
@@ -104,7 +104,7 @@ impl ProjectConfigurationTab for ProfileEditor {
     }
 
     fn new(
-        project: Entity<WorkspaceProject>,
+        project: Entity<Project>,
         window: &mut Window,
         cx: &mut App,
     ) -> Entity<impl Render> {
@@ -133,8 +133,8 @@ impl ProjectConfigurationTab for ProfileEditor {
 }
 
 pub struct ProfileDataTableDelegate {
-    active_project: Entity<WorkspaceProject>,
-    profiles: Vec<WorkspaceProfile>,
+    active_project: Entity<Project>,
+    profiles: Vec<Profile>,
     table_columns: Vec<Column>,
     edited_cell: Option<(usize, usize)>,
     selected_cell: Option<(usize, usize)>,
@@ -147,7 +147,7 @@ pub struct ProfileDataTableDelegate {
 
 impl ProfileDataTableDelegate {
     fn new(
-        active_project: Entity<WorkspaceProject>,
+        active_project: Entity<Project>,
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> Self {

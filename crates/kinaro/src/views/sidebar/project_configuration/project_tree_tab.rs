@@ -1,5 +1,5 @@
 use crate::views::sidebar::project_configuration::ProjectConfigurationTab;
-use crate::workspace::WorkspaceProject;
+use crate::workspace::Project;
 use gpui::{App, AppContext, Context, Entity, IntoElement, Render, Window};
 use gpui_component::Icon;
 use ki_assets::icon::IconAsset;
@@ -16,7 +16,7 @@ impl ProjectConfigurationTab for ProjectTreeTab {
     }
 
     fn new(
-        _active_project: Entity<WorkspaceProject>,
+        _active_project: Entity<Project>,
         _window: &mut Window,
         cx: &mut App,
     ) -> Entity<impl Render> {

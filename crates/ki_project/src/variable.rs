@@ -5,13 +5,13 @@ use std::hash::{Hash, Hasher};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct Variables {
-    pub variables: Vec<Variable>,
-    pub profiles: BTreeSet<Profile>,
+pub struct FileProjectVariables {
+    pub variables: Vec<FileVariable>,
+    pub profiles: BTreeSet<FileProfile>,
 }
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Clone, Debug)]
-pub struct Variable {
+pub struct FileVariable {
     pub id: Uuid,
     pub name: String,
     pub description: String,
@@ -20,9 +20,9 @@ pub struct Variable {
     pub overrides: HashMap<Uuid, String>
 }
 
-impl Default for Variable {
+impl Default for FileVariable {
     fn default() -> Self {
-        Variable {
+        FileVariable {
             id: Uuid::new_v4(),
             name: String::new(),
             description: String::new(),
@@ -33,7 +33,7 @@ impl Default for Variable {
     }
 }
 
-#[derive(Serialize, Deserialize, Eq, PartialEq, Clone, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Copy, Clone, Debug)]
 pub enum VariableKind {
     Text,
     PasswordClear,
@@ -41,25 +41,25 @@ pub enum VariableKind {
 }
 
 #[derive(Serialize, Deserialize, Eq, Ord, Clone, Debug)]
-pub struct Profile {
+pub struct FileProfile {
     pub id: Uuid,
     pub name: String,
     pub description: String,
 }
 
-impl PartialEq for Profile {
+impl PartialEq for FileProfile {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl Hash for Profile {
+impl Hash for FileProfile {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
 
-impl PartialOrd for Profile {
+impl PartialOrd for FileProfile {
 
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.name.partial_cmp(&other.name)

@@ -3,15 +3,15 @@ use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct Endpoint {
+pub struct FileEndpoint {
     pub id: Uuid,
     pub url: String,
     pub method: HttpMethod,
-    pub query_parameters: Vec<RestParameter>,
-    pub path_parameters: Vec<RestParameter>,
+    pub query_parameters: Vec<FileRestParameter>,
+    pub path_parameters: Vec<FileRestParameter>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -21,7 +21,7 @@ pub enum HttpMethod {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct RestParameter {
+pub struct FileRestParameter {
     pub param: String,
     pub value: String,
 }

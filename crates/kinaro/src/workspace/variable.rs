@@ -2,29 +2,23 @@ use crate::workspace::error::ProjectError;
 use crate::workspace::project;
 use gpui::SharedString;
 use gpui_component::select::SelectItem;
-use ki_project::{Profile, Variable, VariableKind, Variables};
+use ki_project::{FileProfile, FileProjectVariables, FileVariable, VariableKind};
 use log::warn;
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Default)]
-pub struct WorkspaceVariables {
-    pub variables: Vec<WorkspaceVariable>,
-    pub profiles: Vec<WorkspaceProfile>,
+pub struct ProjectVariables {
+    pub variables: Vec<Variable>,
+    pub profiles: Vec<Profile>,
 }
 
-impl WorkspaceVariables {}
-
-impl WorkspaceVariables {
+impl ProjectVariables {
     /// Adds a profile with the given name
-    pub(super) fn add_profile(
-        &mut self,
-        index: Option<usize>,
-        name: &str,
-    ) -> Vec<WorkspaceProfile> {
+    pub(super) fn add_profile(&mut self, index: Option<usize>, name: &str) -> Vec<Profile> {
         let name = self.next_profile_name(name);
-        let new_profile = WorkspaceProfile {
+        let new_profile = Profile {
             id: Uuid::new_v4(),
             name: SharedString::new(name),
             description: Default::default(),
@@ -41,13 +35,13 @@ impl WorkspaceVariables {
         self.profiles.clone()
     }
 
-    /// Deletes a profile a returns a copy of the new list and the removed profile, for further processing 
+    /// Deletes a profile a returns a copy of the new list and the removed profile, for further processing
     /// # Result
     /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
     pub(super) fn delete_profile(
         &mut self,
         index: usize,
-    ) -> project::Result<(Vec<WorkspaceProfile>, WorkspaceProfile)> {
+    ) -> project::Result<(Vec<Profile>, Profile)> {
         if index > self.profiles.len() - 1 {
             warn!(
                 "Failed to delete profile at row: {} (max: {})",
@@ -59,18 +53,15 @@ impl WorkspaceVariables {
         let removed_profile = self.profiles.remove(index);
         Ok((self.profiles.clone(), removed_profile))
     }
-    
+
     /// Duplicates a profile, attributing a new id and copying all fields. Name is appended with *_copy*.
-    /// 
+    ///
     /// The copy is placed right after the original
     /// # Result
     /// Returns a copy of the new profiles list
-    /// 
+    ///
     /// Returns a [`ProjectError::ProfileNotFound`] if the row is out of bound
-    pub(super) fn duplicate_profile(
-        &mut self,
-        index: usize,
-    ) -> project::Result<Vec<WorkspaceProfile>> {
+    pub(super) fn duplicate_profile(&mut self, index: usize) -> project::Result<Vec<Profile>> {
         let Some(profile) = self.profiles.get(index) else {
             warn!("Failed to duplicate profile at index: {}", index);
             return Err(ProjectError::ProfileNotFound.into());
@@ -98,7 +89,7 @@ impl WorkspaceVariables {
         &mut self,
         from_ix: usize,
         to_ix: usize,
-    ) -> project::Result<Vec<WorkspaceProfile>> {
+    ) -> project::Result<Vec<Profile>> {
         let max_ix = self.profiles.len() - 1;
         if from_ix == to_ix || from_ix > max_ix || to_ix > max_ix {
             return Err(ProjectError::ProfileNotFound.into());
@@ -107,7 +98,7 @@ impl WorkspaceVariables {
         self.profiles.insert(to_ix, profile_to_move);
         Ok(self.profiles.clone())
     }
-    
+
     /// Merges a profile attributes
     ///
     /// # Result
@@ -116,8 +107,8 @@ impl WorkspaceVariables {
     /// Returns a [`ProjectError::ProfileNotFound`] if the profile could not be found by its id
     pub(super) fn update_profile(
         &mut self,
-        updated_profile: &WorkspaceProfile,
-    ) -> project::Result<Vec<WorkspaceProfile>> {
+        updated_profile: &Profile,
+    ) -> project::Result<Vec<Profile>> {
         let Some(profile) = self
             .profiles
             .iter_mut()
@@ -137,12 +128,12 @@ impl WorkspaceVariables {
         Ok(self.profiles.clone())
     }
 
-    pub(super) fn from_file(file_vars: &Variables) -> Self {
+    pub(super) fn from_file(file_vars: &FileProjectVariables) -> Self {
         let profiles = file_vars
             .profiles
             .iter()
-            .map(|p| WorkspaceProfile::from_file(p))
-            .collect::<Vec<WorkspaceProfile>>();
+            .map(|p| Profile::from_file(p))
+            .collect::<Vec<Profile>>();
 
         let variables = file_vars
             .variables
@@ -152,29 +143,29 @@ impl WorkspaceVariables {
                     .iter()
                     .map(|profile| (profile.id, file_var.overrides.get(&profile.id).cloned()))
                     .collect::<HashMap<Uuid, Option<String>>>();
-                WorkspaceVariable {
+                Variable {
                     id: file_var.id,
                     name: SharedString::new(&file_var.name),
                     description: SharedString::new(&file_var.description),
-                    kind: WorkspaceVariableKind::from(&file_var.kind),
+                    kind: file_var.kind,
                     reference_value: SharedString::new(&file_var.value),
                     overrides,
                 }
             })
-            .collect::<Vec<WorkspaceVariable>>();
+            .collect::<Vec<Variable>>();
 
-        WorkspaceVariables {
+        ProjectVariables {
             variables,
             profiles,
         }
     }
 
-    pub(super) fn to_file(&self) -> Variables {
+    pub(super) fn to_file(&self) -> FileProjectVariables {
         let profiles = self
             .profiles
             .iter()
             .map(|p| p.get_file())
-            .collect::<BTreeSet<Profile>>();
+            .collect::<BTreeSet<FileProfile>>();
 
         let mut variables = vec![];
         for workspace_var in &self.variables {
@@ -185,17 +176,17 @@ impl WorkspaceVariables {
                 .filter(|(_, value)| value.is_some())
                 .map(|(id, value)| (*id, value.clone().unwrap()))
                 .collect::<HashMap<Uuid, String>>();
-            variables.push(Variable {
+            variables.push(FileVariable {
                 id: workspace_var.id,
                 name: workspace_var.name.to_string(),
                 description: workspace_var.description.to_string(),
-                kind: VariableKind::from(&workspace_var.kind),
+                kind: workspace_var.kind,
                 value: workspace_var.reference_value.to_string(),
                 overrides,
             });
         }
 
-        Variables {
+        FileProjectVariables {
             variables,
             profiles,
         }
@@ -219,51 +210,24 @@ impl WorkspaceVariables {
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub struct WorkspaceVariable {
+pub struct Variable {
     pub id: Uuid,
     pub name: SharedString,
     pub description: SharedString,
-    pub kind: WorkspaceVariableKind,
+    pub kind: VariableKind,
     pub reference_value: SharedString,
     pub overrides: HashMap<Uuid, Option<String>>,
 }
 
-#[derive(Eq, PartialEq, Clone, Debug)]
-pub enum WorkspaceVariableKind {
-    Text,
-    PasswordClear,
-    PasswordEncrypt,
-}
-
-impl From<&VariableKind> for WorkspaceVariableKind {
-    fn from(value: &VariableKind) -> Self {
-        match value {
-            VariableKind::Text => WorkspaceVariableKind::Text,
-            VariableKind::PasswordClear => WorkspaceVariableKind::PasswordClear,
-            VariableKind::PasswordEncrypt => WorkspaceVariableKind::PasswordEncrypt,
-        }
-    }
-}
-
-impl From<&WorkspaceVariableKind> for VariableKind {
-    fn from(value: &WorkspaceVariableKind) -> Self {
-        match value {
-            WorkspaceVariableKind::Text => VariableKind::Text,
-            WorkspaceVariableKind::PasswordClear => VariableKind::PasswordClear,
-            WorkspaceVariableKind::PasswordEncrypt => VariableKind::PasswordEncrypt,
-        }
-    }
-}
-
 #[derive(Eq, PartialEq, Ord, Clone, Debug)]
-pub struct WorkspaceProfile {
+pub struct Profile {
     pub id: Uuid,
     pub name: SharedString,
     pub description: SharedString,
 }
 
-impl WorkspaceProfile {
-    fn from_file(file_profile: &Profile) -> Self {
+impl Profile {
+    fn from_file(file_profile: &FileProfile) -> Self {
         Self {
             id: file_profile.id,
             name: SharedString::new(&file_profile.name),
@@ -271,8 +235,8 @@ impl WorkspaceProfile {
         }
     }
 
-    fn get_file(&self) -> Profile {
-        Profile {
+    fn get_file(&self) -> FileProfile {
+        FileProfile {
             id: self.id,
             name: self.name.to_string(),
             description: self.description.to_string(),
@@ -280,13 +244,13 @@ impl WorkspaceProfile {
     }
 }
 
-impl PartialOrd for WorkspaceProfile {
+impl PartialOrd for Profile {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.name.partial_cmp(&other.name)
     }
 }
 
-impl SelectItem for WorkspaceProfile {
+impl SelectItem for Profile {
     type Value = Uuid;
 
     fn title(&self) -> SharedString {

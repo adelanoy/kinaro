@@ -1,4 +1,4 @@
-use crate::test::test_suite::TestSuite;
+use crate::test::test_suite::FileTestSuite;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -7,7 +7,7 @@ pub mod test_step;
 pub mod test_suite;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct TestInfo {
+pub struct FileTestInfo {
     pub id: Uuid,
     pub name: String,
     pub description: Option<String>,
@@ -17,6 +17,6 @@ pub struct TestInfo {
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct TestsContainer {
-    pub suites: Vec<TestSuite>,
+pub struct FileTestsContainer {
+    pub suites: Vec<FileTestSuite>,
 }

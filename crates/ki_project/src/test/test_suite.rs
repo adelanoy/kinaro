@@ -1,21 +1,14 @@
 use std::fmt::Debug;
 
 use crate::test::{
-    TestInfo,
-    test_case::{TestCase, TestCaseInfo},
+    FileTestInfo,
+    test_case::{FileTestCase},
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct TestSuite {
+pub struct FileTestSuite {
     #[serde(flatten)]
-    pub info: TestInfo,
-    pub cases: Vec<TestCase>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct TestSuiteInfo {
-    #[serde(flatten)]
-    pub info: TestInfo,
-    pub cases: Vec<TestCaseInfo>,
+    pub info: FileTestInfo,
+    pub cases: Vec<FileTestCase>,
 }

@@ -1,6 +1,6 @@
 use crate::workspace::{
     CreateProject, OpenProject, RemoveProject, RenameProject, SwitchActiveProject,
-    Workspace, WorkspaceProject, PROJECT_FILE_EXT,
+    Workspace, Project, PROJECT_FILE_EXT,
 };
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 pub(super) struct ProjectSelector {
     workspace: Entity<Workspace>,
-    active_project: Option<Entity<WorkspaceProject>>,
+    active_project: Option<Entity<Project>>,
 }
 
 impl ProjectSelector {

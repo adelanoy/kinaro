@@ -1,4 +1,4 @@
-use ki_project::{Endpoint, HttpMethod, RestParameter};
+use ki_project::{FileEndpoint, HttpMethod, FileRestParameter};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -8,12 +8,12 @@ pub struct WorkspaceEndpoint {
     pub id: Uuid,
     pub url: String,
     pub method: HttpMethod,
-    pub query_parameters: Vec<RestParameter>,
-    pub path_parameters: Vec<RestParameter>,
+    pub query_parameters: Vec<FileRestParameter>,
+    pub path_parameters: Vec<FileRestParameter>,
 }
 
 impl WorkspaceEndpoint {
-    pub fn from_file(file_endpoints: &Vec<Endpoint>) -> Vec<WorkspaceEndpoint> {
+    pub fn from_file(file_endpoints: &Vec<FileEndpoint>) -> Vec<WorkspaceEndpoint> {
         file_endpoints
             .iter()
             .map(|endpoint| WorkspaceEndpoint {
@@ -26,8 +26,8 @@ impl WorkspaceEndpoint {
             .collect()
     }
 
-    pub fn to_file(&self) -> Endpoint {
-        Endpoint {
+    pub fn to_file(&self) -> FileEndpoint {
+        FileEndpoint {
             id: self.id,
             url: self.url.clone(),
             method: self.method.clone(),

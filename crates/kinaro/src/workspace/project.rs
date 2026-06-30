@@ -1,11 +1,11 @@
 use crate::workspace::endpoint::WorkspaceEndpoint;
 use crate::workspace::error::ProjectError;
-use crate::workspace::test::WorkspaceTestsContainer;
-use crate::workspace::variable::{WorkspaceProfile, WorkspaceVariables};
+use crate::workspace::test::TestsContainer;
+use crate::workspace::variable::{Profile, ProjectVariables};
 use chrono::{DateTime, Local};
 use gpui::{Context, EventEmitter, SharedString, Window};
 use gpui_component::WindowExt;
-use ki_project::{ProjectFile, ProjectFileError};
+use ki_project::{FileProject, ProjectFileError};
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -15,17 +15,17 @@ use uuid::Uuid;
 pub type Result<T> = std::result::Result<T, ProjectError>;
 
 ///// WORKSPACE PROJECT EVENTS /////
-pub enum WorkspaceProjectEvent {
+pub enum ProjectEvent {
     /// Emitted when the active profile has been modified
     ActiveProfileChanged(Option<Uuid>),
     /// Emitted when the list has been modified (profile added, removed, modified...)
     ProfilesChanged,
 }
 
-impl EventEmitter<WorkspaceProjectEvent> for WorkspaceProject {}
+impl EventEmitter<ProjectEvent> for Project {}
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct WorkspaceProject {
+pub struct Project {
     pub path: PathBuf,
     pub id: Uuid,
     pub name: SharedString,
@@ -34,10 +34,10 @@ pub struct WorkspaceProject {
     pub modified: DateTime<Local>,
     pub(super) active_profile: Option<Uuid>,
     #[serde(skip)]
-    data_status: WorkspaceProjectDataStatus,
+    data_status: ProjectDataStatus,
 }
 
-impl Clone for WorkspaceProject {
+impl Clone for Project {
     fn clone(&self) -> Self {
         Self {
             path: self.path.clone(),
@@ -52,13 +52,13 @@ impl Clone for WorkspaceProject {
     }
 }
 
-impl PartialEq for WorkspaceProject {
+impl PartialEq for Project {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl WorkspaceProject {
+impl Project {
     #[inline]
     pub fn active_profile(&self) -> Option<Uuid> {
         self.active_profile.clone()
@@ -66,28 +66,28 @@ impl WorkspaceProject {
 
     #[inline]
     pub fn is_loaded(&self) -> bool {
-        matches!(self.data_status, WorkspaceProjectDataStatus::Loaded(_))
+        matches!(self.data_status, ProjectDataStatus::Loaded(_))
     }
 
     #[inline]
-    pub fn get_status(&self) -> &WorkspaceProjectDataStatus {
+    pub fn get_status(&self) -> &ProjectDataStatus {
         &self.data_status
     }
 
     /// Returns a reference to the data held by the project.
     /// Care should be taken to check the project status as this method will panic if the project is not loaded
-    pub fn data(&self) -> &WorkspaceProjectData {
+    pub fn data(&self) -> &ProjectData {
         match &self.data_status {
-            WorkspaceProjectDataStatus::Loaded(data) => data,
+            ProjectDataStatus::Loaded(data) => data,
             _ => panic!("Tried to read an unloaded project"),
         }
     }
 
     /// Returns a reference to the data held by the project.
     /// Care should be taken to check the project status as this method will panic if the project is not loaded
-    pub fn data_mut(&mut self) -> &mut WorkspaceProjectData {
+    pub fn data_mut(&mut self) -> &mut ProjectData {
         match &mut self.data_status {
-            WorkspaceProjectDataStatus::Loaded(data) => data,
+            ProjectDataStatus::Loaded(data) => data,
             _ => panic!("Tried to read an unloaded project"),
         }
     }
@@ -96,7 +96,7 @@ impl WorkspaceProject {
 
     /// Adds a profile with the given name
     ///
-    /// if profiles were successfully changed, a [`WorkspaceProjectEvent::ProfilesChanged`] event will be emitted
+    /// if profiles were successfully changed, a [`ProjectEvent::ProfilesChanged`] event will be emitted
     ///
     /// # Result
     /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
@@ -106,12 +106,12 @@ impl WorkspaceProject {
         name: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Result<Vec<WorkspaceProfile>> {
+    ) -> Result<Vec<Profile>> {
         if !self.is_loaded() {
             return Err(ProjectError::Invalid);
         }
         let profiles = self.data_mut().variables.add_profile(index, name);
-        self.save(WorkspaceProjectEvent::ProfilesChanged, window, cx);
+        self.save(ProjectEvent::ProfilesChanged, window, cx);
 
         Ok(profiles)
     }
@@ -120,8 +120,8 @@ impl WorkspaceProject {
     ///
     /// The copy is placed right after the original
     ///
-    /// if profile was successfully removed, a [`WorkspaceProjectEvent::ProfilesChanged`] event will be emitted.
-    /// Additionally, a [`WorkspaceProjectEvent::ActiveProfileChanged`] event will also be emitted if the profile was active, and the active profile set to *None*
+    /// if profile was successfully removed, a [`ProjectEvent::ProfilesChanged`] event will be emitted.
+    /// Additionally, a [`ProjectEvent::ActiveProfileChanged`] event will also be emitted if the profile was active, and the active profile set to *None*
     ///
     /// # Result
     /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
@@ -132,12 +132,12 @@ impl WorkspaceProject {
         index: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Result<Vec<WorkspaceProfile>> {
+    ) -> Result<Vec<Profile>> {
         if !self.is_loaded() {
             return Err(ProjectError::Invalid);
         }
         let (profiles, removed_profile) = self.data_mut().variables.delete_profile(index)?;
-        self.save(WorkspaceProjectEvent::ProfilesChanged, window, cx);
+        self.save(ProjectEvent::ProfilesChanged, window, cx);
 
         // check if deleted profile was the active one
         if Some(removed_profile.id) == self.active_profile {
@@ -149,7 +149,7 @@ impl WorkspaceProject {
 
     /// Deletes a profile a returns a copy of the new list and the removed profile, for further processing
     ///
-    /// if profiles were successfully changed, a [`WorkspaceProjectEvent::ProfilesChanged`] event will be emitted
+    /// if profiles were successfully changed, a [`ProjectEvent::ProfilesChanged`] event will be emitted
     ///
     /// # Result
     /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
@@ -160,20 +160,20 @@ impl WorkspaceProject {
         row: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Result<Vec<WorkspaceProfile>> {
+    ) -> Result<Vec<Profile>> {
         if !self.is_loaded() {
             return Err(ProjectError::Invalid);
         }
         let result = self.data_mut().variables.duplicate_profile(row);
         if result.is_ok() {
-            self.save(WorkspaceProjectEvent::ProfilesChanged, window, cx);
+            self.save(ProjectEvent::ProfilesChanged, window, cx);
         }
         result
     }
 
     /// Moves a profile from one position to another
     ///
-    /// if profiles were successfully changed, a [`WorkspaceProjectEvent::ProfilesChanged`] event will be emitted
+    /// if profiles were successfully changed, a [`ProjectEvent::ProfilesChanged`] event will be emitted
     ///
     /// # Result
     /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
@@ -185,13 +185,13 @@ impl WorkspaceProject {
         row_to: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Result<Vec<WorkspaceProfile>> {
+    ) -> Result<Vec<Profile>> {
         if !self.is_loaded() {
             return Err(ProjectError::Invalid);
         }
         let result = self.data_mut().variables.move_profile(row_from, row_to);
         if result.is_ok() {
-            self.save(WorkspaceProjectEvent::ProfilesChanged, window, cx);
+            self.save(ProjectEvent::ProfilesChanged, window, cx);
         }
         result
     }
@@ -204,7 +204,7 @@ impl WorkspaceProject {
         match profile_id {
             None => {
                 self.active_profile = None;
-                cx.emit(WorkspaceProjectEvent::ActiveProfileChanged(None));
+                cx.emit(ProjectEvent::ActiveProfileChanged(None));
             }
             Some(profile_id) => {
                 if self
@@ -215,7 +215,7 @@ impl WorkspaceProject {
                     .any(|p| p.id == profile_id)
                 {
                     self.active_profile = Some(profile_id);
-                    cx.emit(WorkspaceProjectEvent::ActiveProfileChanged(self.active_profile));
+                    cx.emit(ProjectEvent::ActiveProfileChanged(self.active_profile));
                 }
             }
         }
@@ -223,7 +223,7 @@ impl WorkspaceProject {
 
     /// Merges a profile attributes
     ///
-    /// if profile was successfully changed, a [`WorkspaceProjectEvent::ProfilesChanged`] event will be emitted
+    /// if profile was successfully changed, a [`ProjectEvent::ProfilesChanged`] event will be emitted
     ///
     /// # Result
     /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
@@ -231,16 +231,16 @@ impl WorkspaceProject {
     /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
     pub fn update_profile(
         &mut self,
-        updated_profile: &WorkspaceProfile,
+        updated_profile: &Profile,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Result<Vec<WorkspaceProfile>> {
+    ) -> Result<Vec<Profile>> {
         if !self.is_loaded() {
             return Err(ProjectError::Invalid);
         }
         let result = self.data_mut().variables.update_profile(updated_profile);
         if result.is_ok() {
-            self.save(WorkspaceProjectEvent::ProfilesChanged, window, cx);
+            self.save(ProjectEvent::ProfilesChanged, window, cx);
         }
         result
     }
@@ -248,11 +248,11 @@ impl WorkspaceProject {
     pub(super) fn load(mut self) -> Self {
         if !self.path.exists() {
             warn!("Could not find project at: {}", self.path.to_string_lossy());
-            self.data_status = WorkspaceProjectDataStatus::Moved;
+            self.data_status = ProjectDataStatus::Moved;
             return self;
         }
 
-        match ProjectFile::load(&self.path) {
+        match FileProject::load(&self.path) {
             Ok(project_file) => {
                 if project_file.id != self.id {
                     warn!(
@@ -261,9 +261,9 @@ impl WorkspaceProject {
                         self.id,
                         project_file.id
                     );
-                    self.data_status = WorkspaceProjectDataStatus::ExternallyModified;
+                    self.data_status = ProjectDataStatus::ExternallyModified;
                 }
-                let project = WorkspaceProjectData::from_file(&project_file);
+                let project = ProjectData::from_file(&project_file);
                 // Update the ProjectInfo with the file data (in case of modification done externally without any major impact)
                 if let Some(active_profile) = &self.active_profile {
                     if !project
@@ -280,7 +280,7 @@ impl WorkspaceProject {
                 }
                 self.created = project_file.created;
                 self.modified = project_file.modified;
-                self.data_status = WorkspaceProjectDataStatus::Loaded(project)
+                self.data_status = ProjectDataStatus::Loaded(project)
             }
             Err(err) => {
                 error!(
@@ -288,15 +288,15 @@ impl WorkspaceProject {
                     self.path.to_string_lossy(),
                     err
                 );
-                self.data_status = WorkspaceProjectDataStatus::LoadError(err);
+                self.data_status = ProjectDataStatus::LoadError(err);
             }
         };
 
         self
     }
 
-    pub(super) fn read_project(path: PathBuf, project_file: ProjectFile) -> Self {
-        let data = WorkspaceProjectData::from_file(&project_file);
+    pub(super) fn read_project(path: PathBuf, project_file: FileProject) -> Self {
+        let data = ProjectData::from_file(&project_file);
         Self {
             path,
             id: project_file.id,
@@ -305,7 +305,7 @@ impl WorkspaceProject {
             created: project_file.created,
             modified: project_file.modified,
             active_profile: None,
-            data_status: WorkspaceProjectDataStatus::Loaded(data),
+            data_status: ProjectDataStatus::Loaded(data),
         }
     }
 
@@ -318,14 +318,14 @@ impl WorkspaceProject {
             created: Default::default(),
             modified: Default::default(),
             active_profile: None,
-            data_status: WorkspaceProjectDataStatus::Loaded(WorkspaceProjectData::new()),
+            data_status: ProjectDataStatus::Loaded(ProjectData::new()),
         }
     }
 
     /// save the project to file and emit the passed event
     pub fn save(
         &mut self,
-        event: WorkspaceProjectEvent,
+        event: ProjectEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -351,14 +351,14 @@ impl WorkspaceProject {
         cx.emit(event);
     }
 
-    fn to_file(&self) -> ProjectFile {
+    fn to_file(&self) -> FileProject {
         let data = self.data();
         let variables = data.variables.to_file();
         let endpoints = data.endpoints.iter().map(|e| e.to_file()).collect();
         let tests = data.tests.to_file();
         let modified = Local::now();
 
-        ProjectFile {
+        FileProject {
             name: self.name.to_string(),
             id: self.id,
             version: self.version,
@@ -372,28 +372,28 @@ impl WorkspaceProject {
 }
 
 #[derive(Debug)]
-pub enum WorkspaceProjectDataStatus {
+pub enum ProjectDataStatus {
     Unloaded,
-    Loaded(WorkspaceProjectData),
+    Loaded(ProjectData),
     Moved,
     ExternallyModified,
     LoadError(ProjectFileError),
 }
 
-impl Default for WorkspaceProjectDataStatus {
+impl Default for ProjectDataStatus {
     fn default() -> Self {
-        WorkspaceProjectDataStatus::Unloaded
+        ProjectDataStatus::Unloaded
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct WorkspaceProjectData {
-    pub variables: WorkspaceVariables,
+pub struct ProjectData {
+    pub variables: ProjectVariables,
     pub endpoints: Vec<WorkspaceEndpoint>,
-    pub tests: WorkspaceTestsContainer,
+    pub tests: TestsContainer,
 }
 
-impl WorkspaceProjectData {
+impl ProjectData {
     fn new() -> Self {
         Self {
             variables: Default::default(),
@@ -402,10 +402,10 @@ impl WorkspaceProjectData {
         }
     }
 
-    fn from_file(project: &ProjectFile) -> WorkspaceProjectData {
-        let variables = WorkspaceVariables::from_file(&project.variables);
+    fn from_file(project: &FileProject) -> ProjectData {
+        let variables = ProjectVariables::from_file(&project.variables);
         let endpoints = WorkspaceEndpoint::from_file(&project.endpoints);
-        let tests = WorkspaceTestsContainer::from_file(&project.tests);
+        let tests = TestsContainer::from_file(&project.tests);
 
         Self {
             variables,

@@ -1,7 +1,7 @@
 use crate::views::sidebar::project_configuration::profile_editor_tab::ProfileEditor;
 use crate::views::sidebar::project_configuration::project_tree_tab::ProjectTreeTab;
 use crate::views::sidebar::project_configuration::var_editor_tab::VariableEditor;
-use crate::workspace::WorkspaceProject;
+use crate::workspace::Project;
 use gpui::*;
 use gpui_component::tab::{Tab, TabBar};
 use gpui_component::{Icon, Sizable, v_flex};
@@ -17,7 +17,7 @@ pub struct ProjectConfigurationTabs {
 
 impl ProjectConfigurationTabs {
     pub(super) fn new(
-        project: Entity<WorkspaceProject>,
+        project: Entity<Project>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -28,7 +28,7 @@ impl ProjectConfigurationTabs {
     }
 
     fn build_tab_containers(
-        active_project: Entity<WorkspaceProject>,
+        active_project: Entity<Project>,
         window: &mut Window,
         cx: &mut App,
     ) -> Vec<Entity<ProjectConfigurationTabContainer>> {
@@ -60,7 +60,7 @@ struct ProjectConfigurationTabContainer {
 
 impl ProjectConfigurationTabContainer {
     fn container<T: ProjectConfigurationTab>(
-        active_project: Entity<WorkspaceProject>,
+        active_project: Entity<Project>,
         window: &mut Window,
         cx: &mut App,
     ) -> Entity<Self> {
@@ -82,7 +82,7 @@ trait ProjectConfigurationTab: Render {
     fn icon() -> impl Into<Icon>;
 
     fn new(
-        active_project: Entity<WorkspaceProject>,
+        active_project: Entity<Project>,
         window: &mut Window,
         cx: &mut App,
     ) -> Entity<impl Render>;

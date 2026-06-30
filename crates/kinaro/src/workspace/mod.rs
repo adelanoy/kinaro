@@ -1,10 +1,10 @@
 use crate::workspace::error::{ProjectError, WorkspaceError};
 pub(crate) use crate::workspace::project::{
-    WorkspaceProject, WorkspaceProjectDataStatus, WorkspaceProjectEvent,
+    Project, ProjectDataStatus, ProjectEvent,
 };
 use gpui::{Action, App, Entity, EventEmitter, SharedString, actions};
 use gpui::{AppContext, Context};
-use ki_project::ProjectFile;
+use ki_project::FileProject;
 use ki_settings::GlobalSettings;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ pub type Result<T> = std::result::Result<T, WorkspaceError>;
 #[derive(Serialize, Deserialize, Default)]
 pub struct WorkspaceFile {
     active_project_id: Option<Uuid>,
-    pub projects: Vec<WorkspaceProject>,
+    pub projects: Vec<Project>,
 }
 
 impl WorkspaceFile {
@@ -73,7 +73,7 @@ impl EventEmitter<WorkspaceEvent> for Workspace {}
 
 pub struct Workspace {
     active_project_id: Option<Uuid>,
-    pub projects: HashMap<Uuid, Entity<WorkspaceProject>>,
+    pub projects: HashMap<Uuid, Entity<Project>>,
 }
 
 impl Workspace {
@@ -87,7 +87,7 @@ impl Workspace {
             projects,
         } = WorkspaceFile::load(&file_path);
 
-        let projects: HashMap<Uuid, Entity<WorkspaceProject>> = projects
+        let projects: HashMap<Uuid, Entity<Project>> = projects
             .into_iter()
             .map(|project| {
                 let project_entity = cx.new(|_| project.load());
@@ -107,7 +107,7 @@ impl Workspace {
         }
     }
 
-    pub fn active_project(&self) -> Option<Entity<WorkspaceProject>> {
+    pub fn active_project(&self) -> Option<Entity<Project>> {
         if let Some(active_project_id) = self.active_project_id {
             self.projects.get(&active_project_id).cloned()
         } else {
@@ -128,21 +128,21 @@ impl Workspace {
                 project_id,
             )))?;
         let result = match project.read(cx).get_status() {
-            WorkspaceProjectDataStatus::Unloaded => {
+            ProjectDataStatus::Unloaded => {
                 Err(WorkspaceError::General("Unknown".to_string()))
             }
-            WorkspaceProjectDataStatus::Loaded(_) => {
+            ProjectDataStatus::Loaded(_) => {
                 self.active_project_id = Some(project_id);
                 cx.emit(WorkspaceEvent::ProjectsChanged);
                 Ok(())
             }
-            WorkspaceProjectDataStatus::Moved => Err(WorkspaceError::from(
+            ProjectDataStatus::Moved => Err(WorkspaceError::from(
                 ProjectError::BadLocation(project.read_with(cx, |project, _| project.path.clone())),
             )),
-            WorkspaceProjectDataStatus::ExternallyModified => {
+            ProjectDataStatus::ExternallyModified => {
                 Err(WorkspaceError::Project(ProjectError::ExternallyModified))
             }
-            WorkspaceProjectDataStatus::LoadError(_) => {
+            ProjectDataStatus::LoadError(_) => {
                 Err(WorkspaceError::Project(ProjectError::Invalid))
             }
         };
@@ -170,8 +170,8 @@ impl Workspace {
             return self.switch_project(project.read(cx).id, cx);
         }
         let project_file =
-            ProjectFile::load(&path).map_err(|err| WorkspaceError::Project(err.into()))?;
-        let project = cx.new(|_| WorkspaceProject::read_project(path, project_file));
+            FileProject::load(&path).map_err(|err| WorkspaceError::Project(err.into()))?;
+        let project = cx.new(|_| Project::read_project(path, project_file));
         let project_id = project.read(cx).id;
         self.active_project_id = Some(project_id);
         self.projects.insert(project_id, project);
@@ -192,7 +192,7 @@ impl Workspace {
         if let Some(project) = self.projects.values().find(|p| p.read(cx).path == path) {
             return self.switch_project(project.read(cx).id, cx);
         }
-        let project = cx.new(|_| WorkspaceProject::new(path, name));
+        let project = cx.new(|_| Project::new(path, name));
         let project_id = project.read(cx).id;
         self.active_project_id = Some(project_id);
         self.projects.insert(project_id, project);

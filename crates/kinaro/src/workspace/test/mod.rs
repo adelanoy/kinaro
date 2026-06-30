@@ -1,6 +1,5 @@
-use crate::workspace::test::test_suite::WorkspaceTestSuite;
-use ki_project::{TestInfo, TestsContainer};
-use std::ops::{Deref, DerefMut};
+use crate::workspace::test::test_suite::TestSuite;
+use ki_project::{FileTestInfo, FileTestsContainer};
 use uuid::Uuid;
 
 pub mod test_case;
@@ -8,15 +7,15 @@ pub mod test_step;
 pub mod test_suite;
 
 #[derive(Clone, Debug)]
-pub struct WorkspaceTestInfo {
+pub struct TestInfo {
     pub id: Uuid,
     pub name: String,
     pub description: Option<String>,
     pub active: bool,
 }
 
-impl WorkspaceTestInfo {
-    pub fn from_file(file_test_info: &TestInfo) -> Self {
+impl TestInfo {
+    pub fn from_file(file_test_info: &FileTestInfo) -> Self {
         Self {
             id: file_test_info.id,
             name: file_test_info.name.clone(),
@@ -25,8 +24,8 @@ impl WorkspaceTestInfo {
         }
     }
 
-    pub fn get_file(&self) -> TestInfo {
-        TestInfo {
+    pub fn get_file(&self) -> FileTestInfo {
+        FileTestInfo {
             id: self.id,
             name: self.name.clone(),
             description: self.description.clone(),
@@ -36,30 +35,20 @@ impl WorkspaceTestInfo {
 }
 
 #[derive(Default, Clone, Debug)]
-pub struct WorkspaceTestsContainer(Vec<WorkspaceTestSuite>);
-
-impl Deref for WorkspaceTestsContainer {
-    type Target = Vec<WorkspaceTestSuite>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+pub struct TestsContainer {
+    pub test_suites: Vec<TestSuite>,
 }
 
-impl DerefMut for WorkspaceTestsContainer {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl WorkspaceTestsContainer {
-    pub fn from_file(file_container: &TestsContainer) -> Self {
-        Self(WorkspaceTestSuite::from_file(&file_container.suites))
+impl TestsContainer {
+    pub fn from_file(file_container: &FileTestsContainer) -> Self {
+        Self {
+            test_suites: TestSuite::from_file(&file_container.suites),
+        }
     }
 
-    pub fn to_file(&self) -> TestsContainer {
-        TestsContainer {
-            suites: self.iter().map(|suite| suite.get_file()).collect(),
+    pub fn to_file(&self) -> FileTestsContainer {
+        FileTestsContainer {
+            suites: self.test_suites.iter().map(|suite| suite.get_file()).collect(),
         }
     }
 

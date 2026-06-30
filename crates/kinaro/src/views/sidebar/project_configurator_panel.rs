@@ -1,6 +1,6 @@
 use crate::views::sidebar::project_configuration::ProjectConfigurationTabs;
-use crate::workspace::variable::WorkspaceProfile;
-use crate::workspace::{WorkspaceProject, WorkspaceProjectEvent};
+use crate::workspace::variable::Profile;
+use crate::workspace::{Project, ProjectEvent};
 use gpui::*;
 use gpui_component::select::{Select, SelectEvent, SelectState};
 use gpui_component::separator::Separator;
@@ -9,16 +9,16 @@ use uuid::Uuid;
 
 pub(super) struct ProjectConfigurator {
     focus_handle: FocusHandle,
-    project: Entity<WorkspaceProject>,
+    project: Entity<Project>,
     _project_event_sub: Subscription,
-    profile_select_state: Entity<SelectState<Vec<WorkspaceProfile>>>,
+    profile_select_state: Entity<SelectState<Vec<Profile>>>,
     _profile_change_sub: Option<Subscription>,
     project_config_tabs: Entity<ProjectConfigurationTabs>,
 }
 
 impl ProjectConfigurator {
     pub(super) fn new(
-        project: Entity<WorkspaceProject>,
+        project: Entity<Project>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -26,7 +26,7 @@ impl ProjectConfigurator {
             cx.new(|cx| SelectState::new(vec![], Some(IndexPath::default()), window, cx));
         cx.subscribe(&profile_select_state, {
             let project = project.clone();
-            move |_, _, event: &SelectEvent<Vec<WorkspaceProfile>>, cx| match event {
+            move |_, _, event: &SelectEvent<Vec<Profile>>, cx| match event {
                 SelectEvent::Confirm(value) => {
                     project.update(cx, |this, cx| this.switch_profile(value.to_owned(), cx))
                 }
@@ -37,10 +37,10 @@ impl ProjectConfigurator {
             &project,
             window,
             move |this, _, event, window, cx| match event {
-                WorkspaceProjectEvent::ActiveProfileChanged(id) => {
+                ProjectEvent::ActiveProfileChanged(id) => {
                     this.update_selected_profile_select_state(id, window, cx)
                 }
-                WorkspaceProjectEvent::ProfilesChanged => {
+                ProjectEvent::ProfilesChanged => {
                     this.update_profiles_select_state(window, cx)
                 }
             },
@@ -73,7 +73,7 @@ impl ProjectConfigurator {
                 .profiles
                 .iter()
                 .map(|p| p.clone())
-                .collect::<Vec<WorkspaceProfile>>();
+                .collect::<Vec<Profile>>();
             let selected_profile_index = profiles
                 .iter()
                 .position(|p| Some(p.id) == active_profile_id)
