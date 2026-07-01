@@ -9,8 +9,6 @@ use std::path::PathBuf;
 use log4rs::filter::Response;
 use log::Record;
 
-const FILTERED_TARGETS: &[&str] = &["kinaro", "ki_utils", "ki_assets", "ki_project", "ki_settings"];
-
 const LOG_FILE: &str = "kinaro.log";
 
 pub fn init(config_dir: &PathBuf) -> Result<()> {
@@ -40,10 +38,10 @@ pub fn init(config_dir: &PathBuf) -> Result<()> {
 
     let config = Config::builder()
         .appender(Appender::builder().filter(Box::new(KinaroFilter)).build("console", Box::new(console_appender)))
-        .appender(Appender::builder().filter(Box::new(KinaroFilter)).build("file", Box::new(file_appender)))
+        //.appender(Appender::builder().filter(Box::new(KinaroFilter)).build("file", Box::new(file_appender)))
         .build(
             Root::builder()
-                .appenders(["console", "file"])
+                .appenders(["console"])
                 .build(level_filer),
         )?;
 
@@ -56,7 +54,8 @@ struct KinaroFilter;
 
 impl log4rs::filter::Filter for KinaroFilter {
     fn filter(&self, record: &Record) -> Response {
-        if FILTERED_TARGETS.contains(&record.target()) {
+        let target = record.target();
+        if target.starts_with("kinaro") || target.starts_with("ki_") {
             Response::Accept
         } else {
             Response::Reject

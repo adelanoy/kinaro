@@ -1,9 +1,7 @@
 use ki_project::{FileEndpoint, HttpMethod, FileRestParameter};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkspaceEndpoint {
     pub id: Uuid,
     pub url: String,

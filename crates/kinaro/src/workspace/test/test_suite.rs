@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::workspace::test::{test_case::TestCase, TestInfo};
 use ki_project::FileTestSuite;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq)]
 pub struct TestSuite {
     pub info: TestInfo,
     pub cases: Vec<TestCase>,

@@ -2,13 +2,12 @@ use gpui_component::notification::Notification;
 use ki_project::ProjectFileError;
 use std::io;
 use std::path::PathBuf;
-use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
-    /// General workspace error
-    #[error("WorkspaceError::General (err: {})", .0)]
-    General(String),
+    /// An operation tried to access a project that failed to load
+    #[error("WorkspaceError::ProjectNotLoaded")]
+    ProjectNotLoaded,
     /// General Io workspace error
     #[error("WorkspaceError::Io (err: {})", .0)]
     Io(#[from] io::Error),
@@ -26,7 +25,7 @@ pub enum WorkspaceError {
 impl Into<Notification> for WorkspaceError {
     fn into(self) -> Notification {
         match self {
-            WorkspaceError::General(message) => Notification::error(message),
+            WorkspaceError::ProjectNotLoaded => Notification::warning("The project is invalid"),
             WorkspaceError::Io(err) => Notification::error(format!("IO Error: {}", err)),
             WorkspaceError::Write(err) => {
                 Notification::error(format!("Could not write workspace file: {}", err))
@@ -54,14 +53,8 @@ pub enum ProjectError {
     #[error("ProjectError::BadLocation (path: {:?})", .0)]
     BadLocation(PathBuf),
     /// Tried to access an unknown project
-    #[error("ProjectError::UnknownProject (id: {})", .0)]
-    UnknownProject(Uuid),
-    /// The project located at this path has a different ID then expected
-    #[error("ProjectError::ExternallyModified")]
-    ExternallyModified,
-    /// The project has invalid data
-    #[error("ProjectError::Invalid")]
-    Invalid,
+    #[error("ProjectError::UnknownProject (id: {:?})", .0)]
+    UnknownProject(PathBuf),
     /// The project has invalid name
     #[error("ProjectError::InvalidName (name: {})", .0)]
     InvalidName(String),
@@ -95,13 +88,9 @@ impl Into<Notification> for ProjectError {
                 "Invalid location for project file: {}",
                 path.to_string_lossy()
             )),
-            ProjectError::UnknownProject(id) => {
-                Notification::error(format!("The project with id: {} is unknown", id))
+            ProjectError::UnknownProject(path) => {
+                Notification::error(format!("The project with id: {:?} is unknown", path))
             }
-            ProjectError::ExternallyModified => Notification::error(
-                "The project has been externally modified, remove from workspace and add it again",
-            ),
-            ProjectError::Invalid => Notification::error("The project could not be loaded"),
             ProjectError::InvalidName(name) => {
                 Notification::error(format!("Invalid name for project: {}", name))
             }

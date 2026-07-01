@@ -103,11 +103,7 @@ impl ProjectConfigurationTab for ProfileEditor {
         IconAsset::Variable
     }
 
-    fn new(
-        project: Entity<Project>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Entity<impl Render> {
+    fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<impl Render> {
         cx.new(|cx| {
             let profiles_table_state = cx.new(|cx| {
                 TableState::new(
@@ -163,7 +159,7 @@ impl ProfileDataTableDelegate {
         let name_state = cx.new(|cx| InputState::new(window, cx));
         let description_state = cx.new(|cx| InputState::new(window, cx));
         let profiles =
-            active_project.read_with(cx, |project, _| project.data().variables.profiles.clone());
+            active_project.read_with(cx, |project, _| project.variables.profiles.clone());
 
         Self {
             active_project,
@@ -301,12 +297,9 @@ impl ProfileDataTableDelegate {
     fn add_profile(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
         let name = "new profile";
         let index = self.selected_row_index();
-        match self.active_project.update(cx, |project, cx| {
+        self.profiles = self.active_project.update(cx, |project, cx| {
             project.add_profile(index, name, window, cx)
-        }) {
-            Ok(profiles) => self.profiles = profiles,
-            Err(err) => window.push_notification(err, cx),
-        }
+        });
     }
 
     fn duplicate_profile(

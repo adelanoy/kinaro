@@ -40,9 +40,7 @@ impl ProjectConfigurator {
                 ProjectEvent::ActiveProfileChanged(id) => {
                     this.update_selected_profile_select_state(id, window, cx)
                 }
-                ProjectEvent::ProfilesChanged => {
-                    this.update_profiles_select_state(window, cx)
-                }
+                ProjectEvent::ProfilesChanged => this.update_profiles_select_state(window, cx),
             },
         );
 
@@ -68,7 +66,6 @@ impl ProjectConfigurator {
         let (profiles, profile_index) = active_project.read_with(cx, |project, _| {
             let active_profile_id = project.active_profile();
             let profiles = project
-                .data()
                 .variables
                 .profiles
                 .iter()
@@ -99,12 +96,7 @@ impl ProjectConfigurator {
             }),
             Some(id) => {
                 let pos = self.project.read_with(cx, |project, _| {
-                    project
-                        .data()
-                        .variables
-                        .profiles
-                        .iter()
-                        .position(|p| p.id == *id)
+                    project.variables.profiles.iter().position(|p| p.id == *id)
                 });
                 self.profile_select_state.update(cx, |state, cx| match pos {
                     None => state.set_selected_index(None, window, cx),

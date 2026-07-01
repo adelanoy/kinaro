@@ -5,11 +5,12 @@ use crate::workspace::variable::{Profile, ProjectVariables};
 use chrono::{DateTime, Local};
 use gpui::{Context, EventEmitter, SharedString, Window};
 use gpui_component::WindowExt;
-use ki_project::{FileProject, ProjectFileError};
+use ki_project::{ProjectFile};
 use log::{error, warn};
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use uuid::Uuid;
+
+pub const PROJECT_FILE_EXT: &str = "kpr";
 
 /// Result alias for Workspace
 pub type Result<T> = std::result::Result<T, ProjectError>;
@@ -22,40 +23,17 @@ pub enum ProjectEvent {
     ProfilesChanged,
 }
 
-impl EventEmitter<ProjectEvent> for Project {}
-
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Project {
-    pub path: PathBuf,
-    pub id: Uuid,
     pub name: SharedString,
-    pub version: u16,
-    pub created: DateTime<Local>,
-    pub modified: DateTime<Local>,
-    pub(super) active_profile: Option<Uuid>,
-    #[serde(skip)]
-    data_status: ProjectDataStatus,
-}
-
-impl Clone for Project {
-    fn clone(&self) -> Self {
-        Self {
-            path: self.path.clone(),
-            id: self.id,
-            name: self.name.clone(),
-            version: self.version,
-            created: self.created,
-            modified: self.modified,
-            active_profile: self.active_profile.clone(),
-            data_status: Default::default(),
-        }
-    }
-}
-
-impl PartialEq for Project {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
+    created: DateTime<Local>,
+    modified: DateTime<Local>,
+    pub variables: ProjectVariables,
+    pub endpoints: Vec<WorkspaceEndpoint>,
+    pub tests: TestsContainer,
+    // unserialized data
+    active_profile: Option<Uuid>,
+    pub(super) path: PathBuf,
 }
 
 impl Project {
@@ -64,56 +42,25 @@ impl Project {
         self.active_profile.clone()
     }
 
-    #[inline]
-    pub fn is_loaded(&self) -> bool {
-        matches!(self.data_status, ProjectDataStatus::Loaded(_))
-    }
-
-    #[inline]
-    pub fn get_status(&self) -> &ProjectDataStatus {
-        &self.data_status
-    }
-
-    /// Returns a reference to the data held by the project.
-    /// Care should be taken to check the project status as this method will panic if the project is not loaded
-    pub fn data(&self) -> &ProjectData {
-        match &self.data_status {
-            ProjectDataStatus::Loaded(data) => data,
-            _ => panic!("Tried to read an unloaded project"),
-        }
-    }
-
-    /// Returns a reference to the data held by the project.
-    /// Care should be taken to check the project status as this method will panic if the project is not loaded
-    pub fn data_mut(&mut self) -> &mut ProjectData {
-        match &mut self.data_status {
-            ProjectDataStatus::Loaded(data) => data,
-            _ => panic!("Tried to read an unloaded project"),
-        }
-    }
-
     /// Profile Management
 
     /// Adds a profile with the given name
     ///
     /// if profiles were successfully changed, a [`ProjectEvent::ProfilesChanged`] event will be emitted
     ///
-    /// # Result
-    /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
+    /// # Return
+    /// Returns a copy of the updated profiles
     pub fn add_profile(
         &mut self,
         index: Option<usize>,
         name: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Result<Vec<Profile>> {
-        if !self.is_loaded() {
-            return Err(ProjectError::Invalid);
-        }
-        let profiles = self.data_mut().variables.add_profile(index, name);
-        self.save(ProjectEvent::ProfilesChanged, window, cx);
+    ) -> Vec<Profile> {
+        let profiles = self.variables.add_profile(index, name);
+        self.save(Some(ProjectEvent::ProfilesChanged), window, cx);
 
-        Ok(profiles)
+        profiles
     }
 
     /// Duplicates a profile, attributing a new id and copying all fields. Name is appended with *_copy*.
@@ -123,21 +70,16 @@ impl Project {
     /// if profile was successfully removed, a [`ProjectEvent::ProfilesChanged`] event will be emitted.
     /// Additionally, a [`ProjectEvent::ActiveProfileChanged`] event will also be emitted if the profile was active, and the active profile set to *None*
     ///
-    /// # Result
-    /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
-    ///
-    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
+    /// # Return
+    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound, a copy of the updated profiles else
     pub fn delete_profile(
         &mut self,
         index: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<Vec<Profile>> {
-        if !self.is_loaded() {
-            return Err(ProjectError::Invalid);
-        }
-        let (profiles, removed_profile) = self.data_mut().variables.delete_profile(index)?;
-        self.save(ProjectEvent::ProfilesChanged, window, cx);
+        let (profiles, removed_profile) = self.variables.delete_profile(index)?;
+        self.save(Some(ProjectEvent::ProfilesChanged), window, cx);
 
         // check if deleted profile was the active one
         if Some(removed_profile.id) == self.active_profile {
@@ -151,34 +93,27 @@ impl Project {
     ///
     /// if profiles were successfully changed, a [`ProjectEvent::ProfilesChanged`] event will be emitted
     ///
-    /// # Result
-    /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
-    ///
-    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
+    /// # Return
+    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound, a copy of the updated profiles else
     pub fn duplicate_profile(
         &mut self,
         row: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<Vec<Profile>> {
-        if !self.is_loaded() {
-            return Err(ProjectError::Invalid);
-        }
-        let result = self.data_mut().variables.duplicate_profile(row);
+        let result = self.variables.duplicate_profile(row);
         if result.is_ok() {
-            self.save(ProjectEvent::ProfilesChanged, window, cx);
+            self.save(Some(ProjectEvent::ProfilesChanged), window, cx);
         }
         result
     }
 
     /// Moves a profile from one position to another
+    /// # Events
+    /// Emits a [`ProjectEvent::ProfilesChanged`] if profile was successfully moved
     ///
-    /// if profiles were successfully changed, a [`ProjectEvent::ProfilesChanged`] event will be emitted
-    ///
-    /// # Result
-    /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
-    ///
-    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
+    /// # Return
+    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound, a copy of the updated profiles else
     pub fn move_profile(
         &mut self,
         row_from: usize,
@@ -186,19 +121,18 @@ impl Project {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<Vec<Profile>> {
-        if !self.is_loaded() {
-            return Err(ProjectError::Invalid);
-        }
-        let result = self.data_mut().variables.move_profile(row_from, row_to);
+        let result = self.variables.move_profile(row_from, row_to);
         if result.is_ok() {
-            self.save(ProjectEvent::ProfilesChanged, window, cx);
+            self.save(Some(ProjectEvent::ProfilesChanged), window, cx);
         }
         result
     }
 
+    /// Change the currently active profile
+    /// # Events
+    /// Emits a [`ProjectEvent::ActiveProfileChanged`] if active profile was successfully changed
     pub fn switch_profile(&mut self, profile_id: Option<Uuid>, cx: &mut Context<Self>) {
-        // TODO: Workspace should listen to active profile change to persist it
-        if profile_id == self.active_profile || !self.is_loaded() {
+        if profile_id == self.active_profile {
             return;
         }
         match profile_id {
@@ -207,13 +141,7 @@ impl Project {
                 cx.emit(ProjectEvent::ActiveProfileChanged(None));
             }
             Some(profile_id) => {
-                if self
-                    .data()
-                    .variables
-                    .profiles
-                    .iter()
-                    .any(|p| p.id == profile_id)
-                {
+                if self.variables.profiles.iter().any(|p| p.id == profile_id) {
                     self.active_profile = Some(profile_id);
                     cx.emit(ProjectEvent::ActiveProfileChanged(self.active_profile));
                 }
@@ -222,116 +150,80 @@ impl Project {
     }
 
     /// Merges a profile attributes
-    ///
+    /// # Events
     /// if profile was successfully changed, a [`ProjectEvent::ProfilesChanged`] event will be emitted
-    ///
-    /// # Result
-    /// Returns a [`ProjectError::Invalid`] if this was called on an unloaded project
-    ///
-    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
+    /// # Return
+    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound, a copy of the updated profiles else
     pub fn update_profile(
         &mut self,
         updated_profile: &Profile,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<Vec<Profile>> {
-        if !self.is_loaded() {
-            return Err(ProjectError::Invalid);
-        }
-        let result = self.data_mut().variables.update_profile(updated_profile);
+        let result = self.variables.update_profile(updated_profile);
         if result.is_ok() {
-            self.save(ProjectEvent::ProfilesChanged, window, cx);
+            self.save(Some(ProjectEvent::ProfilesChanged), window, cx);
         }
         result
     }
 
-    pub(super) fn load(mut self) -> Self {
-        if !self.path.exists() {
-            warn!("Could not find project at: {}", self.path.to_string_lossy());
-            self.data_status = ProjectDataStatus::Moved;
-            return self;
+    pub(super) fn load(path: &PathBuf, active_profile: Option<Uuid>) -> Result<Self> {
+        if !path.exists() || path.extension() != Some(PROJECT_FILE_EXT.as_ref()) {
+            error!("Invalid project at: {}", path.to_string_lossy());
+            return Err(ProjectError::BadLocation(path.clone()));
         }
 
-        match FileProject::load(&self.path) {
-            Ok(project_file) => {
-                if project_file.id != self.id {
-                    warn!(
-                        "Project id mismatch for project at: {}. Workspace id: {}, file id: {}",
-                        self.path.to_string_lossy(),
-                        self.id,
-                        project_file.id
-                    );
-                    self.data_status = ProjectDataStatus::ExternallyModified;
-                }
-                let project = ProjectData::from_file(&project_file);
-                // Update the ProjectInfo with the file data (in case of modification done externally without any major impact)
-                if let Some(active_profile) = &self.active_profile {
-                    if !project
-                        .variables
-                        .profiles
-                        .iter()
-                        .any(|p| p.id == *active_profile)
-                    {
-                        self.active_profile = None;
-                    }
-                }
-                if self.name != project_file.name {
-                    self.name = SharedString::new(&project_file.name);
-                }
-                self.created = project_file.created;
-                self.modified = project_file.modified;
-                self.data_status = ProjectDataStatus::Loaded(project)
-            }
-            Err(err) => {
-                error!(
-                    "Error loading project at: {}. Error: {}",
-                    self.path.to_string_lossy(),
-                    err
-                );
-                self.data_status = ProjectDataStatus::LoadError(err);
-            }
+        let file_project = ProjectFile::load(&path).map_err(|err| {
+            error!("Failed to load project at: {}. Error: {:?}", path.to_string_lossy(), err);
+            ProjectError::from(err)
+        })?;
+        let variables = ProjectVariables::from_file(&file_project.variables);
+        let endpoints = WorkspaceEndpoint::from_file(&file_project.endpoints);
+        let tests = TestsContainer::from_file(&file_project.tests);
+        let active_profile = match active_profile {
+            None => None,
+            Some(id) => variables.profiles.iter().find(|p| p.id == id).map(|p| p.id),
         };
 
-        self
+        Ok(Self {
+            name: SharedString::new(file_project.name),
+            created: file_project.created,
+            modified: file_project.modified,
+            variables,
+            endpoints,
+            tests,
+            active_profile,
+            path: path.clone(),
+        })
     }
 
-    pub(super) fn read_project(path: PathBuf, project_file: FileProject) -> Self {
-        let data = ProjectData::from_file(&project_file);
-        Self {
+    pub(super) fn new(
+        path: PathBuf,
+        name: SharedString,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut this = Self {
             path,
-            id: project_file.id,
-            name: SharedString::new(project_file.name),
-            version: 1,
-            created: project_file.created,
-            modified: project_file.modified,
-            active_profile: None,
-            data_status: ProjectDataStatus::Loaded(data),
-        }
-    }
-
-    pub(super) fn new(path: PathBuf, name: String) -> Self {
-        Self {
-            path,
-            id: Uuid::new_v4(),
-            name: SharedString::new(name),
-            version: 1,
+            name,
             created: Default::default(),
             modified: Default::default(),
+            variables: Default::default(),
+            endpoints: vec![],
+            tests: Default::default(),
             active_profile: None,
-            data_status: ProjectDataStatus::Loaded(ProjectData::new()),
-        }
+        };
+        this.save(None, window, cx);
+        this
     }
 
     /// save the project to file and emit the passed event
     pub fn save(
         &mut self,
-        event: ProjectEvent,
+        event: Option<ProjectEvent>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.is_loaded() {
-            return;
-        }
         cx.spawn_in(window, async move |this, cx| {
             if let Some(this) = this.upgrade() {
                 if let Err(err) = this.update(cx, |this, _| {
@@ -348,20 +240,21 @@ impl Project {
             }
         })
         .detach();
-        cx.emit(event);
+        if let Some(event) = event {
+            cx.emit(event);
+        }
     }
 
-    fn to_file(&self) -> FileProject {
-        let data = self.data();
+    fn to_file(&self) -> ProjectFile {
+        let data = self;
         let variables = data.variables.to_file();
         let endpoints = data.endpoints.iter().map(|e| e.to_file()).collect();
         let tests = data.tests.to_file();
         let modified = Local::now();
 
-        FileProject {
+        ProjectFile {
             name: self.name.to_string(),
-            id: self.id,
-            version: self.version,
+            version: 1,
             created: self.created,
             modified,
             variables,
@@ -371,46 +264,4 @@ impl Project {
     }
 }
 
-#[derive(Debug)]
-pub enum ProjectDataStatus {
-    Unloaded,
-    Loaded(ProjectData),
-    Moved,
-    ExternallyModified,
-    LoadError(ProjectFileError),
-}
-
-impl Default for ProjectDataStatus {
-    fn default() -> Self {
-        ProjectDataStatus::Unloaded
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct ProjectData {
-    pub variables: ProjectVariables,
-    pub endpoints: Vec<WorkspaceEndpoint>,
-    pub tests: TestsContainer,
-}
-
-impl ProjectData {
-    fn new() -> Self {
-        Self {
-            variables: Default::default(),
-            endpoints: vec![],
-            tests: Default::default(),
-        }
-    }
-
-    fn from_file(project: &FileProject) -> ProjectData {
-        let variables = ProjectVariables::from_file(&project.variables);
-        let endpoints = WorkspaceEndpoint::from_file(&project.endpoints);
-        let tests = TestsContainer::from_file(&project.tests);
-
-        Self {
-            variables,
-            endpoints,
-            tests,
-        }
-    }
-}
+impl EventEmitter<ProjectEvent> for Project {}

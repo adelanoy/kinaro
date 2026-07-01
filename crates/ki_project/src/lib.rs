@@ -6,10 +6,10 @@ mod variable;
 pub use {
     endpoint::{FileEndpoint, FileRestParameter, HttpMethod},
     error::ProjectFileError,
-    ki_project::FileProject,
+    ki_project::ProjectFile,
     test::{
-        FileTestsContainer, FileTestInfo, test_case::FileTestCase, test_step::FileTestStep,
-        test_suite::FileTestSuite,
+        test_case::FileTestCase, test_step::FileTestStep, test_suite::FileTestSuite, FileTestInfo,
+        FileTestsContainer,
     },
     variable::{FileProfile, FileProjectVariables, FileVariable, VariableKind},
 };
@@ -25,13 +25,11 @@ mod ki_project {
     use serde::{Deserialize, Serialize};
     use std::fs;
     use std::path::PathBuf;
-    use uuid::Uuid;
 
     #[derive(Serialize, Deserialize, Clone, Debug)]
     #[serde(rename_all = "camelCase")]
-    pub struct FileProject {
+    pub struct ProjectFile {
         pub name: String,
-        pub id: Uuid,
         pub version: u16,
         #[serde(with = "java_date_format")]
         pub created: DateTime<Local>,
@@ -42,12 +40,11 @@ mod ki_project {
         pub tests: FileTestsContainer,
     }
 
-    impl FileProject {
-        pub fn create(path: &PathBuf, name: &str) -> Result<FileProject> {
+    impl ProjectFile {
+        pub fn create(path: &PathBuf, name: &str) -> Result<ProjectFile> {
             check_project_path(path, false)
                 .and_then(|_| check_project_name(name))
-                .map(|_| FileProject {
-                    id: Uuid::new_v4(),
+                .map(|_| ProjectFile {
                     name: name.into(),
                     version: 1,
                     created: Local::now(),
@@ -58,11 +55,11 @@ mod ki_project {
                 })
         }
 
-        pub fn load(path: &PathBuf) -> Result<FileProject> {
+        pub fn load(path: &PathBuf) -> Result<ProjectFile> {
             check_project_path(path, true)
                 .and_then(|_| fs::read(&path).map_err(|e| ProjectFileError::Io(e)))
                 .and_then(|file| {
-                    serde_yaml::from_slice::<FileProject>(&file)
+                    serde_yaml::from_slice::<ProjectFile>(&file)
                         .map_err(|err| ProjectFileError::ReadYaml(err.to_string()))
                 })
         }

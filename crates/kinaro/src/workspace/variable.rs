@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProjectVariables {
     pub variables: Vec<Variable>,
     pub profiles: Vec<Profile>,
@@ -149,7 +149,7 @@ impl ProjectVariables {
                     description: SharedString::new(&file_var.description),
                     kind: file_var.kind,
                     reference_value: SharedString::new(&file_var.value),
-                    overrides,
+                    effective_values: overrides,
                 }
             })
             .collect::<Vec<Variable>>();
@@ -171,7 +171,7 @@ impl ProjectVariables {
         for workspace_var in &self.variables {
             let workspace_var = workspace_var;
             let overrides = workspace_var
-                .overrides
+                .effective_values
                 .iter()
                 .filter(|(_, value)| value.is_some())
                 .map(|(id, value)| (*id, value.clone().unwrap()))
@@ -216,7 +216,7 @@ pub struct Variable {
     pub description: SharedString,
     pub kind: VariableKind,
     pub reference_value: SharedString,
-    pub overrides: HashMap<Uuid, Option<String>>,
+    pub effective_values: HashMap<Uuid, Option<String>>,
 }
 
 #[derive(Eq, PartialEq, Ord, Clone, Debug)]

@@ -1,7 +1,7 @@
 use crate::workspace::test::{test_step::TestStep, TestInfo};
 use ki_project::FileTestCase;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq)]
 pub struct TestCase {
     pub info: TestInfo,
     pub is_anonymous: bool,

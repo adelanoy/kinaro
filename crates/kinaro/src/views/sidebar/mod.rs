@@ -18,7 +18,7 @@ pub struct ProjectSidebar {
 
 impl ProjectSidebar {
     pub fn new(workspace: Entity<Workspace>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let project_selector = cx.new(|cx| ProjectSelector::new(workspace.clone(), cx));
+        let project_selector = cx.new(|_| ProjectSelector::new(workspace.clone()));
         let _workspace_sub = cx.subscribe_in(
             &workspace,
             window,

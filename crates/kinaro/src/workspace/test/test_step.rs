@@ -1,7 +1,7 @@
 use crate::workspace::test::TestInfo;
 use ki_project::FileTestStep;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq)]
 pub struct TestStep {
     pub info: TestInfo,
     pub data: String,

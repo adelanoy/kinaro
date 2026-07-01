@@ -6,7 +6,7 @@ pub mod test_case;
 pub mod test_step;
 pub mod test_suite;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TestInfo {
     pub id: Uuid,
     pub name: String,
@@ -34,7 +34,7 @@ impl TestInfo {
     }
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct TestsContainer {
     pub test_suites: Vec<TestSuite>,
 }
