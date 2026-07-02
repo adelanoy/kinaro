@@ -164,6 +164,20 @@ impl Workspace {
             .collect()
     }
 
+    /// Returns a summary of project that failed to load
+    pub fn all_failed_projects(&self) -> Vec<(SharedString, PathBuf, String)> {
+        let mut summary = Vec::new();
+
+        for (path, wp) in &self.workspace_projects {
+            match &wp.data {
+                WorkspaceProjectData::Error(err) => summary.push((wp.name.clone(), path.clone(), err.to_string())),
+                WorkspaceProjectData::Loaded { .. } => continue,
+            }
+        }
+
+        summary
+    }
+
     /// Returns the currently active project
     ///
     /// If no active project is set or if it refers to a project that failed to load at init, returns *None*

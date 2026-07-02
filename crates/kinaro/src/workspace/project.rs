@@ -174,8 +174,9 @@ impl Project {
         }
 
         let file_project = ProjectFile::load(&path).map_err(|err| {
-            error!("Failed to load project at: {}. Error: {:?}", path.to_string_lossy(), err);
-            ProjectError::from(err)
+            let error = ProjectError::from(err);
+            error!("Failed to load project at: {}. Error: {:?}", path.to_string_lossy(), error);
+            error
         })?;
         let variables = ProjectVariables::from_file(&file_project.variables);
         let endpoints = WorkspaceEndpoint::from_file(&file_project.endpoints);

@@ -6,9 +6,10 @@ use crate::views::title_bar::AppTitleBar;
 use crate::workspace::Workspace;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants, Toggle};
+use gpui_component::notification::Notification;
 use gpui_component::resizable::{h_resizable, resizable_panel};
 use gpui_component::tab::{Tab, TabBar};
-use gpui_component::{h_flex, v_flex, IconName, Root, Sizable};
+use gpui_component::{IconName, Root, Sizable, WindowExt, h_flex, v_flex};
 use ki_assets::icon::IconAsset;
 use ki_settings::app_state::AppState;
 
@@ -36,6 +37,22 @@ impl WorkspaceView {
         if sidebar_width > max_sidebar_width {
             sidebar_width = max_sidebar_width;
         }
+
+        // Check if any project failed to load. If there is display a notif at end of render cycle
+        let project_errors = workspace.read(cx).all_failed_projects();
+        window.defer(cx, |window, cx| {
+            for project_error in project_errors {
+                window.push_notification(
+                    Notification::error(format!(
+                        "Failed to load project {} at path {}.\nDetails: {}",
+                        project_error.0,
+                        project_error.1.to_string_lossy(),
+                        project_error.2
+                    )),
+                    cx,
+                );
+            }
+        });
 
         Self {
             _workspace: workspace,
@@ -65,7 +82,8 @@ impl Render for WorkspaceView {
                         .on_resize({
                             let this = cx.entity();
                             move |state, _, cx| {
-                                let width = state.read_with(cx, |state, _| state.sizes()[0]).as_f32();
+                                let width =
+                                    state.read_with(cx, |state, _| state.sizes()[0]).as_f32();
                                 this.update(cx, |this, _| this.sidebar_width = width);
                                 AppState::update(cx, |app_state, _| {
                                     app_state.sidebar.width = width;
