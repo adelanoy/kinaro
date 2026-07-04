@@ -1,7 +1,7 @@
 use crate::workspace::project::PROJECT_FILE_EXT;
 use crate::workspace::{
     CreateProject, OpenProject, RemoveProject, RenameProject, SwitchActiveProject, Workspace,
-    WorkspaceProjectInfo,
+    WorkspaceEvent, WorkspaceProjectInfo,
 };
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
@@ -17,11 +17,41 @@ use std::path::PathBuf;
 
 pub(super) struct ProjectSelector {
     workspace: Entity<Workspace>,
+    project_infos: Vec<WorkspaceProjectInfo>,
+    current_project_name: SharedString,
+    _workspace_event_sub: Subscription,
 }
 
 impl ProjectSelector {
-    pub(super) fn new(workspace: Entity<Workspace>) -> Self {
-        Self { workspace }
+    pub(super) fn new(workspace: Entity<Workspace>, cx: &mut Context<Self>) -> Self {
+        let project_infos = workspace.read(cx).all_project_infos();
+        let current_project_name = project_infos
+            .iter()
+            .find(|info| info.active)
+            .map(|info| info.name.clone())
+            .unwrap_or(SharedString::new("__"));
+
+        let _workspace_event_sub = cx.subscribe(
+            &workspace,
+            |this, workspace, e: &WorkspaceEvent, cx| match e {
+                WorkspaceEvent::ProjectsChanged | WorkspaceEvent::ActiveProjectChanged(_) => {
+                    this.project_infos = workspace.read(cx).all_project_infos();
+                    this.current_project_name = this
+                        .project_infos
+                        .iter()
+                        .find(|info| info.active)
+                        .map(|info| info.name.clone())
+                        .unwrap_or(SharedString::new("__"));
+                }
+            },
+        );
+
+        Self {
+            workspace,
+            project_infos,
+            current_project_name,
+            _workspace_event_sub,
+        }
     }
 }
 
@@ -77,7 +107,7 @@ impl ProjectSelector {
                 }
             }
         })
-        .detach();
+            .detach();
     }
     fn on_rename_project(
         &mut self,
@@ -198,9 +228,9 @@ impl ProjectSelector {
                             Button::new("confirm").primary().label("Create").disabled(
                                 name_input.read(cx).value().len() == 0
                                     || path_input.read_with(cx, |state, _| {
-                                        state.value().len() == 0
-                                            || !state.value().ends_with(PROJECT_FILE_EXT)
-                                    }),
+                                    state.value().len() == 0
+                                        || !state.value().ends_with(PROJECT_FILE_EXT)
+                                }),
                             ),
                         )),
                 )
@@ -232,13 +262,7 @@ impl ProjectSelector {
 
 impl Render for ProjectSelector {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let active_project = self.workspace.read(cx).active_project();
-        let current_project_name = if let Some(project) = &active_project {
-            project.read(cx).name.clone()
-        } else {
-            SharedString::new("--")
-        };
-
+        let current_project_name = self.current_project_name.clone();
         div()
             .p_2()
             .on_action(cx.listener(Self::on_rename_project))
@@ -262,17 +286,16 @@ impl Render for ProjectSelector {
                             .child(IconName::ChevronsUpDown),
                     )
                     .dropdown_menu({
-                        let project_infos = self.workspace.read(cx).all_project_infos();
-
+                        let project_infos = self.project_infos.clone();
                         move |this, window, cx| {
                             let project_infos = project_infos.clone();
-                            let mut submenu = this;
+                            let mut submenu = this.min_w(px(230.0));
                             for project_info in project_infos {
                                 let WorkspaceProjectInfo {
                                     name,
                                     path,
-                                    loaded,
                                     active,
+                                    ..
                                 } = project_info;
                                 let submenu_icon = if active {
                                     Some(IconName::Check.into())
@@ -293,17 +316,17 @@ impl Render for ProjectSelector {
                                                 Box::new(SwitchActiveProject(path.clone())),
                                                 active,
                                             )
-                                            .separator()
-                                            .menu_with_icon(
-                                                "Delete",
-                                                IconName::Delete,
-                                                Box::new(RemoveProject(path.clone())),
-                                            )
-                                            .menu_with_icon(
-                                                "Rename",
-                                                IconAsset::Rename,
-                                                Box::new(RenameProject(path.clone(), name.clone())),
-                                            )
+                                                .separator()
+                                                .menu_with_icon(
+                                                    "Delete",
+                                                    IconName::Delete,
+                                                    Box::new(RemoveProject(path.clone())),
+                                                )
+                                                .menu_with_icon(
+                                                    "Rename",
+                                                    IconAsset::Rename,
+                                                    Box::new(RenameProject(path.clone(), name.clone())),
+                                                )
                                         }
                                     },
                                 );

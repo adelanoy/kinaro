@@ -5,8 +5,8 @@ use crate::workspace::variable::{Profile, ProjectVariables};
 use chrono::{DateTime, Local};
 use gpui::{Context, EventEmitter, SharedString, Window};
 use gpui_component::WindowExt;
-use ki_project::{ProjectFile};
-use log::{error, warn};
+use ki_project::ProjectFile;
+use log::error;
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -175,7 +175,11 @@ impl Project {
 
         let file_project = ProjectFile::load(&path).map_err(|err| {
             let error = ProjectError::from(err);
-            error!("Failed to load project at: {}. Error: {:?}", path.to_string_lossy(), error);
+            error!(
+                "Failed to load project at: {}. Error: {:?}",
+                path.to_string_lossy(),
+                error
+            );
             error
         })?;
         let variables = ProjectVariables::from_file(&file_project.variables);

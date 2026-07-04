@@ -319,8 +319,7 @@ impl Workspace {
                     debug!("Saving workspace to {}", file_path.to_string_lossy());
                 }
             });
-        })
-        .detach();
+        }).detach();
     }
 
     /// Switch the active project to the one referenced by the given path
