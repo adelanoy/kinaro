@@ -1,14 +1,21 @@
+pub mod project_selector;
+
+use crate::views::title_bar::project_selector::ProjectSelector;
+use crate::workspace::Workspace;
 use gpui::*;
-use gpui_component::label::Label;
 use gpui_component::switch::Switch;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable, StyledExt, Theme, ThemeMode, TitleBar};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable, Theme, ThemeMode, TitleBar};
 use ki_settings::app_state::AppState;
 
-pub struct AppTitleBar {}
+pub struct AppTitleBar {
+    project_selector: Entity<ProjectSelector>,
+}
 
 impl AppTitleBar {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(workspace: Entity<Workspace>, cx: &mut Context<Self>) -> Self {
+        Self {
+            project_selector: cx.new(|cx| ProjectSelector::new(workspace, cx)),
+        }
     }
 }
 
@@ -17,17 +24,13 @@ impl Render for AppTitleBar {
         let is_dark_mode = cx.theme().mode == ThemeMode::Dark;
 
         TitleBar::new()
+            .h_full()
+            .justify_between()
+            .child(self.project_selector.clone())
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .child(Label::new("Kinaro").font_semibold().text_2xl()),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_end()
                     .px_2()
                     .gap_2()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())

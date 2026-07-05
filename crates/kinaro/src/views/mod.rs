@@ -31,7 +31,7 @@ impl WorkspaceView {
 
         let workspace = cx.new(|cx| Workspace::init(cx));
         let project_sidebar = cx.new(|cx| ProjectSidebar::new(workspace.clone(), window, cx));
-        let title_bar = cx.new(|_| AppTitleBar::new());
+        let title_bar = cx.new(|cx| AppTitleBar::new(workspace.clone(), cx));
         let mut sidebar_width = AppState::read(cx, |app_state| app_state.sidebar.width);
         let max_sidebar_width = window.bounds().size.width.as_f32() * 0.8;
         if sidebar_width > max_sidebar_width {

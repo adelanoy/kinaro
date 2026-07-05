@@ -38,7 +38,7 @@ pub fn init(config_dir: &PathBuf) -> Result<()> {
 
     let config = Config::builder()
         .appender(Appender::builder().filter(Box::new(KinaroFilter)).build("console", Box::new(console_appender)))
-        //.appender(Appender::builder().filter(Box::new(KinaroFilter)).build("file", Box::new(file_appender)))
+        .appender(Appender::builder().filter(Box::new(KinaroFilter)).build("file", Box::new(file_appender)))
         .build(
             Root::builder()
                 .appenders(["console"])

@@ -1,6 +1,5 @@
 use gpui_component::notification::Notification;
 use ki_project::ProjectFileError;
-use std::io;
 use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
@@ -10,7 +9,7 @@ pub enum WorkspaceError {
     ProjectNotLoaded,
     /// General Io workspace error
     #[error("WorkspaceError::Io (err: {})", .0)]
-    Io(#[from] io::Error),
+    Io(String),
     /// A Json serialization has failed
     #[error("WorkspaceError::WriteJson (err: {:?})", .0)]
     Write(serde_json::Error),
@@ -38,11 +37,11 @@ impl Into<Notification> for WorkspaceError {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum ProjectError {
     /// General Io workspace error
     #[error("ProjectError::Io (err: {})", .0)]
-    Io(#[from] io::Error),
+    Io(String),
     /// A Json serialization has failed
     #[error("ProjectError::Write (err: {:?})", .0)]
     Write(String),
@@ -66,7 +65,7 @@ pub enum ProjectError {
 impl From<ProjectFileError> for ProjectError {
     fn from(value: ProjectFileError) -> Self {
         match value {
-            ProjectFileError::Io(err) => ProjectError::Io(err),
+            ProjectFileError::Io(err) => ProjectError::Io(err.to_string()),
             ProjectFileError::InvalidName(name) => ProjectError::InvalidName(name),
             ProjectFileError::WriteYaml(err) => ProjectError::Write(err),
             ProjectFileError::ReadYaml(err) => ProjectError::Read(err),

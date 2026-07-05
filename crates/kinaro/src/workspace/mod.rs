@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
+use crate::workspace::error::WorkspaceError::ProjectNotLoaded;
 
 pub mod endpoint;
 pub mod error;
@@ -28,7 +29,7 @@ struct WorkspaceFile {
     projects: Vec<FileProjectMetadata>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 struct FileProjectMetadata {
     /// The project's name
     name: String,
@@ -42,10 +43,13 @@ impl WorkspaceFile {
     fn load(file_path: &Path) -> Self {
         if file_path.exists() {
             fs::read(file_path)
-                .map_err(|e| WorkspaceError::Io(e))
+                .map_err(|e| WorkspaceError::Io(e.to_string()))
                 .and_then(|file| {
                     serde_json::from_slice::<WorkspaceFile>(&file)
-                        .map_err(|err| WorkspaceError::Read(err))
+                        .map_err(|err| {
+                            error!("Could not read workspace file: {}\nResetting...", err);
+                            WorkspaceError::Read(err)
+                        })
                 })
                 // If a project_error occurred while reading, create a new one
                 .unwrap_or_default()
@@ -57,18 +61,6 @@ impl WorkspaceFile {
 
 ///// WORKSPACE ACTIONS /////
 actions!(workspace, [CreateProject, OpenProject]);
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = workspace, no_json)]
-pub struct RemoveProject(pub PathBuf);
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = workspace, no_json)]
-pub struct SwitchActiveProject(pub PathBuf);
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = workspace, no_json)]
-pub struct RenameProject(pub PathBuf, pub SharedString);
 
 ///// WORKSPACE EVENTS /////
 pub enum WorkspaceEvent {
@@ -114,7 +106,7 @@ impl Workspace {
                         let _sub = cx.subscribe(&project, Self::on_project_event);
                         (
                             path.clone(),
-                            WorkspaceProject::project(project, _sub, metadata),
+                            WorkspaceProject::project(project, _sub, &metadata),
                         )
                     }
                     Err(err) => (
@@ -170,7 +162,9 @@ impl Workspace {
 
         for (path, wp) in &self.workspace_projects {
             match &wp.data {
-                WorkspaceProjectData::Error(err) => summary.push((wp.name.clone(), path.clone(), err.to_string())),
+                WorkspaceProjectData::Error(err, _) => {
+                    summary.push((wp.name.clone(), path.clone(), err.to_string()))
+                }
                 WorkspaceProjectData::Loaded { .. } => continue,
             }
         }
@@ -258,18 +252,74 @@ impl Workspace {
         Ok(())
     }
 
+    /// Attempts to reload an unloaded project
+    ///
+    /// # Events
+    /// Emits a [`WorkspaceEvent::ProjectsChanged`] if the project is successfully removed from the workspace
+    pub fn reload_project(&mut self, project_path: PathBuf, cx: &mut Context<Self>) -> Result<bool> {
+        let updated_wp;
+        {
+            let Some(project) = self.workspace_projects.get_mut(&project_path) else {
+                return Ok(false);
+            };
+
+            updated_wp = match &project.data {
+                WorkspaceProjectData::Error(_, metadata) => {
+                    match Project::load(&project_path, metadata.active_profile) {
+                        Ok(project) => {
+                            let project = cx.new(|_| project);
+                            let _sub = cx.subscribe(&project, Self::on_project_event);
+                            Some(WorkspaceProject::project(project, _sub, metadata))
+                        }
+                        Err(err) => Some(WorkspaceProject::error(err, metadata.clone())),
+                    }
+                }
+                WorkspaceProjectData::Loaded { .. } => None,
+            };
+        }
+
+        if updated_wp.is_some() {
+            let updated_wp = updated_wp.unwrap();
+            let result : Result<bool> = match &updated_wp.data {
+                WorkspaceProjectData::Error(err, _) => {
+                    println!("err: {}", err.to_string());
+                    Err(err.clone().into())
+                },
+                WorkspaceProjectData::Loaded { .. } => Ok(true)
+            };
+            self.workspace_projects.insert(project_path.clone(), updated_wp);
+            cx.emit(WorkspaceEvent::ProjectsChanged);
+            if result.is_ok() {
+                self.active_project = Some(project_path);
+                cx.emit(WorkspaceEvent::ActiveProjectChanged(self.active_project.clone()));
+            }
+            self.save(cx);
+            result
+        } else {
+            Ok(false)
+        }
+
+    }
+
     /// Renames a project
     ///
     /// # Events
     /// Emits a [`WorkspaceEvent::ProjectsChanged`] if the project is successfully removed from the workspace
-    pub fn rename_project(&mut self, project_path: &PathBuf, new_name: SharedString, cx: &mut Context<Self>) {
+    pub fn rename_project(
+        &mut self,
+        project_path: &PathBuf,
+        new_name: SharedString,
+        cx: &mut Context<Self>,
+    ) {
         let Some(project) = self.workspace_projects.get_mut(project_path) else {
             return;
         };
 
         project.name = new_name.clone();
         match &project.data {
-            WorkspaceProjectData::Loaded { project, .. } => project.update(cx, |project, _| project.name = new_name),
+            WorkspaceProjectData::Loaded { project, .. } => {
+                project.update(cx, |project, _| project.name = new_name)
+            }
             _ => {}
         }
 
@@ -306,8 +356,8 @@ impl Workspace {
         cx.spawn(async move |this, cx| {
             _ = this.read_with(cx, |this, cx| {
                 if let Err(err) = fs::create_dir_all(&*config_dir)
-                    .map_err(|e| WorkspaceError::Io(e))
-                    .and_then(|_| fs::File::create(&file_path).map_err(|e| WorkspaceError::Io(e)))
+                    .map_err(|e| WorkspaceError::Io(e.to_string()))
+                    .and_then(|_| fs::File::create(&file_path).map_err(|e| WorkspaceError::Io(e.to_string())))
                     .and_then(|file| {
                         let file_content = this.to_file(cx);
                         serde_json::to_writer_pretty(file, &file_content)
@@ -319,7 +369,8 @@ impl Workspace {
                     debug!("Saving workspace to {}", file_path.to_string_lossy());
                 }
             });
-        }).detach();
+        })
+        .detach();
     }
 
     /// Switch the active project to the one referenced by the given path
@@ -339,7 +390,7 @@ impl Workspace {
         };
 
         if !project.is_loaded() {
-            Err(WorkspaceError::ProjectNotLoaded)
+            Err(ProjectNotLoaded)
         } else {
             self.active_project = Some(project_path.clone());
             cx.emit(WorkspaceEvent::ActiveProjectChanged(Some(project_path)));
@@ -364,11 +415,7 @@ impl Workspace {
                             active_profile: project.active_profile(),
                         }
                     }
-                    _ => FileProjectMetadata {
-                        name: workspace_project.name.to_string(),
-                        path: path.clone(),
-                        active_profile: None,
-                    },
+                    WorkspaceProjectData::Error(_, metadata) => metadata.clone(),
                 })
                 .collect(),
         }
@@ -400,10 +447,10 @@ impl WorkspaceProject {
     fn project(
         project: Entity<Project>,
         project_event_sub: Subscription,
-        metadata: FileProjectMetadata,
+        metadata: &FileProjectMetadata,
     ) -> Self {
         Self {
-            name: SharedString::new(metadata.name),
+            name: SharedString::new(metadata.name.clone()),
             data: WorkspaceProjectData::Loaded {
                 project,
                 _sub: project_event_sub,
@@ -413,14 +460,15 @@ impl WorkspaceProject {
 
     fn error(err: ProjectError, metadata: FileProjectMetadata) -> Self {
         Self {
-            name: SharedString::new(metadata.name),
-            data: WorkspaceProjectData::Error(err),
+            name: SharedString::new(metadata.name.clone()),
+            data: WorkspaceProjectData::Error(err, metadata),
         }
     }
 }
 
-pub enum WorkspaceProjectData {
-    Error(ProjectError),
+enum WorkspaceProjectData {
+    /// Stores the error generated when a laoding attempt was made, and the metadata
+    Error(ProjectError, FileProjectMetadata),
     Loaded {
         project: Entity<Project>,
         _sub: Subscription,
