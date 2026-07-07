@@ -102,13 +102,13 @@ impl ProjectVariables {
     /// Merges a profile attributes
     ///
     /// # Result
-    /// Returns a copy of the new profiles list
+    /// Returns a copy of the new profiles list if it was modified, else *None*
     ///
     /// Returns a [`ProjectError::ProfileNotFound`] if the profile could not be found by its id
     pub(super) fn update_profile(
         &mut self,
         updated_profile: &Profile,
-    ) -> project::Result<Vec<Profile>> {
+    ) -> project::Result<Option<Vec<Profile>>> {
         let Some(profile) = self
             .profiles
             .iter_mut()
@@ -124,8 +124,10 @@ impl ProjectVariables {
         if updated_profile != profile {
             profile.name = updated_profile.name.clone();
             profile.description = updated_profile.description.clone();
+            Ok(Some(self.profiles.clone()))
+        } else {
+            Ok(None)
         }
-        Ok(self.profiles.clone())
     }
 
     pub(super) fn from_file(file_vars: &FileProjectVariables) -> Self {

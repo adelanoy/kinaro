@@ -159,12 +159,15 @@ impl Project {
         updated_profile: &Profile,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Result<Vec<Profile>> {
-        let result = self.variables.update_profile(updated_profile);
-        if result.is_ok() {
-            self.save(Some(ProjectEvent::ProfilesChanged), window, cx);
+    ) -> Result<Option<Vec<Profile>>> {
+        let result = self.variables.update_profile(updated_profile)?;
+        match result {
+            None => Ok(None),
+            Some(profiles) => {
+                self.save(Some(ProjectEvent::ProfilesChanged), window, cx);
+                Ok(Some(profiles))
+            }
         }
-        result
     }
 
     pub(super) fn load(path: &PathBuf, active_profile: Option<Uuid>) -> Result<Self> {

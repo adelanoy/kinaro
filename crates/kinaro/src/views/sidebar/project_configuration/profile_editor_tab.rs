@@ -24,8 +24,8 @@ struct DuplicateProfileAction(usize);
 
 pub(super) struct ProfileEditor {
     focus_handle: FocusHandle,
-    table_state: Option<Entity<TableState<ProfileDataTableDelegate>>>,
-    _table_subscriptions: Option<Subscription>,
+    table_state: Entity<TableState<ProfileDataTableDelegate>>,
+    _table_subscriptions: Subscription,
 }
 
 impl ProfileEditor {
@@ -60,8 +60,8 @@ impl ProfileEditor {
         cx: &mut Context<Self>,
     ) {
         let row_ix = row.0;
-        self.table_state.as_ref().unwrap().update(cx, |this, cx| {
-            this.delegate_mut().delete_row(row_ix, window, cx);
+        self.table_state.update(cx, |this, cx| {
+            this.delegate_mut().delete_profile(row_ix, window, cx);
         });
     }
 
@@ -71,14 +71,11 @@ impl ProfileEditor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.table_state
-            .as_ref()
-            .unwrap()
-            .update(cx, |table_state, cx| {
-                table_state
-                    .delegate_mut()
-                    .duplicate_profile(row.0, window, cx);
-            });
+        self.table_state.update(cx, |table_state, cx| {
+            table_state
+                .delegate_mut()
+                .duplicate_profile(row.0, window, cx);
+        });
     }
 
     fn on_clear_selection(
@@ -88,8 +85,6 @@ impl ProfileEditor {
         cx: &mut Context<Self>,
     ) {
         self.table_state
-            .as_ref()
-            .unwrap()
             .update(cx, |table_state, cx| table_state.clear_selection(cx));
     }
 }
@@ -105,7 +100,7 @@ impl ProjectConfigurationTab for ProfileEditor {
 
     fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<impl Render> {
         cx.new(|cx| {
-            let profiles_table_state = cx.new(|cx| {
+            let table_state = cx.new(|cx| {
                 TableState::new(
                     ProfileDataTableDelegate::new(project, window, cx),
                     window,
@@ -115,9 +110,7 @@ impl ProjectConfigurationTab for ProfileEditor {
                 .col_selectable(false)
                 .cell_selectable(true)
             });
-            let _table_subscriptions =
-                Some(cx.subscribe_in(&profiles_table_state, window, Self::on_table_event));
-            let table_state = Some(profiles_table_state);
+            let _table_subscriptions = cx.subscribe_in(&table_state, window, Self::on_table_event);
 
             Self {
                 focus_handle: cx.focus_handle(),
@@ -282,13 +275,17 @@ impl ProfileDataTableDelegate {
     }
 
     fn save_profiles(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-        let index = self.selected_row_index();
+        let index = self.selected_row_index(true);
         if let Some(row) = index {
             let profile = self.profiles.get(row).unwrap();
             match self.active_project.update(cx, |project, cx| {
                 project.update_profile(profile, window, cx)
             }) {
-                Ok(profiles) => self.profiles = profiles,
+                Ok(profiles) => {
+                    if profiles.is_some() {
+                        self.profiles = profiles.unwrap()
+                    }
+                }
                 Err(err) => window.push_notification(err, cx),
             }
         }
@@ -296,7 +293,7 @@ impl ProfileDataTableDelegate {
 
     fn add_profile(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
         let name = "new profile";
-        let index = self.selected_row_index();
+        let index = self.selected_row_index(true);
         self.profiles = self.active_project.update(cx, |project, cx| {
             project.add_profile(index, name, window, cx)
         });
@@ -316,7 +313,7 @@ impl ProfileDataTableDelegate {
         }
     }
 
-    fn delete_row(
+    fn delete_profile(
         &mut self,
         row_ix: usize,
         window: &mut Window,
@@ -338,11 +335,11 @@ impl ProfileDataTableDelegate {
         }
     }
 
-    fn delete_selected_row(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-        let Some(row_ix) = self.selected_row_index() else {
+    fn delete_selected_profile(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+        let Some(row_ix) = self.selected_row_index(false) else {
             return;
         };
-        if self.delete_row(row_ix, window, cx) {
+        if self.delete_profile(row_ix, window, cx) {
             self.selected_row = if row_ix >= self.profiles.len() {
                 None
             } else {
@@ -351,7 +348,7 @@ impl ProfileDataTableDelegate {
         }
     }
 
-    fn move_row(
+    fn move_profile(
         &mut self,
         from: usize,
         to: usize,
@@ -367,10 +364,12 @@ impl ProfileDataTableDelegate {
         }
     }
 
-    fn selected_row_index(&self) -> Option<usize> {
+    fn selected_row_index(&self, include_edit: bool) -> Option<usize> {
         if let Some(row_ix) = self.selected_row {
             Some(row_ix)
         } else if let Some((row_ix, _)) = self.selected_cell {
+            Some(row_ix)
+        } else if include_edit && let Some((row_ix, _)) = self.edited_cell {
             Some(row_ix)
         } else {
             None
@@ -410,7 +409,7 @@ impl TableDelegate for ProfileDataTableDelegate {
                 },
             )
             .on_drop(cx.listener(move |table, e: &MovingProfile, window, cx| {
-                table.delegate_mut().move_row(e.row, row_ix, window, cx);
+                table.delegate_mut().move_profile(e.row, row_ix, window, cx);
             }))
     }
 
@@ -471,6 +470,13 @@ impl TableDelegate for ProfileDataTableDelegate {
 
 impl Render for ProfileEditor {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let (is_editing, current_row_selection) = self.table_state.read_with(cx, |this, _| {
+            let delegate = this.delegate();
+            (
+                delegate.edited_cell.is_some(),
+                delegate.selected_row_index(false),
+            )
+        });
         v_flex()
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_delete_row_action))
@@ -479,57 +485,43 @@ impl Render for ProfileEditor {
             .p_1()
             .size_full()
             .gap_y_2()
-            .when_some(self.table_state.clone(), |div, table| {
-                let (is_editing, current_row_selection) = table.read_with(cx, |this, _| {
-                    let delegate = this.delegate();
-                    (
-                        delegate.edited_cell.is_some(),
-                        delegate.selected_row_index(),
+            .child(
+                h_flex()
+                    .gap_x_2()
+                    .w_full()
+                    .flex_row_reverse()
+                    .child(
+                        Button::new("btn-add-profile")
+                            .ghost()
+                            .with_size(gpui_component::Size::Small)
+                            .disabled(is_editing)
+                            .icon(IconName::Plus)
+                            .on_click({
+                                let table_state = self.table_state.clone();
+                                move |_, window, cx| {
+                                    table_state.update(cx, |this, cx| {
+                                        this.delegate_mut().add_profile(window, cx);
+                                    });
+                                }
+                            }),
                     )
-                });
-                div.child(
-                    h_flex()
-                        .gap_x_2()
-                        .w_full()
-                        .flex_row_reverse()
-                        .child(
-                            Button::new("btn-add-profile")
-                                .ghost()
-                                .with_size(gpui_component::Size::Small)
-                                .disabled(is_editing)
-                                .icon(IconName::Plus)
-                                .on_click({
-                                    let table_state = table.clone();
-                                    move |_, window, cx| {
-                                        table_state.update(cx, |this, cx| {
-                                            this.delegate_mut().add_profile(window, cx);
-                                        });
-                                    }
-                                }),
-                        )
-                        .child(
-                            Button::new("btn-remove-profile")
-                                .ghost()
-                                .with_size(gpui_component::Size::Small)
-                                .disabled(is_editing || current_row_selection.is_none())
-                                .icon(IconName::Delete)
-                                .on_click({
-                                    let table_state = table.clone();
-                                    move |_, window, cx| {
-                                        table_state.update(cx, |this, cx| {
-                                            this.delegate_mut().delete_selected_row(window, cx);
-                                        });
-                                    }
-                                }),
-                        ),
-                )
-                .child(DataTable::new(&table).small())
-            })
-            .when_none(&self.table_state, |div| {
-                div.items_center()
-                    .justify_center()
-                    .child("Select a project")
-            })
+                    .child(
+                        Button::new("btn-remove-profile")
+                            .ghost()
+                            .with_size(gpui_component::Size::Small)
+                            .disabled(is_editing || current_row_selection.is_none())
+                            .icon(IconName::Delete)
+                            .on_click({
+                                let table_state = self.table_state.clone();
+                                move |_, window, cx| {
+                                    table_state.update(cx, |this, cx| {
+                                        this.delegate_mut().delete_selected_profile(window, cx);
+                                    });
+                                }
+                            }),
+                    ),
+            )
+            .child(DataTable::new(&self.table_state).small())
     }
 }
 
