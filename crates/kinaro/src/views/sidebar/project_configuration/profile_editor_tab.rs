@@ -44,10 +44,10 @@ impl ProfileEditor {
                 .delegate_mut()
                 .on_cell_edited(*row_ix, *col_ix, window, cx),
             TableEvent::SelectRow(ix) => {
-                this.delegate_mut().on_row_selected(*ix);
+                this.delegate_mut().on_row_selected(*ix, window, cx);
             }
             TableEvent::ClearSelection => {
-                this.delegate_mut().reset_state();
+                this.delegate_mut().reset_subs();
             }
             _ => {}
         });
@@ -106,9 +106,9 @@ impl ProjectConfigurationTab for ProfileEditor {
                     window,
                     cx,
                 )
-                .row_selectable(true)
-                .col_selectable(false)
-                .cell_selectable(true)
+                    .row_selectable(true)
+                    .col_selectable(false)
+                    .cell_selectable(true)
             });
             let _table_subscriptions = cx.subscribe_in(&table_state, window, Self::on_table_event);
 
@@ -121,16 +121,22 @@ impl ProjectConfigurationTab for ProfileEditor {
     }
 }
 
+#[derive(Eq, PartialEq)]
+enum CellState {
+    Unselected,
+    RowSelected(usize),
+    CellSelected(usize, usize),
+    CellEdited(usize, usize),
+}
+
 pub struct ProfileDataTableDelegate {
     active_project: Entity<Project>,
     profiles: Vec<Profile>,
     table_columns: Vec<Column>,
-    edited_cell: Option<(usize, usize)>,
-    selected_cell: Option<(usize, usize)>,
-    selected_row: Option<usize>,
-    name_state: Entity<InputState>,
+    cell_state: CellState,
+    name_input_state: Entity<InputState>,
     _name_state_sub: Option<Subscription>,
-    description_state: Entity<InputState>,
+    description_input_state: Entity<InputState>,
     _description_state_sub: Option<Subscription>,
 }
 
@@ -158,22 +164,17 @@ impl ProfileDataTableDelegate {
             active_project,
             profiles,
             table_columns,
-            edited_cell: None,
-            selected_cell: None,
-            selected_row: None,
-            name_state,
+            cell_state: CellState::Unselected,
+            name_input_state: name_state,
             _name_state_sub: None,
-            description_state,
+            description_input_state: description_state,
             _description_state_sub: None,
         }
     }
 
-    fn reset_state(&mut self) {
+    fn reset_subs(&mut self) {
         self._name_state_sub = None;
         self._description_state_sub = None;
-        self.edited_cell = None;
-        self.selected_cell = None;
-        self.selected_row = None;
     }
 
     fn on_cell_selected(
@@ -183,20 +184,24 @@ impl ProfileDataTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        self.save_profiles(window, cx);
-        let selected_cell = Some((row_ix, col_ix));
-        if self.selected_cell != selected_cell && self.edited_cell != selected_cell {
-            self.reset_state();
-            self.selected_cell = Some((row_ix, col_ix));
+        if matches!(self.cell_state, CellState::CellEdited(_, _)) {
+            self.save_profiles(window, cx);
+            self.reset_subs();
         }
+        self.cell_state = CellState::CellSelected(row_ix, col_ix);
     }
 
-    fn on_row_selected(&mut self, row_ix: usize) {
-        let selected_row = Some(row_ix);
-        if selected_row != self.selected_row {
-            self.reset_state();
-            self.selected_row = selected_row;
+    fn on_row_selected(
+        &mut self,
+        row_ix: usize,
+        window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) {
+        if matches!(self.cell_state, CellState::CellEdited(_, _)) {
+            self.save_profiles(window, cx);
+            self.reset_subs();
         }
+        self.cell_state = CellState::RowSelected(row_ix);
     }
 
     fn on_cell_edited(
@@ -206,56 +211,60 @@ impl ProfileDataTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        let edited_cell = Some((row_ix, col_ix));
-        if self.edited_cell == edited_cell {
-            return;
+        match self.cell_state {
+            CellState::CellEdited(current_row_ix, current_col_ix) => {
+                if current_row_ix == row_ix && current_col_ix == col_ix {
+                    return;
+                } else {
+                    self.save_profiles(window, cx);
+                    self.reset_subs();
+                }
+            }
+            _ => {}
         }
-        self.reset_state();
-        self.edited_cell = edited_cell;
+
         match col_ix {
             0 => {
-                self.name_state.update(cx, |state, cx| {
+                self.name_input_state.update(cx, |state, cx| {
                     let name = self.profiles.get(row_ix).unwrap().name.clone();
                     state.set_value(name, window, cx);
                     state.focus(window, cx);
                 });
                 self._name_state_sub = Some(cx.subscribe_in(
-                    &self.name_state,
+                    &self.name_input_state,
                     window,
-                    |table, state, event, window, cx| match event {
+                    move |table, input_state, event, window, cx| match event {
                         InputEvent::Change => {
-                            let text = state.read(cx).value();
-                            let row = table.delegate().edited_cell.unwrap().0;
-                            table.delegate_mut().profiles.get_mut(row).unwrap().name = text;
+                            let text = input_state.read(cx).value();
+                            table.delegate_mut().profiles.get_mut(row_ix).unwrap().name = text;
                         }
                         InputEvent::PressEnter {
                             secondary: _,
                             shift: _,
                         } => {
                             table.delegate_mut().save_profiles(window, cx);
-                            table.delegate_mut().reset_state();
+                            table.delegate_mut().reset_subs();
                         }
                         _ => {}
                     },
                 ));
             }
             1 => {
-                self.description_state.update(cx, |state, cx| {
+                self.description_input_state.update(cx, |state, cx| {
                     let description = self.profiles.get(row_ix).unwrap().description.clone();
                     state.set_value(description, window, cx);
                     state.focus(window, cx);
                 });
                 self._description_state_sub = Some(cx.subscribe_in(
-                    &self.description_state,
+                    &self.description_input_state,
                     window,
-                    |table, state, event, window, cx| match event {
+                    move |table, state, event, window, cx| match event {
                         InputEvent::Change => {
                             let text = state.read(cx).value();
-                            let row = table.delegate().edited_cell.unwrap().0;
                             table
                                 .delegate_mut()
                                 .profiles
-                                .get_mut(row)
+                                .get_mut(row_ix)
                                 .unwrap()
                                 .description = text;
                         }
@@ -264,7 +273,7 @@ impl ProfileDataTableDelegate {
                             shift: _,
                         } => {
                             table.delegate_mut().save_profiles(window, cx);
-                            table.delegate_mut().reset_state();
+                            table.delegate_mut().reset_subs();
                         }
                         _ => {}
                     },
@@ -272,10 +281,15 @@ impl ProfileDataTableDelegate {
             }
             _ => unreachable!(),
         }
+
+        self.cell_state = CellState::CellEdited(row_ix, col_ix);
     }
 
     fn save_profiles(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-        let index = self.selected_row_index(true);
+        let index = match self.cell_state {
+            CellState::CellEdited(row_ix, _) => Some(row_ix),
+            _ => None,
+        } ;
         if let Some(row) = index {
             let profile = self.profiles.get(row).unwrap();
             match self.active_project.update(cx, |project, cx| {
@@ -292,10 +306,16 @@ impl ProfileDataTableDelegate {
     }
 
     fn add_profile(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+        let current_row = match self.cell_state {
+            CellState::RowSelected(row_ix) | CellState::CellSelected(row_ix, _) => Some(row_ix),
+            CellState::Unselected => None,
+            _ => {
+                return;
+            }
+        };
         let name = "new profile";
-        let index = self.selected_row_index(true);
         self.profiles = self.active_project.update(cx, |project, cx| {
-            project.add_profile(index, name, window, cx)
+            project.add_profile(current_row, name, window, cx)
         });
     }
 
@@ -325,7 +345,7 @@ impl ProfileDataTableDelegate {
         match result {
             Ok(profiles) => {
                 self.profiles = profiles;
-                self.reset_state();
+                self.reset_subs();
                 true
             }
             Err(err) => {
@@ -336,14 +356,16 @@ impl ProfileDataTableDelegate {
     }
 
     fn delete_selected_profile(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-        let Some(row_ix) = self.selected_row_index(false) else {
-            return;
+        let current_row = match self.cell_state {
+            CellState::RowSelected(row_ix) | CellState::CellSelected(row_ix, _) => row_ix,
+            _ => {
+                return;
+            }
         };
-        if self.delete_profile(row_ix, window, cx) {
-            self.selected_row = if row_ix >= self.profiles.len() {
-                None
-            } else {
-                Some(row_ix)
+
+        if self.delete_profile(current_row, window, cx) {
+            if current_row >= self.profiles.len() {
+                self.cell_state = CellState::Unselected
             }
         }
     }
@@ -361,18 +383,6 @@ impl ProfileDataTableDelegate {
         {
             Ok(profiles) => self.profiles = profiles,
             Err(err) => window.push_notification(err, cx),
-        }
-    }
-
-    fn selected_row_index(&self, include_edit: bool) -> Option<usize> {
-        if let Some(row_ix) = self.selected_row {
-            Some(row_ix)
-        } else if let Some((row_ix, _)) = self.selected_cell {
-            Some(row_ix)
-        } else if include_edit && let Some((row_ix, _)) = self.edited_cell {
-            Some(row_ix)
-        } else {
-            None
         }
     }
 }
@@ -425,11 +435,11 @@ impl TableDelegate for ProfileDataTableDelegate {
             IconName::Delete,
             Box::new(DeleteProfileAction(row_ix)),
         )
-        .menu_with_icon(
-            SharedString::new("Duplicate"),
-            IconName::Copy,
-            Box::new(DuplicateProfileAction(row_ix)),
-        )
+            .menu_with_icon(
+                SharedString::new("Duplicate"),
+                IconName::Copy,
+                Box::new(DuplicateProfileAction(row_ix)),
+            )
     }
 
     fn render_td(
@@ -439,23 +449,20 @@ impl TableDelegate for ProfileDataTableDelegate {
         _window: &mut Window,
         _cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
-        let name = self.profiles.get(row_ix).unwrap().name.clone();
-        let description = self.profiles.get(row_ix).unwrap().description.clone();
-
-        if Some((row_ix, col_ix)) == self.edited_cell {
+        if CellState::CellEdited(row_ix, col_ix) == self.cell_state {
             match col_ix {
-                0 => Input::new(&self.name_state).small(),
-                1 => Input::new(&self.description_state).small(),
+                0 => Input::new(&self.name_input_state).small(),
+                1 => Input::new(&self.description_input_state).small(),
                 _ => unreachable!(),
             }
-            .into_any_element()
+                .into_any_element()
         } else {
             match col_ix {
-                0 => name,
-                1 => description,
+                0 => self.profiles.get(row_ix).unwrap().name.clone(),
+                1 => self.profiles.get(row_ix).unwrap().description.clone(),
                 _ => unreachable!(),
             }
-            .into_any_element()
+                .into_any_element()
         }
     }
 
@@ -464,7 +471,7 @@ impl TableDelegate for ProfileDataTableDelegate {
         _window: &mut Window,
         _cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
-        h_flex().size_full().into_any_element()
+        div().size_full().into_any_element()
     }
 }
 
@@ -473,8 +480,13 @@ impl Render for ProfileEditor {
         let (is_editing, current_row_selection) = self.table_state.read_with(cx, |this, _| {
             let delegate = this.delegate();
             (
-                delegate.edited_cell.is_some(),
-                delegate.selected_row_index(false),
+                matches!(delegate.cell_state, CellState::CellEdited(_, _)),
+                match delegate.cell_state {
+                    CellState::RowSelected(row_ix)
+                    | CellState::CellSelected(row_ix, _)
+                    | CellState::CellEdited(row_ix, _) => Some(row_ix),
+                    CellState::Unselected => None,
+                },
             )
         });
         v_flex()

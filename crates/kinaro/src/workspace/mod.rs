@@ -1,6 +1,6 @@
 use crate::workspace::error::{ProjectError, WorkspaceError};
 pub(crate) use crate::workspace::project::{Project, ProjectEvent};
-use gpui::{Action, App, Entity, EventEmitter, SharedString, Subscription, Window, actions};
+use gpui::{ App, Entity, EventEmitter, SharedString, Subscription, Window, actions};
 use gpui::{AppContext, Context};
 use ki_settings::GlobalSettings;
 use log::{debug, error};
