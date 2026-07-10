@@ -343,7 +343,7 @@ impl ProjectSelector {
         let _workspace_event_sub = cx.subscribe(
             &workspace,
             |this, workspace, e: &WorkspaceEvent, cx| match e {
-                WorkspaceEvent::ActiveProjectChanged(_) => {
+                WorkspaceEvent::ActiveProjectChanged => {
                     this.active_project = workspace.read(cx).active_project()
                 }
                 _ => {}
@@ -440,7 +440,7 @@ impl ProjectSelector {
                         }
 
                         workspace.update(cx, |workspace, cx| {
-                            workspace.create_project(project_name, project, window, cx)
+                            workspace.create_project(project_name, project, cx)
                         });
                         true
                     }

@@ -1,7 +1,7 @@
 use crate::actions::EscAction;
 use crate::views::sidebar::project_configuration::ProjectConfigurationTab;
+use crate::workspace::variable::{Profile, ProjectVariables};
 use crate::workspace::Project;
-use crate::workspace::variable::Profile;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
@@ -9,7 +9,7 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::PopupMenu;
 use gpui_component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
 use gpui_component::{
-    ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt, h_flex, v_flex,
+    h_flex, v_flex, ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt,
 };
 use ki_assets::icon::IconAsset;
 use serde::Deserialize;
@@ -106,9 +106,9 @@ impl ProjectConfigurationTab for ProfileEditor {
                     window,
                     cx,
                 )
-                    .row_selectable(true)
-                    .col_selectable(false)
-                    .cell_selectable(true)
+                .row_selectable(true)
+                .col_selectable(false)
+                .cell_selectable(true)
             });
             let _table_subscriptions = cx.subscribe_in(&table_state, window, Self::on_table_event);
 
@@ -130,7 +130,7 @@ enum CellState {
 }
 
 pub struct ProfileDataTableDelegate {
-    active_project: Entity<Project>,
+    project_profiles: Entity<ProjectVariables>,
     profiles: Vec<Profile>,
     table_columns: Vec<Column>,
     cell_state: CellState,
@@ -142,7 +142,7 @@ pub struct ProfileDataTableDelegate {
 
 impl ProfileDataTableDelegate {
     fn new(
-        active_project: Entity<Project>,
+        project: Entity<Project>,
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> Self {
@@ -157,11 +157,11 @@ impl ProfileDataTableDelegate {
 
         let name_state = cx.new(|cx| InputState::new(window, cx));
         let description_state = cx.new(|cx| InputState::new(window, cx));
-        let profiles =
-            active_project.read_with(cx, |project, _| project.variables.profiles.clone());
+        let project_profiles = project.read(cx).variables.clone();
+        let profiles = project_profiles.read(cx).profiles.clone();
 
         Self {
-            active_project,
+            project_profiles,
             profiles,
             table_columns,
             cell_state: CellState::Unselected,
@@ -184,9 +184,18 @@ impl ProfileDataTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        if matches!(self.cell_state, CellState::CellEdited(_, _)) {
-            self.save_profiles(window, cx);
-            self.reset_subs();
+        match self.cell_state {
+            // Same cell being edited, return
+            CellState::CellEdited(edit_row_ix, edit_col_ix)
+                if edit_row_ix == row_ix && edit_col_ix == col_ix => {
+                return;
+            }
+            // Other cell being edited, save before
+            CellState::CellEdited(_, _) => {
+                self.save_profiles(window, cx);
+                self.reset_subs();
+            }
+            _ => {}
         }
         self.cell_state = CellState::CellSelected(row_ix, col_ix);
     }
@@ -242,8 +251,10 @@ impl ProfileDataTableDelegate {
                             secondary: _,
                             shift: _,
                         } => {
-                            table.delegate_mut().save_profiles(window, cx);
-                            table.delegate_mut().reset_subs();
+                            let table_delegate = table.delegate_mut();
+                            table_delegate.save_profiles(window, cx);
+                            table_delegate.reset_subs();
+                            table_delegate.cell_state = CellState::CellSelected(row_ix, col_ix);
                         }
                         _ => {}
                     },
@@ -272,8 +283,10 @@ impl ProfileDataTableDelegate {
                             secondary: _,
                             shift: _,
                         } => {
-                            table.delegate_mut().save_profiles(window, cx);
-                            table.delegate_mut().reset_subs();
+                            let table_delegate = table.delegate_mut();
+                            table_delegate.save_profiles(window, cx);
+                            table_delegate.reset_subs();
+                            table_delegate.cell_state = CellState::CellSelected(row_ix, col_ix);
                         }
                         _ => {}
                     },
@@ -289,12 +302,13 @@ impl ProfileDataTableDelegate {
         let index = match self.cell_state {
             CellState::CellEdited(row_ix, _) => Some(row_ix),
             _ => None,
-        } ;
+        };
         if let Some(row) = index {
             let profile = self.profiles.get(row).unwrap();
-            match self.active_project.update(cx, |project, cx| {
-                project.update_profile(profile, window, cx)
-            }) {
+            match self
+                .project_profiles
+                .update(cx, |this, cx| this.update_profile(profile, cx))
+            {
                 Ok(profiles) => {
                     if profiles.is_some() {
                         self.profiles = profiles.unwrap()
@@ -305,7 +319,7 @@ impl ProfileDataTableDelegate {
         }
     }
 
-    fn add_profile(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+    fn add_profile(&mut self, cx: &mut Context<TableState<Self>>) {
         let current_row = match self.cell_state {
             CellState::RowSelected(row_ix) | CellState::CellSelected(row_ix, _) => Some(row_ix),
             CellState::Unselected => None,
@@ -314,9 +328,9 @@ impl ProfileDataTableDelegate {
             }
         };
         let name = "new profile";
-        self.profiles = self.active_project.update(cx, |project, cx| {
-            project.add_profile(current_row, name, window, cx)
-        });
+        self.profiles = self
+            .project_profiles
+            .update(cx, |this, cx| this.add_profile(current_row, name, cx));
     }
 
     fn duplicate_profile(
@@ -325,9 +339,10 @@ impl ProfileDataTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        match self.active_project.update(cx, |project, cx| {
-            project.duplicate_profile(position, window, cx)
-        }) {
+        match self
+            .project_profiles
+            .update(cx, |this, cx| this.duplicate_profile(position, cx))
+        {
             Ok(profiles) => self.profiles = profiles,
             Err(err) => window.push_notification(err, cx),
         }
@@ -340,8 +355,8 @@ impl ProfileDataTableDelegate {
         cx: &mut Context<TableState<Self>>,
     ) -> bool {
         let result = self
-            .active_project
-            .update(cx, |project, cx| project.delete_profile(row_ix, window, cx));
+            .project_profiles
+            .update(cx, |this, cx| this.delete_profile(row_ix, cx));
         match result {
             Ok(profiles) => {
                 self.profiles = profiles;
@@ -378,8 +393,8 @@ impl ProfileDataTableDelegate {
         cx: &mut Context<TableState<Self>>,
     ) {
         match self
-            .active_project
-            .update(cx, |project, cx| project.move_profile(from, to, window, cx))
+            .project_profiles
+            .update(cx, |this, cx| this.move_profile(from, to, cx))
         {
             Ok(profiles) => self.profiles = profiles,
             Err(err) => window.push_notification(err, cx),
@@ -435,11 +450,11 @@ impl TableDelegate for ProfileDataTableDelegate {
             IconName::Delete,
             Box::new(DeleteProfileAction(row_ix)),
         )
-            .menu_with_icon(
-                SharedString::new("Duplicate"),
-                IconName::Copy,
-                Box::new(DuplicateProfileAction(row_ix)),
-            )
+        .menu_with_icon(
+            SharedString::new("Duplicate"),
+            IconName::Copy,
+            Box::new(DuplicateProfileAction(row_ix)),
+        )
     }
 
     fn render_td(
@@ -455,14 +470,14 @@ impl TableDelegate for ProfileDataTableDelegate {
                 1 => Input::new(&self.description_input_state).small(),
                 _ => unreachable!(),
             }
-                .into_any_element()
+            .into_any_element()
         } else {
             match col_ix {
                 0 => self.profiles.get(row_ix).unwrap().name.clone(),
                 1 => self.profiles.get(row_ix).unwrap().description.clone(),
                 _ => unreachable!(),
             }
-                .into_any_element()
+            .into_any_element()
         }
     }
 
@@ -510,9 +525,9 @@ impl Render for ProfileEditor {
                             .icon(IconName::Plus)
                             .on_click({
                                 let table_state = self.table_state.clone();
-                                move |_, window, cx| {
+                                move |_, _, cx| {
                                     table_state.update(cx, |this, cx| {
-                                        this.delegate_mut().add_profile(window, cx);
+                                        this.delegate_mut().add_profile(cx);
                                     });
                                 }
                             }),

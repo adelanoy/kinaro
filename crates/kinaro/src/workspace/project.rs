@@ -1,14 +1,14 @@
 use crate::workspace::endpoint::WorkspaceEndpoint;
 use crate::workspace::error::ProjectError;
 use crate::workspace::test::TestsContainer;
-use crate::workspace::variable::{Profile, ProjectVariables};
+use crate::workspace::variable::{ProjectVariables, ProjectVariablesEvent};
 use chrono::{DateTime, Local};
-use gpui::{Context, EventEmitter, SharedString, Window};
-use gpui_component::WindowExt;
+use gpui::{AppContext, Context, Entity, EventEmitter, SharedString, Subscription};
 use ki_project::ProjectFile;
 use log::error;
 use std::path::PathBuf;
 use uuid::Uuid;
+use crate::workspace::Workspace;
 
 pub const PROJECT_FILE_EXT: &str = "kpr";
 
@@ -19,19 +19,18 @@ pub type Result<T> = std::result::Result<T, ProjectError>;
 pub enum ProjectEvent {
     /// Emitted when the active profile has been modified
     ActiveProfileChanged(Option<Uuid>),
-    /// Emitted when the list has been modified (profile added, removed, modified...)
-    ProfilesChanged,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct Project {
     pub name: SharedString,
     created: DateTime<Local>,
     modified: DateTime<Local>,
-    pub variables: ProjectVariables,
+    pub variables: Entity<ProjectVariables>,
     pub endpoints: Vec<WorkspaceEndpoint>,
     pub tests: TestsContainer,
     // unserialized data
+    _variables_event_sub: Subscription,
     active_profile: Option<Uuid>,
     pub(super) path: PathBuf,
 }
@@ -42,91 +41,6 @@ impl Project {
         self.active_profile.clone()
     }
 
-    /// Profile Management
-
-    /// Adds a profile with the given name
-    ///
-    /// if profiles were successfully changed, a [`ProjectEvent::ProfilesChanged`] event will be emitted
-    ///
-    /// # Return
-    /// Returns a copy of the updated profiles
-    pub fn add_profile(
-        &mut self,
-        index: Option<usize>,
-        name: &str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Vec<Profile> {
-        let profiles = self.variables.add_profile(index, name);
-        self.save(Some(ProjectEvent::ProfilesChanged), window, cx);
-
-        profiles
-    }
-
-    /// Duplicates a profile, attributing a new id and copying all fields. Name is appended with *_copy*.
-    ///
-    /// The copy is placed right after the original
-    ///
-    /// if profile was successfully removed, a [`ProjectEvent::ProfilesChanged`] event will be emitted.
-    /// Additionally, a [`ProjectEvent::ActiveProfileChanged`] event will also be emitted if the profile was active, and the active profile set to *None*
-    ///
-    /// # Return
-    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound, a copy of the updated profiles else
-    pub fn delete_profile(
-        &mut self,
-        index: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Result<Vec<Profile>> {
-        let (profiles, removed_profile) = self.variables.delete_profile(index)?;
-        self.save(Some(ProjectEvent::ProfilesChanged), window, cx);
-
-        // check if deleted profile was the active one
-        if Some(removed_profile.id) == self.active_profile {
-            self.switch_profile(None, cx);
-        }
-
-        Ok(profiles)
-    }
-
-    /// Deletes a profile a returns a copy of the new list and the removed profile, for further processing
-    ///
-    /// if profiles were successfully changed, a [`ProjectEvent::ProfilesChanged`] event will be emitted
-    ///
-    /// # Return
-    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound, a copy of the updated profiles else
-    pub fn duplicate_profile(
-        &mut self,
-        row: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Result<Vec<Profile>> {
-        let result = self.variables.duplicate_profile(row);
-        if result.is_ok() {
-            self.save(Some(ProjectEvent::ProfilesChanged), window, cx);
-        }
-        result
-    }
-
-    /// Moves a profile from one position to another
-    /// # Events
-    /// Emits a [`ProjectEvent::ProfilesChanged`] if profile was successfully moved
-    ///
-    /// # Return
-    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound, a copy of the updated profiles else
-    pub fn move_profile(
-        &mut self,
-        row_from: usize,
-        row_to: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Result<Vec<Profile>> {
-        let result = self.variables.move_profile(row_from, row_to);
-        if result.is_ok() {
-            self.save(Some(ProjectEvent::ProfilesChanged), window, cx);
-        }
-        result
-    }
 
     /// Change the currently active profile
     /// # Events
@@ -141,7 +55,13 @@ impl Project {
                 cx.emit(ProjectEvent::ActiveProfileChanged(None));
             }
             Some(profile_id) => {
-                if self.variables.profiles.iter().any(|p| p.id == profile_id) {
+                if self
+                    .variables
+                    .read(cx)
+                    .profiles
+                    .iter()
+                    .any(|p| p.id == profile_id)
+                {
                     self.active_profile = Some(profile_id);
                     cx.emit(ProjectEvent::ActiveProfileChanged(self.active_profile));
                 }
@@ -149,28 +69,11 @@ impl Project {
         }
     }
 
-    /// Merges a profile attributes
-    /// # Events
-    /// if profile was successfully changed, a [`ProjectEvent::ProfilesChanged`] event will be emitted
-    /// # Return
-    /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound, a copy of the updated profiles else
-    pub fn update_profile(
-        &mut self,
-        updated_profile: &Profile,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Result<Option<Vec<Profile>>> {
-        let result = self.variables.update_profile(updated_profile)?;
-        match result {
-            None => Ok(None),
-            Some(profiles) => {
-                self.save(Some(ProjectEvent::ProfilesChanged), window, cx);
-                Ok(Some(profiles))
-            }
-        }
-    }
-
-    pub(super) fn load(path: &PathBuf, active_profile: Option<Uuid>) -> Result<Self> {
+    pub(super) fn load(
+        path: &PathBuf,
+        active_profile: Option<Uuid>,
+        cx: &mut Context<Workspace>,
+    ) -> Result<Entity<Self>> {
         if !path.exists() || path.extension() != Some(PROJECT_FILE_EXT.as_ref()) {
             error!("Invalid project at: {}", path.to_string_lossy());
             return Err(ProjectError::BadLocation(path.clone()));
@@ -185,57 +88,60 @@ impl Project {
             );
             error
         })?;
-        let variables = ProjectVariables::from_file(&file_project.variables);
-        let endpoints = WorkspaceEndpoint::from_file(&file_project.endpoints);
-        let tests = TestsContainer::from_file(&file_project.tests);
-        let active_profile = match active_profile {
-            None => None,
-            Some(id) => variables.profiles.iter().find(|p| p.id == id).map(|p| p.id),
-        };
+        let this = cx.new(|cx| {
+            let variables = cx.new(|_| ProjectVariables::from_file(&file_project.variables));
+            let _variables_event_sub = cx.subscribe(&variables, Self::on_profiles_variables_event);
+            let endpoints = WorkspaceEndpoint::from_file(&file_project.endpoints);
+            let tests = TestsContainer::from_file(&file_project.tests);
+            let active_profile = match active_profile {
+                None => None,
+                Some(id) => variables
+                    .read(cx)
+                    .profiles
+                    .iter()
+                    .find(|p| p.id == id)
+                    .map(|p| p.id),
+            };
+            Self {
+                name: SharedString::new(file_project.name),
+                created: file_project.created,
+                modified: file_project.modified,
+                variables,
+                endpoints,
+                tests,
+                _variables_event_sub,
+                active_profile,
+                path: path.clone(),
+            }
+        });
 
-        Ok(Self {
-            name: SharedString::new(file_project.name),
-            created: file_project.created,
-            modified: file_project.modified,
-            variables,
-            endpoints,
-            tests,
-            active_profile,
-            path: path.clone(),
-        })
+        Ok(this)
     }
 
-    pub(super) fn new(
-        path: PathBuf,
-        name: SharedString,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub(super) fn new(path: PathBuf, name: SharedString, cx: &mut Context<Self>) -> Self {
+        let variables = cx.new(|_| Default::default());
+        let _variables_event_sub = cx.subscribe(&variables, Self::on_profiles_variables_event);
         let mut this = Self {
             path,
             name,
             created: Default::default(),
             modified: Default::default(),
-            variables: Default::default(),
+            variables,
             endpoints: vec![],
+            _variables_event_sub,
             tests: Default::default(),
             active_profile: None,
         };
-        this.save(None, window, cx);
+        this.save(cx);
         this
     }
 
     /// save the project to file and emit the passed event
-    pub fn save(
-        &mut self,
-        event: Option<ProjectEvent>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        cx.spawn_in(window, async move |this, cx| {
+    pub fn save(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
             if let Some(this) = this.upgrade() {
-                if let Err(err) = this.update(cx, |this, _| {
-                    let project = this.to_file();
+                if let Err(err) = this.update(cx, |this, cx| {
+                    let project = this.to_file(cx);
                     project
                         .save(&this.path)
                         .map_err(|e| ProjectError::from(e))?;
@@ -243,21 +149,17 @@ impl Project {
                     this.modified = project.modified;
                     Ok::<(), ProjectError>(())
                 }) {
-                    _ = cx.update(|window, cx| window.push_notification(err, cx));
+                    error!("Failed to save project file: {}", err);
                 }
             }
         })
         .detach();
-        if let Some(event) = event {
-            cx.emit(event);
-        }
     }
 
-    fn to_file(&self) -> ProjectFile {
-        let data = self;
-        let variables = data.variables.to_file();
-        let endpoints = data.endpoints.iter().map(|e| e.to_file()).collect();
-        let tests = data.tests.to_file();
+    fn to_file(&self, cx: &Context<Self>) -> ProjectFile {
+        let variables = self.variables.read(cx).to_file();
+        let endpoints = self.endpoints.iter().map(|e| e.to_file()).collect();
+        let tests = self.tests.to_file();
         let modified = Local::now();
 
         ProjectFile {
@@ -269,6 +171,33 @@ impl Project {
             endpoints,
             tests,
         }
+    }
+
+    fn on_profiles_variables_event(
+        &mut self,
+        project_vars: Entity<ProjectVariables>,
+        e: &ProjectVariablesEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match e {
+            // Check if the currently active profile has been deleted
+            ProjectVariablesEvent::ProfilesChanged => match self.active_profile {
+                Some(active_profile) => {
+                    if !project_vars
+                        .read(cx)
+                        .profiles
+                        .iter()
+                        .any(|p| p.id == active_profile)
+                    {
+                        self.active_profile = None;
+                        cx.emit(ProjectEvent::ActiveProfileChanged(self.active_profile));
+                    }
+                }
+                None => {}
+            },
+        }
+
+        self.save(cx);
     }
 }
 

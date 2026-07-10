@@ -1,6 +1,7 @@
+use crate::workspace::error::WorkspaceError::ProjectNotLoaded;
 use crate::workspace::error::{ProjectError, WorkspaceError};
 pub(crate) use crate::workspace::project::{Project, ProjectEvent};
-use gpui::{ App, Entity, EventEmitter, SharedString, Subscription, Window, actions};
+use gpui::{actions, App, Entity, EventEmitter, SharedString, Subscription};
 use gpui::{AppContext, Context};
 use ki_settings::GlobalSettings;
 use log::{debug, error};
@@ -9,7 +10,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
-use crate::workspace::error::WorkspaceError::ProjectNotLoaded;
 
 pub mod endpoint;
 pub mod error;
@@ -45,11 +45,10 @@ impl WorkspaceFile {
             fs::read(file_path)
                 .map_err(|e| WorkspaceError::Io(e.to_string()))
                 .and_then(|file| {
-                    serde_json::from_slice::<WorkspaceFile>(&file)
-                        .map_err(|err| {
-                            error!("Could not read workspace file: {}\nResetting...", err);
-                            WorkspaceError::Read(err)
-                        })
+                    serde_json::from_slice::<WorkspaceFile>(&file).map_err(|err| {
+                        error!("Could not read workspace file: {}\nResetting...", err);
+                        WorkspaceError::Read(err)
+                    })
                 })
                 // If a project_error occurred while reading, create a new one
                 .unwrap_or_default()
@@ -65,7 +64,7 @@ actions!(workspace, [CreateProject, OpenProject]);
 ///// WORKSPACE EVENTS /////
 pub enum WorkspaceEvent {
     ProjectsChanged,
-    ActiveProjectChanged(Option<PathBuf>),
+    ActiveProjectChanged,
 }
 
 /// The workspace is the structure that holds all projects loaded or not.
@@ -98,11 +97,10 @@ impl Workspace {
         let workspace_projects: HashMap<PathBuf, WorkspaceProject> = projects
             .into_iter()
             .map(
-                |metadata| match Project::load(&metadata.path, metadata.active_profile) {
+                |metadata| match Project::load(&metadata.path, metadata.active_profile, cx) {
                     Ok(project) => {
                         // Refresh the metadata now that the project is loaded, in case they were change externally
-                        let path = project.path.clone();
-                        let project = cx.new(|_| project);
+                        let path = project.read(cx).path.clone();
                         let _sub = cx.subscribe(&project, Self::on_project_event);
                         (
                             path.clone(),
@@ -196,15 +194,9 @@ impl Workspace {
     /// Emits a [`WorkspaceEvent::ProjectsChanged`] if the project is added to the workspace
     ///
     /// Emits a [`WorkspaceEvent::ActiveProjectChanged`] when the project is set as active
-    pub fn create_project(
-        &mut self,
-        name: SharedString,
-        path: PathBuf,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn create_project(&mut self, name: SharedString, path: PathBuf, cx: &mut Context<Self>) {
         if !self.workspace_projects.contains_key(&path) {
-            let project = cx.new(|cx| Project::new(path.clone(), name.clone(), window, cx));
+            let project = cx.new(|cx| Project::new(path.clone(), name.clone(), cx));
             let _sub = cx.subscribe(&project, Self::on_project_event);
             let workspace_project = WorkspaceProject {
                 name,
@@ -216,7 +208,7 @@ impl Workspace {
         }
 
         self.active_project = Some(path.clone());
-        cx.emit(WorkspaceEvent::ActiveProjectChanged(Some(path)));
+        cx.emit(WorkspaceEvent::ActiveProjectChanged);
         self.save(cx);
     }
 
@@ -233,9 +225,8 @@ impl Workspace {
     /// If the project failed to load, returns a [`WorkspaceError::Project`]
     pub fn open_project(&mut self, path: PathBuf, cx: &mut Context<Self>) -> Result<()> {
         if !self.workspace_projects.contains_key(&path) {
-            let project = Project::load(&path, None)?;
-            let name = project.name.clone();
-            let project = cx.new(|_| project);
+            let project = Project::load(&path, None, cx)?;
+            let name = project.read(cx).name.clone();
             let _sub = cx.subscribe(&project, Self::on_project_event);
             let workspace_project = WorkspaceProject {
                 name,
@@ -247,7 +238,7 @@ impl Workspace {
         }
 
         self.active_project = Some(path.clone());
-        cx.emit(WorkspaceEvent::ActiveProjectChanged(Some(path)));
+        cx.emit(WorkspaceEvent::ActiveProjectChanged);
         self.save(cx);
         Ok(())
     }
@@ -256,7 +247,11 @@ impl Workspace {
     ///
     /// # Events
     /// Emits a [`WorkspaceEvent::ProjectsChanged`] if the project is successfully removed from the workspace
-    pub fn reload_project(&mut self, project_path: PathBuf, cx: &mut Context<Self>) -> Result<bool> {
+    pub fn reload_project(
+        &mut self,
+        project_path: PathBuf,
+        cx: &mut Context<Self>,
+    ) -> Result<bool> {
         let updated_wp;
         {
             let Some(project) = self.workspace_projects.get_mut(&project_path) else {
@@ -265,9 +260,8 @@ impl Workspace {
 
             updated_wp = match &project.data {
                 WorkspaceProjectData::Error(_, metadata) => {
-                    match Project::load(&project_path, metadata.active_profile) {
+                    match Project::load(&project_path, metadata.active_profile, cx) {
                         Ok(project) => {
-                            let project = cx.new(|_| project);
                             let _sub = cx.subscribe(&project, Self::on_project_event);
                             Some(WorkspaceProject::project(project, _sub, metadata))
                         }
@@ -280,25 +274,25 @@ impl Workspace {
 
         if updated_wp.is_some() {
             let updated_wp = updated_wp.unwrap();
-            let result : Result<bool> = match &updated_wp.data {
+            let result: Result<bool> = match &updated_wp.data {
                 WorkspaceProjectData::Error(err, _) => {
                     println!("err: {}", err.to_string());
                     Err(err.clone().into())
-                },
-                WorkspaceProjectData::Loaded { .. } => Ok(true)
+                }
+                WorkspaceProjectData::Loaded { .. } => Ok(true),
             };
-            self.workspace_projects.insert(project_path.clone(), updated_wp);
+            self.workspace_projects
+                .insert(project_path.clone(), updated_wp);
             cx.emit(WorkspaceEvent::ProjectsChanged);
             if result.is_ok() {
                 self.active_project = Some(project_path);
-                cx.emit(WorkspaceEvent::ActiveProjectChanged(self.active_project.clone()));
+                cx.emit(WorkspaceEvent::ActiveProjectChanged);
             }
             self.save(cx);
             result
         } else {
             Ok(false)
         }
-
     }
 
     /// Renames a project
@@ -341,7 +335,7 @@ impl Workspace {
 
         if self.active_project.as_ref() == Some(project_path) {
             self.active_project = None;
-            cx.emit(WorkspaceEvent::ActiveProjectChanged(None));
+            cx.emit(WorkspaceEvent::ActiveProjectChanged);
         }
 
         cx.emit(WorkspaceEvent::ProjectsChanged);
@@ -357,7 +351,9 @@ impl Workspace {
             _ = this.read_with(cx, |this, cx| {
                 if let Err(err) = fs::create_dir_all(&*config_dir)
                     .map_err(|e| WorkspaceError::Io(e.to_string()))
-                    .and_then(|_| fs::File::create(&file_path).map_err(|e| WorkspaceError::Io(e.to_string())))
+                    .and_then(|_| {
+                        fs::File::create(&file_path).map_err(|e| WorkspaceError::Io(e.to_string()))
+                    })
                     .and_then(|file| {
                         let file_content = this.to_file(cx);
                         serde_json::to_writer_pretty(file, &file_content)
@@ -393,7 +389,7 @@ impl Workspace {
             Err(ProjectNotLoaded)
         } else {
             self.active_project = Some(project_path.clone());
-            cx.emit(WorkspaceEvent::ActiveProjectChanged(Some(project_path)));
+            cx.emit(WorkspaceEvent::ActiveProjectChanged);
             self.save(cx);
             Ok(())
         }
@@ -430,7 +426,6 @@ impl Workspace {
     ) {
         match event {
             ProjectEvent::ActiveProfileChanged(_) => self.save(cx),
-            _ => {}
         }
     }
 }

@@ -1,12 +1,19 @@
 use crate::workspace::error::ProjectError;
 use crate::workspace::project;
-use gpui::SharedString;
+use gpui::{Context, EventEmitter, SharedString};
 use gpui_component::select::SelectItem;
 use ki_project::{FileProfile, FileProjectVariables, FileVariable, VariableKind};
 use log::warn;
+use project::Result;
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
+
+///// WORKSPACE PROJECT EVENTS /////
+pub enum ProjectVariablesEvent {
+    /// Emitted when the list has been modified (profile added, removed, modified...)
+    ProfilesChanged,
+}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProjectVariables {
@@ -16,7 +23,12 @@ pub struct ProjectVariables {
 
 impl ProjectVariables {
     /// Adds a profile with the given name
-    pub(super) fn add_profile(&mut self, index: Option<usize>, name: &str) -> Vec<Profile> {
+    pub fn add_profile(
+        &mut self,
+        index: Option<usize>,
+        name: &str,
+        cx: &mut Context<Self>,
+    ) -> Vec<Profile> {
         let name = self.next_profile_name(name);
         let new_profile = Profile {
             id: Uuid::new_v4(),
@@ -32,16 +44,14 @@ impl ProjectVariables {
         } else {
             self.profiles.push(new_profile);
         }
+        cx.emit(ProjectVariablesEvent::ProfilesChanged);
         self.profiles.clone()
     }
 
     /// Deletes a profile a returns a copy of the new list and the removed profile, for further processing
     /// # Result
     /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
-    pub(super) fn delete_profile(
-        &mut self,
-        index: usize,
-    ) -> project::Result<(Vec<Profile>, Profile)> {
+    pub fn delete_profile(&mut self, index: usize, cx: &mut Context<Self>) -> Result<Vec<Profile>> {
         if index > self.profiles.len() - 1 {
             warn!(
                 "Failed to delete profile at row: {} (max: {})",
@@ -50,8 +60,9 @@ impl ProjectVariables {
             );
             return Err(ProjectError::ProfileNotFound.into());
         }
-        let removed_profile = self.profiles.remove(index);
-        Ok((self.profiles.clone(), removed_profile))
+        self.profiles.remove(index);
+        cx.emit(ProjectVariablesEvent::ProfilesChanged);
+        Ok(self.profiles.clone())
     }
 
     /// Duplicates a profile, attributing a new id and copying all fields. Name is appended with *_copy*.
@@ -61,7 +72,11 @@ impl ProjectVariables {
     /// Returns a copy of the new profiles list
     ///
     /// Returns a [`ProjectError::ProfileNotFound`] if the row is out of bound
-    pub(super) fn duplicate_profile(&mut self, index: usize) -> project::Result<Vec<Profile>> {
+    pub fn duplicate_profile(
+        &mut self,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) -> Result<Vec<Profile>> {
         let Some(profile) = self.profiles.get(index) else {
             warn!("Failed to duplicate profile at index: {}", index);
             return Err(ProjectError::ProfileNotFound.into());
@@ -76,6 +91,7 @@ impl ProjectVariables {
         } else {
             self.profiles.insert(index, duplicated_profile);
         }
+        cx.emit(ProjectVariablesEvent::ProfilesChanged);
         Ok(self.profiles.clone())
     }
 
@@ -85,17 +101,19 @@ impl ProjectVariables {
     /// Returns a copy of the new profiles list
     ///
     /// Returns a [`ProjectError::ProfileNotFound`] if both indexes are identical, or if either one of them is out of bound
-    pub(crate) fn move_profile(
+    pub fn move_profile(
         &mut self,
         from_ix: usize,
         to_ix: usize,
-    ) -> project::Result<Vec<Profile>> {
+        cx: &mut Context<Self>,
+    ) -> Result<Vec<Profile>> {
         let max_ix = self.profiles.len() - 1;
         if from_ix == to_ix || from_ix > max_ix || to_ix > max_ix {
             return Err(ProjectError::ProfileNotFound.into());
         }
         let profile_to_move = self.profiles.remove(from_ix);
         self.profiles.insert(to_ix, profile_to_move);
+        cx.emit(ProjectVariablesEvent::ProfilesChanged);
         Ok(self.profiles.clone())
     }
 
@@ -105,10 +123,11 @@ impl ProjectVariables {
     /// Returns a copy of the new profiles list if it was modified, else *None*
     ///
     /// Returns a [`ProjectError::ProfileNotFound`] if the profile could not be found by its id
-    pub(super) fn update_profile(
+    pub fn update_profile(
         &mut self,
         updated_profile: &Profile,
-    ) -> project::Result<Option<Vec<Profile>>> {
+        cx: &mut Context<Self>,
+    ) -> Result<Option<Vec<Profile>>> {
         let Some(profile) = self
             .profiles
             .iter_mut()
@@ -124,6 +143,7 @@ impl ProjectVariables {
         if updated_profile != profile {
             profile.name = updated_profile.name.clone();
             profile.description = updated_profile.description.clone();
+            cx.emit(ProjectVariablesEvent::ProfilesChanged);
             Ok(Some(self.profiles.clone()))
         } else {
             Ok(None)
@@ -210,6 +230,8 @@ impl ProjectVariables {
         final_name
     }
 }
+
+impl EventEmitter<ProjectVariablesEvent> for ProjectVariables {}
 
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct Variable {

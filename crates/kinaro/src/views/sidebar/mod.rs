@@ -18,7 +18,7 @@ impl ProjectSidebar {
             &workspace,
             window,
             |this, workspace, event, window, cx| match event {
-                WorkspaceEvent::ActiveProjectChanged(_) => match workspace.read(cx).active_project() {
+                WorkspaceEvent::ActiveProjectChanged => match workspace.read(cx).active_project() {
                     None => this.project_configurator = None,
                     Some(project) => {
                         this.project_configurator =
