@@ -1,5 +1,5 @@
 use crate::views::sidebar::project_configuration::ProjectConfigurationTabs;
-use crate::workspace::variable::{Profile, ProjectVariablesEvent};
+use crate::workspace::variable::{ProfileInfo, ProjectVariablesEvent};
 use crate::workspace::{Project, ProjectEvent};
 use gpui::*;
 use gpui_component::select::{Select, SelectEvent, SelectState};
@@ -11,8 +11,7 @@ pub(super) struct ProjectConfigurator {
     focus_handle: FocusHandle,
     _project_event_sub: Subscription,
     _project_vars_event_sub: Subscription,
-    profile_select_state: Entity<SelectState<Vec<Profile>>>,
-    _profile_change_sub: Option<Subscription>,
+    profile_select_state: Entity<SelectState<Vec<ProfileInfo>>>,
     project_config_tabs: Entity<ProjectConfigurationTabs>,
 }
 
@@ -26,13 +25,14 @@ impl ProjectConfigurator {
             cx.new(|cx| SelectState::new(vec![], Some(IndexPath::default()), window, cx));
         cx.subscribe(&profile_select_state, {
             let project = project.clone();
-            move |_, _, event: &SelectEvent<Vec<Profile>>, cx| match event {
+            move |_, _, event: &SelectEvent<Vec<ProfileInfo>>, cx| match event {
                 SelectEvent::Confirm(value) => {
                     project.update(cx, |this, cx| this.switch_profile(value.to_owned(), cx))
                 }
             }
         })
         .detach();
+        
         let _project_event_sub = cx.subscribe_in(
             &project,
             window,
@@ -48,10 +48,11 @@ impl ProjectConfigurator {
             window,
             move |this, project_vars, event, window, cx| match event {
                 ProjectVariablesEvent::ProfilesChanged => {
-                    let profiles = project_vars.read(cx).profiles.clone();
+                    let profiles = project_vars.read(cx).profile_infos();
                     this.profile_select_state
                         .update(cx, |state, cx| state.set_items(profiles, window, cx));
                 }
+                _ => {}
             },
         );
 
@@ -63,18 +64,17 @@ impl ProjectConfigurator {
             _project_event_sub,
             _project_vars_event_sub,
             profile_select_state,
-            _profile_change_sub: None,
             project_config_tabs,
         };
 
-        this.update_profiles_select_state(project_vars.read(cx).profiles.clone(), window, cx);
+        this.update_profiles_select_state(project_vars.read(cx).profile_infos(), window, cx);
 
         this
     }
 
     fn update_profiles_select_state(
         &self,
-        profiles: Vec<Profile>,
+        profiles: Vec<ProfileInfo>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -113,7 +113,7 @@ impl Render for ProjectConfigurator {
                     .child("Project configuration"),
             )
             .child(h_flex().text_xs().gap_x_2().pb_2().child("Profile").child(
-                Select::new(&self.profile_select_state).with_size(gpui_component::Size::Small),
+                Select::new(&self.profile_select_state).small(),
             ))
             .child(Separator::horizontal())
             .child(self.project_config_tabs.clone())

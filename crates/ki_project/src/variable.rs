@@ -1,6 +1,9 @@
+use gpui::SharedString;
+use gpui_component::select::SelectItem;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -35,6 +38,28 @@ pub enum VariableKind {
     Text,
     PasswordClear,
     PasswordEncrypt,
+}
+
+impl SelectItem for VariableKind {
+    type Value = VariableKind;
+
+    fn title(&self) -> SharedString {
+        SharedString::new(format!("{}", self))
+    }
+
+    fn value(&self) -> &Self::Value {
+        &self
+    }
+}
+
+impl Display for VariableKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VariableKind::Text => f.write_str("Plain"),
+            VariableKind::PasswordClear => f.write_str("Password (Clear)"),
+            VariableKind::PasswordEncrypt => f.write_str("Password (Encrypted)"),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Eq, Clone, Debug)]

@@ -33,10 +33,9 @@ impl ProjectManagementPopover {
         let _workspace_event_sub = cx.subscribe(
             &workspace,
             |this, workspace, e: &WorkspaceEvent, cx| match e {
-                WorkspaceEvent::ProjectsChanged => {
+                WorkspaceEvent::ProjectsChanged | WorkspaceEvent::ActiveProjectChanged => {
                     this.project_infos = workspace.read(cx).all_project_infos();
                 }
-                _ => {}
             },
         );
 

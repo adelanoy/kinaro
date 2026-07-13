@@ -3352,6 +3352,8 @@ name = "ki_project"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "gpui",
+ "gpui-component",
  "ki_utils",
  "log",
  "serde",

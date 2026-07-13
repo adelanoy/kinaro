@@ -60,6 +60,9 @@ pub enum ProjectError {
     /// An operation was attempted on a missing profile
     #[error("ProjectError::ProfileNotFound")]
     ProfileNotFound,
+    /// An operation was attempted on a missing variable
+    #[error("ProjectError::VariableNotFound")]
+    VariableNotFound,
 }
 
 impl From<ProjectFileError> for ProjectError {
@@ -77,6 +80,9 @@ impl From<ProjectFileError> for ProjectError {
 impl Into<Notification> for ProjectError {
     fn into(self) -> Notification {
         match self {
+            ProjectError::Io(err) => {
+                Notification::error(format!("I/O error on project file: {}", err))
+            }
             ProjectError::Write(err) => {
                 Notification::error(format!("Could not write project file: {}", err))
             }
@@ -94,9 +100,7 @@ impl Into<Notification> for ProjectError {
                 Notification::error(format!("Invalid name for project: {}", name))
             }
             ProjectError::ProfileNotFound => Notification::warning("Unknown profile"),
-            ProjectError::Io(err) => {
-                Notification::error(format!("I/O error on project file: {}", err))
-            }
+            ProjectError::VariableNotFound => Notification::warning("Unknown variable"),
         }
     }
 }

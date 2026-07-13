@@ -194,7 +194,8 @@ impl Project {
                     }
                 }
                 None => {}
-            },
+            }
+            _ => {},
         }
 
         self.save(cx);
