@@ -6,7 +6,7 @@ use ki_project::{FileProfile, FileProjectVariables, FileVariable, VariableKind};
 use log::warn;
 use project::Result;
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 ///// WORKSPACE PROJECT EVENTS /////
@@ -17,7 +17,7 @@ pub enum ProjectVariablesEvent {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProjectVariables {
-    pub variables: Vec<Variable>,
+    pub references: Vec<VariableReference>,
     pub profiles: Vec<Profile>,
 }
 
@@ -34,6 +34,7 @@ impl ProjectVariables {
             id: Uuid::new_v4(),
             name: SharedString::new(name),
             description: Default::default(),
+            effective_values: Default::default(),
         };
         if let Some(index) = index {
             if index > self.profiles.len() - 1 {
@@ -51,7 +52,7 @@ impl ProjectVariables {
     /// Deletes a profile a returns a copy of the new list and the removed profile, for further processing
     /// # Result
     /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
-    pub fn delete_profile(&mut self, index: usize, cx: &mut Context<Self>) -> Result<Vec<Profile>> {
+    pub fn delete_profile(&mut self, index: usize, cx: &mut Context<Self>) -> Result<()> {
         if index > self.profiles.len() - 1 {
             warn!(
                 "Failed to delete profile at row: {} (max: {})",
@@ -62,7 +63,7 @@ impl ProjectVariables {
         }
         self.profiles.remove(index);
         cx.emit(ProjectVariablesEvent::ProfilesChanged);
-        Ok(self.profiles.clone())
+        Ok(())
     }
 
     /// Duplicates a profile, attributing a new id and copying all fields. Name is appended with *_copy*.
@@ -72,11 +73,7 @@ impl ProjectVariables {
     /// Returns a copy of the new profiles list
     ///
     /// Returns a [`ProjectError::ProfileNotFound`] if the row is out of bound
-    pub fn duplicate_profile(
-        &mut self,
-        index: usize,
-        cx: &mut Context<Self>,
-    ) -> Result<Vec<Profile>> {
+    pub fn duplicate_profile(&mut self, index: usize, cx: &mut Context<Self>) -> Result<()> {
         let Some(profile) = self.profiles.get(index) else {
             warn!("Failed to duplicate profile at index: {}", index);
             return Err(ProjectError::ProfileNotFound.into());
@@ -92,7 +89,7 @@ impl ProjectVariables {
             self.profiles.insert(index, duplicated_profile);
         }
         cx.emit(ProjectVariablesEvent::ProfilesChanged);
-        Ok(self.profiles.clone())
+        Ok(())
     }
 
     /// Moves a profile from one position to another
@@ -106,7 +103,7 @@ impl ProjectVariables {
         from_ix: usize,
         to_ix: usize,
         cx: &mut Context<Self>,
-    ) -> Result<Vec<Profile>> {
+    ) -> Result<()> {
         let max_ix = self.profiles.len() - 1;
         if from_ix == to_ix || from_ix > max_ix || to_ix > max_ix {
             return Err(ProjectError::ProfileNotFound.into());
@@ -114,7 +111,7 @@ impl ProjectVariables {
         let profile_to_move = self.profiles.remove(from_ix);
         self.profiles.insert(to_ix, profile_to_move);
         cx.emit(ProjectVariablesEvent::ProfilesChanged);
-        Ok(self.profiles.clone())
+        Ok(())
     }
 
     /// Merges a profile attributes
@@ -125,9 +122,9 @@ impl ProjectVariables {
     /// Returns a [`ProjectError::ProfileNotFound`] if the profile could not be found by its id
     pub fn update_profile(
         &mut self,
-        updated_profile: &Profile,
+        updated_profile: &ProfileInfo,
         cx: &mut Context<Self>,
-    ) -> Result<Option<Vec<Profile>>> {
+    ) -> Result<()> {
         let Some(profile) = self
             .profiles
             .iter_mut()
@@ -144,69 +141,35 @@ impl ProjectVariables {
             profile.name = updated_profile.name.clone();
             profile.description = updated_profile.description.clone();
             cx.emit(ProjectVariablesEvent::ProfilesChanged);
-            Ok(Some(self.profiles.clone()))
-        } else {
-            Ok(None)
         }
+        Ok(())
     }
 
     pub(super) fn from_file(file_vars: &FileProjectVariables) -> Self {
+        let variables: Vec<VariableReference> = file_vars
+            .variables
+            .iter()
+            .map(|var| VariableReference::from_file(var))
+            .collect();
+        let variable_ref: HashMap<Uuid, SharedString> = variables
+            .iter()
+            .map(|var| (var.id, var.value.clone()))
+            .collect();
         let profiles = file_vars
             .profiles
             .iter()
-            .map(|p| Profile::from_file(p))
+            .map(|file_profile| Profile::from_file(file_profile, &variable_ref))
             .collect::<Vec<Profile>>();
 
-        let variables = file_vars
-            .variables
-            .iter()
-            .map(|file_var| {
-                let overrides = profiles
-                    .iter()
-                    .map(|profile| (profile.id, file_var.overrides.get(&profile.id).cloned()))
-                    .collect::<HashMap<Uuid, Option<String>>>();
-                Variable {
-                    id: file_var.id,
-                    name: SharedString::new(&file_var.name),
-                    description: SharedString::new(&file_var.description),
-                    kind: file_var.kind,
-                    reference_value: SharedString::new(&file_var.value),
-                    effective_values: overrides,
-                }
-            })
-            .collect::<Vec<Variable>>();
-
         ProjectVariables {
-            variables,
+            references: variables,
             profiles,
         }
     }
 
     pub(super) fn to_file(&self) -> FileProjectVariables {
-        let profiles = self
-            .profiles
-            .iter()
-            .map(|p| p.get_file())
-            .collect::<BTreeSet<FileProfile>>();
-
-        let mut variables = vec![];
-        for workspace_var in &self.variables {
-            let workspace_var = workspace_var;
-            let overrides = workspace_var
-                .effective_values
-                .iter()
-                .filter(|(_, value)| value.is_some())
-                .map(|(id, value)| (*id, value.clone().unwrap()))
-                .collect::<HashMap<Uuid, String>>();
-            variables.push(FileVariable {
-                id: workspace_var.id,
-                name: workspace_var.name.to_string(),
-                description: workspace_var.description.to_string(),
-                kind: workspace_var.kind,
-                value: workspace_var.reference_value.to_string(),
-                overrides,
-            });
-        }
+        let variables = self.references.iter().map(|p| p.to_file()).collect();
+        let profiles = self.profiles.iter().map(|p| p.to_file()).collect();
 
         FileProjectVariables {
             variables,
@@ -233,38 +196,96 @@ impl ProjectVariables {
 
 impl EventEmitter<ProjectVariablesEvent> for ProjectVariables {}
 
-#[derive(Eq, PartialEq, Clone, Debug)]
-pub struct Variable {
+#[derive(Eq, Clone, Debug)]
+pub struct VariableReference {
     pub id: Uuid,
     pub name: SharedString,
     pub description: SharedString,
     pub kind: VariableKind,
-    pub reference_value: SharedString,
-    pub effective_values: HashMap<Uuid, Option<String>>,
+    pub value: SharedString,
 }
 
-#[derive(Eq, PartialEq, Ord, Clone, Debug)]
-pub struct Profile {
-    pub id: Uuid,
-    pub name: SharedString,
-    pub description: SharedString,
-}
-
-impl Profile {
-    fn from_file(file_profile: &FileProfile) -> Self {
+impl VariableReference {
+    fn from_file(file_profile: &FileVariable) -> Self {
         Self {
             id: file_profile.id,
             name: SharedString::new(&file_profile.name),
             description: SharedString::new(&file_profile.description),
+            kind: file_profile.kind,
+            value: SharedString::new(&file_profile.value),
         }
     }
 
-    fn get_file(&self) -> FileProfile {
+    fn to_file(&self) -> FileVariable {
+        FileVariable {
+            id: self.id,
+            name: self.name.to_string(),
+            description: self.description.to_string(),
+            kind: self.kind,
+            value: self.value.to_string(),
+        }
+    }
+}
+
+impl PartialEq for VariableReference {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+#[derive(Eq, Clone, Debug)]
+pub struct Profile {
+    pub id: Uuid,
+    pub name: SharedString,
+    pub description: SharedString,
+    pub effective_values: HashMap<Uuid, SharedString>,
+}
+
+impl Profile {
+    fn from_file(
+        file_profile: &FileProfile,
+        variable_references: &HashMap<Uuid, SharedString>,
+    ) -> Self {
+        let effective_values = file_profile
+            .overrides
+            .iter()
+            .filter_map(|(id, value)| {
+                variable_references.get(id).map(|ref_value| {
+                    if ref_value == value {
+                        None
+                    } else {
+                        Some((*id, SharedString::new(value)))
+                    }
+                })?
+            })
+            .collect();
+        Self {
+            id: file_profile.id,
+            name: SharedString::new(&file_profile.name),
+            description: SharedString::new(&file_profile.description),
+            effective_values,
+        }
+    }
+
+    fn to_file(&self) -> FileProfile {
+        let overrides = self
+            .effective_values
+            .iter()
+            .map(|(id, value)| (id.clone(), value.to_string()))
+            .collect();
+
         FileProfile {
             id: self.id,
             name: self.name.to_string(),
             description: self.description.to_string(),
+            overrides,
         }
+    }
+}
+
+impl PartialEq for Profile {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
     }
 }
 
@@ -283,5 +304,18 @@ impl SelectItem for Profile {
 
     fn value(&self) -> &Self::Value {
         &self.id
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ProfileInfo {
+    pub id: Uuid,
+    pub name: SharedString,
+    pub description: SharedString,
+}
+
+impl PartialEq<Profile> for ProfileInfo {
+    fn eq(&self, other: &Profile) -> bool {
+        self.id == other.id && self.name == other.name && self.description == other.description
     }
 }

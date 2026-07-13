@@ -1,13 +1,12 @@
-use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap};
-use std::hash::{Hash, Hasher};
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct FileProjectVariables {
     pub variables: Vec<FileVariable>,
-    pub profiles: BTreeSet<FileProfile>,
+    pub profiles: Vec<FileProfile>,
 }
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Clone, Debug)]
@@ -17,7 +16,6 @@ pub struct FileVariable {
     pub description: String,
     pub kind: VariableKind,
     pub value: String,
-    pub overrides: HashMap<Uuid, String>
 }
 
 impl Default for FileVariable {
@@ -28,7 +26,6 @@ impl Default for FileVariable {
             description: String::new(),
             kind: VariableKind::Text,
             value: String::new(),
-            overrides: HashMap::new()
         }
     }
 }
@@ -40,11 +37,12 @@ pub enum VariableKind {
     PasswordEncrypt,
 }
 
-#[derive(Serialize, Deserialize, Eq, Ord, Clone, Debug)]
+#[derive(Serialize, Deserialize, Eq, Clone, Debug)]
 pub struct FileProfile {
     pub id: Uuid,
     pub name: String,
     pub description: String,
+    pub overrides: HashMap<Uuid, String>,
 }
 
 impl PartialEq for FileProfile {
@@ -53,15 +51,14 @@ impl PartialEq for FileProfile {
     }
 }
 
-impl Hash for FileProfile {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
+impl PartialOrd for FileProfile {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.name.partial_cmp(&other.name)
     }
 }
 
-impl PartialOrd for FileProfile {
-
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.name.partial_cmp(&other.name)
+impl Ord for FileProfile {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
     }
 }
