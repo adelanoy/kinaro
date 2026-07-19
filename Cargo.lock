@@ -3381,6 +3381,7 @@ name = "ki_utils"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "gpui",
  "serde",
 ]
 
@@ -3397,6 +3398,7 @@ dependencies = [
  "ki_log",
  "ki_project",
  "ki_settings",
+ "ki_utils",
  "log",
  "serde",
  "serde_json",

@@ -41,7 +41,7 @@ pub fn next_available_name<'a>(
 #[cfg(test)]
 mod test {
     use gpui::SharedString;
-    use crate::ui_utils::next_available_name;
+    use crate::ui::next_available_name;
 
     #[test]
     fn next_available_name_no_append() {

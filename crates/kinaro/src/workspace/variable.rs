@@ -1,7 +1,6 @@
-use crate::ui_utils::next_available_name;
+use ki_utils::ui::next_available_name;
 use crate::workspace::error::ProjectError;
 use crate::workspace::project;
-use gpui::prelude::FluentBuilder;
 use gpui::{Context, EventEmitter, SharedString};
 use gpui_component::select::SelectItem;
 use ki_project::{FileProfile, FileProjectVariables, FileVariable, VariableKind};

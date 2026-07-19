@@ -1,4 +1,3 @@
-use crate::ui_utils::CellState;
 use crate::views::sidebar::project_configuration::ProjectConfigurationTab;
 use crate::workspace::Project;
 use crate::workspace::variable::{ProfileInfo, ProjectVariables, VariableReference};
@@ -13,9 +12,10 @@ use gpui_component::table::{Column, DataTable, TableDelegate, TableEvent, TableS
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, IndexPath, Sizable, WindowExt, h_flex, v_flex,
 };
-use uuid::Uuid;
 use ki_assets::icon::IconAsset;
 use ki_project::VariableKind;
+use ki_utils::ui::CellState;
+use uuid::Uuid;
 
 pub(super) struct VariableEditor {
     focus_handle: FocusHandle,
@@ -259,8 +259,7 @@ impl VariableDataTableDelegate {
         cx: &mut Context<TableState<Self>>,
     ) {
         let var_id = self.project_vars.read(cx).references[row_ix].id;
-        self
-            .project_vars
+        self.project_vars
             .update(cx, |this, cx| this.revert_profile(var_id, profile_id, cx));
     }
 
@@ -553,10 +552,8 @@ impl TableDelegate for VariableDataTableDelegate {
                 1 => var.name.clone().into_any_element(),
                 2 => SharedString::new(format!("{}", var.kind)).into_any_element(),
                 3 => if let Some(profile_id) = profile_id {
-                    if let Some(overridden_var) = self
-                        .project_vars
-                        .read(cx)
-                        .find_override(var.id, profile_id)
+                    if let Some(overridden_var) =
+                        self.project_vars.read(cx).find_override(var.id, profile_id)
                     {
                         Label::new(overridden_var).text_color(cx.theme().green)
                     } else {

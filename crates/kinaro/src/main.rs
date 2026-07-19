@@ -3,7 +3,6 @@
 pub(crate) mod actions;
 pub(crate) mod views;
 pub(crate) mod workspace;
-pub mod ui_utils;
 
 use crate::views::WorkspaceView;
 use gpui::*;

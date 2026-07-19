@@ -1,5 +1,4 @@
 use crate::actions::EscAction;
-use crate::ui_utils::CellState;
 use crate::views::sidebar::project_configuration::ProjectConfigurationTab;
 use crate::workspace::Project;
 use crate::workspace::variable::{ProfileInfo, ProjectVariables};
@@ -13,6 +12,7 @@ use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt, h_flex, v_flex,
 };
 use ki_assets::icon::IconAsset;
+use ki_utils::ui::CellState;
 use serde::Deserialize;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]

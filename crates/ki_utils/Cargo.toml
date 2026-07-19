@@ -7,3 +7,4 @@ authors.workspace = true
 [dependencies]
 chrono.workspace = true
 serde.workspace = true
+gpui.workspace = true
