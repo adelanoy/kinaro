@@ -9,7 +9,7 @@ pub struct TestCase {
 }
 
 impl TestCase {
-    pub fn from_file(file_test_cases: &Vec<FileTestCase>) -> Vec<TestCase> {
+    pub fn from_file(file_test_cases: &[FileTestCase]) -> Vec<TestCase> {
         file_test_cases
             .iter()
             .map(|file_test_suite| Self {

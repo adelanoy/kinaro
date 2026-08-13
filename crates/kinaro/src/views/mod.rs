@@ -29,7 +29,7 @@ impl WorkspaceView {
         .detach();
         let sidebar_collapsed = AppState::read(cx, |app_state| app_state.sidebar.collapsed);
 
-        let workspace = cx.new(|cx| Workspace::init(cx));
+        let workspace = cx.new(Workspace::init);
         let project_sidebar = cx.new(|cx| ProjectSidebar::new(workspace.clone(), window, cx));
         let title_bar = cx.new(|cx| AppTitleBar::new(workspace.clone(), cx));
         let mut sidebar_width = AppState::read(cx, |app_state| app_state.sidebar.width);

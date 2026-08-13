@@ -51,7 +51,7 @@ impl GlobalSettings {
             cx.update_global(|settings: &mut GlobalSettings, _cx| {
                 settings.app_state.save(&settings.config_dir);
                 settings.app_state_save_task_queued.take();
-            })
+            });
         }));
     }
 }

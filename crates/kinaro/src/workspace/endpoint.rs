@@ -11,13 +11,13 @@ pub struct WorkspaceEndpoint {
 }
 
 impl WorkspaceEndpoint {
-    pub fn from_file(file_endpoints: &Vec<FileEndpoint>) -> Vec<WorkspaceEndpoint> {
+    pub fn from_file(file_endpoints: &[FileEndpoint]) -> Vec<WorkspaceEndpoint> {
         file_endpoints
             .iter()
             .map(|endpoint| WorkspaceEndpoint {
                 id: endpoint.id,
                 url: endpoint.url.clone(),
-                method: endpoint.method.clone(),
+                method: endpoint.method,
                 query_parameters: endpoint.query_parameters.clone(),
                 path_parameters: endpoint.path_parameters.clone(),
             })
@@ -28,7 +28,7 @@ impl WorkspaceEndpoint {
         FileEndpoint {
             id: self.id,
             url: self.url.clone(),
-            method: self.method.clone(),
+            method: self.method,
             query_parameters: vec![],
             path_parameters: vec![],
         }

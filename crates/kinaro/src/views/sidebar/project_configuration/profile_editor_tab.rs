@@ -15,10 +15,12 @@ use ki_assets::icon::IconAsset;
 use ki_utils::ui::CellState;
 use serde::Deserialize;
 
+#[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = profile, no_json)]
 struct DeleteProfileAction(usize);
 
+#[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = profile, no_json)]
 struct DuplicateProfileAction(usize);
@@ -202,16 +204,12 @@ impl ProfileDataTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        match self.cell_state {
-            CellState::CellEdited(current_row_ix, current_col_ix, _) => {
-                if current_row_ix == row_ix && current_col_ix == col_ix {
-                    return;
-                } else {
-                    self.update_profile(window, cx);
-                    self._cell_input_sub = None;
-                }
+        if let CellState::CellEdited(current_row_ix, current_col_ix, _) = self.cell_state {
+            if current_row_ix == row_ix && current_col_ix == col_ix {
+                return;
             }
-            _ => {}
+            self.update_profile(window, cx);
+            self._cell_input_sub = None;
         }
 
         let profile = self.project_vars.read(cx).profiles.get(row_ix).unwrap();
@@ -280,13 +278,13 @@ impl ProfileDataTableDelegate {
         F: FnOnce(&mut ProfileInfo, SharedString),
     {
         match event {
-            InputEvent::Change => match &mut table.delegate_mut().cell_state {
-                CellState::CellEdited(_, _, data) => {
+            InputEvent::Change => {
+                let cell_state = &mut table.delegate_mut().cell_state;
+                if let CellState::CellEdited(_, _, data) = cell_state {
                     let text = state.read(cx).value();
                     f(data, text);
                 }
-                _ => {}
-            },
+            }
             InputEvent::PressEnter {
                 secondary: _,
                 shift: _,
@@ -297,27 +295,20 @@ impl ProfileDataTableDelegate {
     }
 
     fn end_edit_cell(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-        match self.cell_state {
-            CellState::CellEdited(row, _, _) => {
-                self.update_profile(window, cx);
-                self._cell_input_sub = None;
-                self.cell_state = CellState::CellSelected(row);
-            }
-            _ => {}
+        if let CellState::CellEdited(row, _, _) = self.cell_state {
+            self.update_profile(window, cx);
+            self._cell_input_sub = None;
+            self.cell_state = CellState::CellSelected(row);
         }
     }
 
     fn update_profile(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-        match &self.cell_state {
-            CellState::CellEdited(_, _, data) => {
-                if let Err(err) = self
-                    .project_vars
-                    .update(cx, |this, cx| this.update_profile(&data, cx))
-                {
-                    window.push_notification(err, cx);
-                }
-            }
-            _ => {}
+        if let CellState::CellEdited(_, _, data) = &self.cell_state
+            && let Err(err) = self
+                .project_vars
+                .update(cx, |this, cx| this.update_profile(data, cx))
+        {
+            window.push_notification(err, cx);
         }
     }
 
@@ -360,10 +351,10 @@ impl ProfileDataTableDelegate {
             }
         };
 
-        if self.delete_profile(current_row, window, cx) {
-            if current_row >= self.project_vars.read(cx).profiles.len() {
-                self.cell_state = CellState::Unselected
-            }
+        if self.delete_profile(current_row, window, cx)
+            && current_row >= self.project_vars.read(cx).profiles.len()
+        {
+            self.cell_state = CellState::Unselected
         }
     }
 

@@ -1,9 +1,9 @@
-use ki_utils::ui::next_available_name;
 use crate::workspace::error::ProjectError;
 use crate::workspace::project;
 use gpui::{Context, EventEmitter, SharedString};
 use gpui_component::select::SelectItem;
 use ki_project::{FileProfile, FileProjectVariables, FileVariable, VariableKind};
+use ki_utils::ui::next_available_name;
 use log::warn;
 use project::Result;
 use std::cmp::Ordering;
@@ -62,7 +62,7 @@ impl ProjectVariables {
                 index,
                 self.profiles.len() - 1
             );
-            return Err(ProjectError::ProfileNotFound.into());
+            return Err(ProjectError::ProfileNotFound);
         }
         self.profiles.remove(index);
         cx.emit(ProjectVariablesEvent::ProfilesChanged);
@@ -79,7 +79,7 @@ impl ProjectVariables {
     pub fn duplicate_profile(&mut self, index: usize, cx: &mut Context<Self>) -> Result<()> {
         let Some(profile) = self.profiles.get(index) else {
             warn!("Failed to duplicate profile at index: {}", index);
-            return Err(ProjectError::ProfileNotFound.into());
+            return Err(ProjectError::ProfileNotFound);
         };
         let mut duplicated_profile = profile.clone();
         duplicated_profile.id = Uuid::new_v4();
@@ -110,7 +110,7 @@ impl ProjectVariables {
     ) -> Result<()> {
         let max_ix = self.profiles.len() - 1;
         if from_ix == to_ix || from_ix > max_ix || to_ix > max_ix {
-            return Err(ProjectError::ProfileNotFound.into());
+            return Err(ProjectError::ProfileNotFound);
         }
         let profile_to_move = self.profiles.remove(from_ix);
         self.profiles.insert(to_ix, profile_to_move);
@@ -149,7 +149,7 @@ impl ProjectVariables {
                 "Attempt to edit non existing profile with id: {}",
                 updated_profile.id
             );
-            return Err(ProjectError::ProfileNotFound.into());
+            return Err(ProjectError::ProfileNotFound);
         };
 
         if updated_profile != profile {
@@ -182,6 +182,7 @@ impl ProjectVariables {
         cx.emit(ProjectVariablesEvent::VariablesChanged);
     }
 
+    //noinspection RsExternalLinter
     /// Deletes a variable
     /// # Result
     /// Returns a [`ProjectError::VariableNotFound`] if the index is out of bound
@@ -194,7 +195,7 @@ impl ProjectVariables {
                 index,
                 self.references.len() - 1
             );
-            return Err(ProjectError::VariableNotFound.into());
+            return Err(ProjectError::VariableNotFound);
         }
         self.references.remove(index);
         cx.emit(ProjectVariablesEvent::VariablesChanged);
@@ -211,7 +212,7 @@ impl ProjectVariables {
     pub fn duplicate_variable(&mut self, index: usize, cx: &mut Context<Self>) -> Result<()> {
         let Some(var) = self.references.get(index) else {
             warn!("Failed to duplicate variable at index: {}", index);
-            return Err(ProjectError::VariableNotFound.into());
+            return Err(ProjectError::VariableNotFound);
         };
         let mut duplicated_var = var.clone();
         duplicated_var.id = Uuid::new_v4();
@@ -230,10 +231,7 @@ impl ProjectVariables {
 
     pub fn find_override(&self, var_id: Uuid, profile_id: Uuid) -> Option<SharedString> {
         let profile = self.profiles.iter().find(|p| p.id == profile_id)?;
-        profile
-            .effective_values
-            .get(&var_id)
-            .map(|value| value.clone())
+        profile.effective_values.get(&var_id).cloned()
     }
 
     pub fn revert_profile(
@@ -242,10 +240,10 @@ impl ProjectVariables {
         profile_id: Uuid,
         cx: &mut Context<ProjectVariables>,
     ) {
-        if let Some(profile) = self.profiles.iter_mut().find(|p| p.id == profile_id) {
-            if profile.effective_values.remove(&var_id).is_some() {
-                cx.emit(ProjectVariablesEvent::VariablesChanged);
-            }
+        if let Some(profile) = self.profiles.iter_mut().find(|p| p.id == profile_id)
+            && profile.effective_values.remove(&var_id).is_some()
+        {
+            cx.emit(ProjectVariablesEvent::VariablesChanged);
         }
     }
 
@@ -270,7 +268,7 @@ impl ProjectVariables {
                 "Attempt to edit non existing variable with id: {}",
                 updated_variable.id
             );
-            return Err(ProjectError::VariableNotFound.into());
+            return Err(ProjectError::VariableNotFound);
         };
 
         if updated_variable != var {
@@ -296,7 +294,7 @@ impl ProjectVariables {
         let variables: Vec<VariableReference> = file_vars
             .variables
             .iter()
-            .map(|var| VariableReference::from_file(var))
+            .map(VariableReference::from_file)
             .collect();
         let variable_ref: HashMap<Uuid, SharedString> = variables
             .iter()
@@ -396,7 +394,7 @@ impl Profile {
         let overrides = self
             .effective_values
             .iter()
-            .map(|(id, value)| (id.clone(), value.to_string()))
+            .map(|(id, value)| (*id, value.to_string()))
             .collect();
 
         FileProfile {

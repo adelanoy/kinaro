@@ -10,7 +10,7 @@ pub struct TestSuite {
 }
 
 impl TestSuite {
-    pub fn from_file(file_test_suites: &Vec<FileTestSuite>) -> Vec<TestSuite> {
+    pub fn from_file(file_test_suites: &[FileTestSuite]) -> Vec<TestSuite> {
         file_test_suites
             .iter()
             .map(|file_test_suite| Self {

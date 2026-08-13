@@ -20,7 +20,10 @@ impl FontAsset {
             FontAsset::Roboto => "fonts/Roboto-Regular.ttf",
             FontAsset::JetbrainsMono => "fonts/JetBrainsMonoNL-Regular.ttf",
         };
-        cx.asset_source().load(path).expect(&format!("Font loaded: {:?}", self)).unwrap()
+        cx.asset_source()
+            .load(path)
+            .unwrap_or_else(|e| panic!("Font failed to load: {e:?}"))
+            .unwrap()
     }
 }
 

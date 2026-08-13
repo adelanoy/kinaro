@@ -2,7 +2,10 @@ use crate::views::sidebar::project_configuration::profile_editor_tab::ProfileEdi
 use crate::views::sidebar::project_configuration::project_tree_tab::ProjectTreeTab;
 use crate::views::sidebar::project_configuration::var_editor_tab::VariableEditor;
 use crate::workspace::Project;
-use gpui::*;
+use gpui::{
+    AnyView, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString,
+    Styled, Window,
+};
 use gpui_component::tab::{Tab, TabBar};
 use gpui_component::{Icon, Sizable, v_flex};
 

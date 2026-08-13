@@ -1,4 +1,3 @@
-use crate::workspace::error::WorkspaceError::ProjectNotLoaded;
 use crate::workspace::error::{ProjectError, WorkspaceError};
 pub(crate) use crate::workspace::project::{Project, ProjectEvent};
 use gpui::{actions, App, Entity, EventEmitter, SharedString, Subscription};
@@ -272,11 +271,10 @@ impl Workspace {
             };
         }
 
-        if updated_wp.is_some() {
-            let updated_wp = updated_wp.unwrap();
+        if let Some(updated_wp) = updated_wp {
             let result: Result<bool> = match &updated_wp.data {
                 WorkspaceProjectData::Error(err, _) => {
-                    println!("err: {}", err.to_string());
+                    println!("err: {}", err);
                     Err(err.clone().into())
                 }
                 WorkspaceProjectData::Loaded { .. } => Ok(true),
@@ -310,11 +308,8 @@ impl Workspace {
         };
 
         project.name = new_name.clone();
-        match &project.data {
-            WorkspaceProjectData::Loaded { project, .. } => {
-                project.update(cx, |project, _| project.name = new_name)
-            }
-            _ => {}
+        if let WorkspaceProjectData::Loaded { project, .. } = &project.data {
+            project.update(cx, |project, _| project.name = new_name)
         }
 
         cx.emit(WorkspaceEvent::ProjectsChanged);
@@ -357,7 +352,7 @@ impl Workspace {
                     .and_then(|file| {
                         let file_content = this.to_file(cx);
                         serde_json::to_writer_pretty(file, &file_content)
-                            .map_err(|err| WorkspaceError::Write(err))
+                            .map_err(WorkspaceError::Write)
                     })
                 {
                     error!("Error while saving workspace file: {:?}", err);
@@ -386,7 +381,7 @@ impl Workspace {
         };
 
         if !project.is_loaded() {
-            Err(ProjectNotLoaded)
+            Err(WorkspaceError::ProjectNotLoaded)
         } else {
             self.active_project = Some(project_path.clone());
             cx.emit(WorkspaceEvent::ActiveProjectChanged);
@@ -462,7 +457,7 @@ impl WorkspaceProject {
 }
 
 enum WorkspaceProjectData {
-    /// Stores the error generated when a laoding attempt was made, and the metadata
+    /// Stores the error generated when a loading attempt was made, and the metadata
     Error(ProjectError, FileProjectMetadata),
     Loaded {
         project: Entity<Project>,

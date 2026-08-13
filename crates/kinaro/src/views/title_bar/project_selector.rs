@@ -55,8 +55,13 @@ impl ProjectManagementPopover {
     ) {
         self.workspace.update(cx, |workspace, cx| {
             match workspace.reload_project(project_path, cx) {
-                Ok(operation_occurred) => if operation_occurred {
-                    window.push_notification(Notification::success("Project has been successfully reloaded"), cx);
+                Ok(operation_occurred) => {
+                    if operation_occurred {
+                        window.push_notification(
+                            Notification::success("Project has been successfully reloaded"),
+                            cx,
+                        );
+                    }
                 }
                 Err(err) => window.push_notification(err, cx),
             };
@@ -157,127 +162,127 @@ impl Render for ProjectManagementPopover {
                     SharedString::new("switch_project"),
                     ix as u64,
                 ))
-                    .ghost()
-                    .w_full()
-                    .h_12()
-                    .disabled(!info.loaded)
-                    .when_else(
-                        info.loaded,
-                        |button| {
-                            button.child(
-                                div()
-                                    .flex()
-                                    .gap_x_2()
-                                    .size_full()
-                                    .items_center()
-                                    .justify_between()
-                                    .when_else(
-                                        info.active,
-                                        |this| this.child(IconName::Check),
-                                        |this| this.child(Icon::empty()),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_col()
-                                            .child(Label::new(info.name.clone()).text_sm())
-                                            .child(
-                                                Label::new(info.path.clone().to_string_lossy())
-                                                    .text_ellipsis()
-                                                    .text_xs()
-                                                    .text_color(gray_600()),
-                                            ),
-                                    )
-                                    .child(
-                                        Button::new("rename")
-                                            .custom(ButtonCustomVariant::new(cx).color(gray_500()))
-                                            .xsmall()
-                                            .icon(IconAsset::Rename)
-                                            .on_click({
-                                                let path = info.path.clone();
-                                                let name = info.name.clone();
-                                                cx.listener(move |this, _, window, cx| {
-                                                    cx.stop_propagation();
-                                                    this.on_rename_project(
-                                                        name.clone(),
-                                                        path.clone(),
-                                                        window,
-                                                        cx,
-                                                    );
-                                                })
-                                            }),
-                                    )
-                                    .child(
-                                        Button::new("remove")
-                                            .custom(ButtonCustomVariant::new(cx).color(gray_500()))
-                                            .xsmall()
-                                            .icon(IconName::Close)
-                                            .on_click({
-                                                let path = info.path.clone();
-                                                cx.listener(move |this, _, window, cx| {
-                                                    cx.stop_propagation();
-                                                    this.on_remove_project(&path, window, cx);
-                                                })
-                                            }),
-                                    ),
-                            )
-                        },
-                        |button| {
-                            button.child(
-                                div()
-                                    .flex()
-                                    .gap_x_2()
-                                    .size_full()
-                                    .items_center()
-                                    .justify_between()
-                                    .child(Icon::empty())
-                                    .child(
-                                        div()
-                                            .flex_col()
-                                            .child(
-                                                Label::new(info.name.clone())
-                                                    .text_sm()
-                                                    .text_color(red_400()),
-                                            )
-                                            .child(
-                                                Label::new(info.path.clone().to_string_lossy())
-                                                    .text_ellipsis()
-                                                    .text_xs()
-                                                    .text_color(red_300()),
-                                            ),
-                                    )
-                                    .child(
-                                        Button::new("reload")
-                                            .custom(ButtonCustomVariant::new(cx).color(gray_500()))
-                                            .xsmall()
-                                            .icon(IconAsset::Refresh)
-                                            .on_click({
-                                                let path = info.path.clone();
-                                                cx.listener(move |this, _, window, cx| {
-                                                    cx.stop_propagation();
-                                                    this.on_reload_project(path.clone(), window, cx);
-                                                })
-                                            }),
-                                    )
-                                    .child(
-                                        Button::new("remove")
-                                            .custom(ButtonCustomVariant::new(cx).color(gray_500()))
-                                            .xsmall()
-                                            .icon(IconName::Close)
-                                            .on_click({
-                                                let path = info.path.clone();
-                                                cx.listener(move |this, _, window, cx| {
-                                                    cx.stop_propagation();
-                                                    this.on_remove_project(&path, window, cx);
-                                                })
-                                            }),
-                                    ),
-                            )
-                        },
-                    )
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.on_switch_project(info.path.clone(), window, cx);
-                    }))
-                    .into_any_element()
+                .ghost()
+                .w_full()
+                .h_12()
+                .disabled(!info.loaded)
+                .when_else(
+                    info.loaded,
+                    |button| {
+                        button.child(
+                            div()
+                                .flex()
+                                .gap_x_2()
+                                .size_full()
+                                .items_center()
+                                .justify_between()
+                                .when_else(
+                                    info.active,
+                                    |this| this.child(IconName::Check),
+                                    |this| this.child(Icon::empty()),
+                                )
+                                .child(
+                                    div()
+                                        .flex_col()
+                                        .child(Label::new(info.name.clone()).text_sm())
+                                        .child(
+                                            Label::new(info.path.clone().to_string_lossy())
+                                                .text_ellipsis()
+                                                .text_xs()
+                                                .text_color(gray_600()),
+                                        ),
+                                )
+                                .child(
+                                    Button::new("rename")
+                                        .custom(ButtonCustomVariant::new(cx).color(gray_500()))
+                                        .xsmall()
+                                        .icon(IconAsset::Rename)
+                                        .on_click({
+                                            let path = info.path.clone();
+                                            let name = info.name.clone();
+                                            cx.listener(move |this, _, window, cx| {
+                                                cx.stop_propagation();
+                                                this.on_rename_project(
+                                                    name.clone(),
+                                                    path.clone(),
+                                                    window,
+                                                    cx,
+                                                );
+                                            })
+                                        }),
+                                )
+                                .child(
+                                    Button::new("remove")
+                                        .custom(ButtonCustomVariant::new(cx).color(gray_500()))
+                                        .xsmall()
+                                        .icon(IconName::Close)
+                                        .on_click({
+                                            let path = info.path.clone();
+                                            cx.listener(move |this, _, window, cx| {
+                                                cx.stop_propagation();
+                                                this.on_remove_project(&path, window, cx);
+                                            })
+                                        }),
+                                ),
+                        )
+                    },
+                    |button| {
+                        button.child(
+                            div()
+                                .flex()
+                                .gap_x_2()
+                                .size_full()
+                                .items_center()
+                                .justify_between()
+                                .child(Icon::empty())
+                                .child(
+                                    div()
+                                        .flex_col()
+                                        .child(
+                                            Label::new(info.name.clone())
+                                                .text_sm()
+                                                .text_color(red_400()),
+                                        )
+                                        .child(
+                                            Label::new(info.path.clone().to_string_lossy())
+                                                .text_ellipsis()
+                                                .text_xs()
+                                                .text_color(red_300()),
+                                        ),
+                                )
+                                .child(
+                                    Button::new("reload")
+                                        .custom(ButtonCustomVariant::new(cx).color(gray_500()))
+                                        .xsmall()
+                                        .icon(IconAsset::Refresh)
+                                        .on_click({
+                                            let path = info.path.clone();
+                                            cx.listener(move |this, _, window, cx| {
+                                                cx.stop_propagation();
+                                                this.on_reload_project(path.clone(), window, cx);
+                                            })
+                                        }),
+                                )
+                                .child(
+                                    Button::new("remove")
+                                        .custom(ButtonCustomVariant::new(cx).color(gray_500()))
+                                        .xsmall()
+                                        .icon(IconName::Close)
+                                        .on_click({
+                                            let path = info.path.clone();
+                                            cx.listener(move |this, _, window, cx| {
+                                                cx.stop_propagation();
+                                                this.on_remove_project(&path, window, cx);
+                                            })
+                                        }),
+                                ),
+                        )
+                    },
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.on_switch_project(info.path.clone(), window, cx);
+                }))
+                .into_any_element()
             })
             .collect();
 
@@ -339,15 +344,12 @@ pub(super) struct ProjectSelector {
 impl ProjectSelector {
     pub(super) fn new(workspace: Entity<Workspace>, cx: &mut Context<Self>) -> Self {
         let active_project = workspace.read(cx).active_project();
-        let _workspace_event_sub = cx.subscribe(
-            &workspace,
-            |this, workspace, e: &WorkspaceEvent, cx| match e {
-                WorkspaceEvent::ActiveProjectChanged => {
+        let _workspace_event_sub =
+            cx.subscribe(&workspace, |this, workspace, e: &WorkspaceEvent, cx| {
+                if let WorkspaceEvent::ActiveProjectChanged = e {
                     this.active_project = workspace.read(cx).active_project()
                 }
-                _ => {}
-            },
-        );
+            });
         let menu_content = cx.new(|cx| ProjectManagementPopover::new(workspace.clone(), cx));
 
         Self {
@@ -414,11 +416,11 @@ impl ProjectSelector {
                         )
                         .child(DialogAction::new().child(
                             Button::new("confirm").primary().label("Create").disabled(
-                                name_input.read(cx).value().len() == 0
+                                name_input.read(cx).value().is_empty()
                                     || path_input.read_with(cx, |state, _| {
-                                    state.value().len() == 0
-                                        || !state.value().ends_with(PROJECT_FILE_EXT)
-                                }),
+                                        state.value().is_empty()
+                                            || !state.value().ends_with(PROJECT_FILE_EXT)
+                                    }),
                             ),
                         )),
                 )
@@ -458,27 +460,27 @@ impl ProjectSelector {
             let Ok(result) = path.await else {
                 return;
             };
-            if let Some(paths) = result.ok().flatten() {
-                if !paths.is_empty() {
-                    let window_handle = cx.window_handle();
-                    _ = this.update(cx, |this, cx| {
-                        if let Err(err) = this
-                            .workspace
-                            .update(cx, |this, cx| this.open_project(paths[0].clone(), cx))
-                        {
-                            _ = window_handle.update(cx, |_, window, cx| {
-                                window.push_notification(format!("{:?}", err), cx);
-                            });
-                        }
-                        AppState::update(cx, |state, _| {
-                            state.last_dir_path = paths[0].clone();
-                            true
+            if let Some(paths) = result.ok().flatten()
+                && !paths.is_empty()
+            {
+                let window_handle = cx.window_handle();
+                _ = this.update(cx, |this, cx| {
+                    if let Err(err) = this
+                        .workspace
+                        .update(cx, |this, cx| this.open_project(paths[0].clone(), cx))
+                    {
+                        _ = window_handle.update(cx, |_, window, cx| {
+                            window.push_notification(format!("{:?}", err), cx);
                         });
+                    }
+                    AppState::update(cx, |state, _| {
+                        state.last_dir_path = paths[0].clone();
+                        true
                     });
-                }
+                });
             }
         })
-            .detach();
+        .detach();
     }
 }
 

@@ -4,7 +4,7 @@ use crate::workspace::{Project, ProjectEvent};
 use gpui::*;
 use gpui_component::select::{Select, SelectEvent, SelectState};
 use gpui_component::separator::Separator;
-use gpui_component::{h_flex, v_flex, ActiveTheme, IndexPath, Sizable};
+use gpui_component::{ActiveTheme, IndexPath, Sizable, h_flex, v_flex};
 use uuid::Uuid;
 
 pub(super) struct ProjectConfigurator {
@@ -32,7 +32,7 @@ impl ProjectConfigurator {
             }
         })
         .detach();
-        
+
         let _project_event_sub = cx.subscribe_in(
             &project,
             window,
@@ -46,13 +46,12 @@ impl ProjectConfigurator {
         let _project_vars_event_sub = cx.subscribe_in(
             &project_vars,
             window,
-            move |this, project_vars, event, window, cx| match event {
-                ProjectVariablesEvent::ProfilesChanged => {
+            move |this, project_vars, event, window, cx| {
+                if let ProjectVariablesEvent::ProfilesChanged = event {
                     let profiles = project_vars.read(cx).profile_infos();
                     this.profile_select_state
                         .update(cx, |state, cx| state.set_items(profiles, window, cx));
                 }
-                _ => {}
             },
         );
 
@@ -94,7 +93,7 @@ impl ProjectConfigurator {
                 .update(cx, |state, cx| state.set_selected_index(None, window, cx)),
             Some(id) => {
                 self.profile_select_state
-                    .update(cx, |state, cx| state.set_selected_value(&id, window, cx));
+                    .update(cx, |state, cx| state.set_selected_value(id, window, cx));
             }
         }
     }
@@ -112,9 +111,14 @@ impl Render for ProjectConfigurator {
                     .h_8()
                     .child("Project configuration"),
             )
-            .child(h_flex().text_xs().gap_x_2().pb_2().child("Profile").child(
-                Select::new(&self.profile_select_state).small(),
-            ))
+            .child(
+                h_flex()
+                    .text_xs()
+                    .gap_x_2()
+                    .pb_2()
+                    .child("Profile")
+                    .child(Select::new(&self.profile_select_state).small()),
+            )
             .child(Separator::horizontal())
             .child(self.project_config_tabs.clone())
     }

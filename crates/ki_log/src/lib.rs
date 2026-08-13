@@ -1,16 +1,22 @@
 use anyhow::Result;
+use log::Record;
 use log4rs::Config;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
+use log4rs::filter::Response;
 use std::env;
 use std::path::PathBuf;
-use log4rs::filter::Response;
-use log::Record;
 
 const LOG_FILE: &str = "kinaro.log";
 
+///Initialize the logging system.
+///
+/// If in debug mode, the log file is written in the *target* dir, in the provided `config_dir` otherwise.
+/// # Errors
+/// Returns an error if the logger fails to initialize
+#[allow(clippy::missing_panics_doc)]
 pub fn init(config_dir: &PathBuf) -> Result<()> {
     let file_path = if cfg!(debug_assertions) {
         match env::current_exe() {
@@ -37,13 +43,17 @@ pub fn init(config_dir: &PathBuf) -> Result<()> {
         .build(file_path)?;
 
     let config = Config::builder()
-        .appender(Appender::builder().filter(Box::new(KinaroFilter)).build("console", Box::new(console_appender)))
-        .appender(Appender::builder().filter(Box::new(KinaroFilter)).build("file", Box::new(file_appender)))
-        .build(
-            Root::builder()
-                .appenders(["console"])
-                .build(level_filer),
-        )?;
+        .appender(
+            Appender::builder()
+                .filter(Box::new(KinaroFilter))
+                .build("console", Box::new(console_appender)),
+        )
+        .appender(
+            Appender::builder()
+                .filter(Box::new(KinaroFilter))
+                .build("file", Box::new(file_appender)),
+        )
+        .build(Root::builder().appenders(["console"]).build(level_filer))?;
 
     log4rs::init_config(config)?;
     Ok(())

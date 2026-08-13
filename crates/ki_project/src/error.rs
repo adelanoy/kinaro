@@ -22,10 +22,10 @@ pub enum ProjectFileError {
     /// An empty name has been provided
     #[error("{}::{} (name: {})", PROJECT_FILE_ERROR, INVALID_NAME_ERROR, .0)]
     InvalidName(String),
-    /// A Yaml serialization has failed
+    /// A wtite serialization has failed
     #[error("{}::{} (err: {:?})", PROJECT_FILE_ERROR, WRITE_ERROR, .0)]
     WriteYaml(String),
-    /// A Yaml deserialization has failed
+    /// A read deserialization has failed
     #[error("{}::{} (err: {:?})", PROJECT_FILE_ERROR, READ_ERROR, .0)]
     ReadYaml(String),
     /// Invalid path, does not exist or cannot be written to

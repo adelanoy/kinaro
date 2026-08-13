@@ -14,24 +14,22 @@ pub struct ProjectSidebar {
 
 impl ProjectSidebar {
     pub fn new(workspace: Entity<Workspace>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let _workspace_sub = cx.subscribe_in(
-            &workspace,
-            window,
-            |this, workspace, event, window, cx| match event {
-                WorkspaceEvent::ActiveProjectChanged => match workspace.read(cx).active_project() {
-                    None => this.project_configurator = None,
-                    Some(project) => {
-                        this.project_configurator =
-                            Some(cx.new(|cx| ProjectConfigurator::new(project, window, cx)))
+        let _workspace_sub =
+            cx.subscribe_in(&workspace, window, |this, workspace, event, window, cx| {
+                if let WorkspaceEvent::ActiveProjectChanged = event {
+                    match workspace.read(cx).active_project() {
+                        None => this.project_configurator = None,
+                        Some(project) => {
+                            this.project_configurator =
+                                Some(cx.new(|cx| ProjectConfigurator::new(project, window, cx)))
+                        }
                     }
-                },
-                _ => {}
-            },
-        );
-        let project_configurator = match workspace.read(cx).active_project() {
-            None => None,
-            Some(project) => Some(cx.new(|cx| ProjectConfigurator::new(project, window, cx))),
-        };
+                }
+            });
+        let project_configurator = workspace
+            .read(cx)
+            .active_project()
+            .map(|project| cx.new(|cx| ProjectConfigurator::new(project, window, cx)));
 
         Self {
             project_configurator,

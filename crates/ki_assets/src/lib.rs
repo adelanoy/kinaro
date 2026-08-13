@@ -1,9 +1,9 @@
+pub mod font;
 pub mod icon;
 pub mod theme;
-pub mod font;
 
 use anyhow::anyhow;
-use gpui::*;
+use gpui::{App, AssetSource, Result, SharedString};
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
 

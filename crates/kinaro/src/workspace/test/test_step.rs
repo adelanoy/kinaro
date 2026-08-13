@@ -8,7 +8,7 @@ pub struct TestStep {
 }
 
 impl TestStep {
-    pub fn from_file(file_test_step: &Vec<FileTestStep>) -> Vec<TestStep> {
+    pub fn from_file(file_test_step: &[FileTestStep]) -> Vec<TestStep> {
         file_test_step
             .iter()
             .map(|file_test_suite| Self {

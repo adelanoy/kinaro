@@ -1,3 +1,4 @@
+use crate::workspace::Workspace;
 use crate::workspace::endpoint::WorkspaceEndpoint;
 use crate::workspace::error::ProjectError;
 use crate::workspace::test::TestsContainer;
@@ -6,9 +7,8 @@ use chrono::{DateTime, Local};
 use gpui::{AppContext, Context, Entity, EventEmitter, SharedString, Subscription};
 use ki_project::ProjectFile;
 use log::error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
-use crate::workspace::Workspace;
 
 pub const PROJECT_FILE_EXT: &str = "kpr";
 
@@ -38,9 +38,8 @@ pub struct Project {
 impl Project {
     #[inline]
     pub fn active_profile(&self) -> Option<Uuid> {
-        self.active_profile.clone()
+        self.active_profile
     }
-
 
     /// Change the currently active profile
     /// # Events
@@ -70,16 +69,16 @@ impl Project {
     }
 
     pub(super) fn load(
-        path: &PathBuf,
+        path: &Path,
         active_profile: Option<Uuid>,
         cx: &mut Context<Workspace>,
     ) -> Result<Entity<Self>> {
         if !path.exists() || path.extension() != Some(PROJECT_FILE_EXT.as_ref()) {
             error!("Invalid project at: {}", path.to_string_lossy());
-            return Err(ProjectError::BadLocation(path.clone()));
+            return Err(ProjectError::BadLocation(path.to_owned()));
         }
 
-        let file_project = ProjectFile::load(&path).map_err(|err| {
+        let file_project = ProjectFile::load(path).map_err(|err| {
             let error = ProjectError::from(err);
             error!(
                 "Failed to load project at: {}. Error: {:?}",
@@ -111,7 +110,7 @@ impl Project {
                 tests,
                 _variables_event_sub,
                 active_profile,
-                path: path.clone(),
+                path: path.to_owned(),
             }
         });
 
@@ -139,18 +138,16 @@ impl Project {
     /// save the project to file and emit the passed event
     pub fn save(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
-            if let Some(this) = this.upgrade() {
-                if let Err(err) = this.update(cx, |this, cx| {
+            if let Some(this) = this.upgrade()
+                && let Err(err) = this.update(cx, |this, cx| {
                     let project = this.to_file(cx);
-                    project
-                        .save(&this.path)
-                        .map_err(|e| ProjectError::from(e))?;
+                    project.save(&this.path).map_err(ProjectError::from)?;
                     // Update the 'modified' attribute if save was successful
                     this.modified = project.modified;
                     Ok::<(), ProjectError>(())
-                }) {
-                    error!("Failed to save project file: {}", err);
-                }
+                })
+            {
+                error!("Failed to save project file: {}", err);
             }
         })
         .detach();
@@ -179,23 +176,17 @@ impl Project {
         e: &ProjectVariablesEvent,
         cx: &mut Context<Self>,
     ) {
-        match e {
-            // Check if the currently active profile has been deleted
-            ProjectVariablesEvent::ProfilesChanged => match self.active_profile {
-                Some(active_profile) => {
-                    if !project_vars
-                        .read(cx)
-                        .profiles
-                        .iter()
-                        .any(|p| p.id == active_profile)
-                    {
-                        self.active_profile = None;
-                        cx.emit(ProjectEvent::ActiveProfileChanged(self.active_profile));
-                    }
-                }
-                None => {}
-            }
-            _ => {},
+        // Check if the currently active profile has been deleted
+        if let ProjectVariablesEvent::ProfilesChanged = e
+            && let Some(active_profile) = self.active_profile
+            && !project_vars
+                .read(cx)
+                .profiles
+                .iter()
+                .any(|p| p.id == active_profile)
+        {
+            self.active_profile = None;
+            cx.emit(ProjectEvent::ActiveProfileChanged(self.active_profile));
         }
 
         self.save(cx);

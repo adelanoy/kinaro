@@ -8,8 +8,8 @@ pub use {
     error::ProjectFileError,
     ki_project::ProjectFile,
     test::{
-        test_case::FileTestCase, test_step::FileTestStep, test_suite::FileTestSuite, FileTestInfo,
-        FileTestsContainer,
+        FileTestInfo, FileTestsContainer, test_case::FileTestCase, test_step::FileTestStep,
+        test_suite::FileTestSuite,
     },
     variable::{FileProfile, FileProjectVariables, FileVariable, VariableKind},
 };
@@ -24,7 +24,7 @@ mod ki_project {
     use log::debug;
     use serde::{Deserialize, Serialize};
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     #[derive(Serialize, Deserialize, Clone, Debug)]
     #[serde(rename_all = "camelCase")]
@@ -41,10 +41,10 @@ mod ki_project {
     }
 
     impl ProjectFile {
-        pub fn create(path: &PathBuf, name: &str) -> Result<ProjectFile> {
+        pub fn create(path: &Path, name: &str) -> Result<ProjectFile> {
             check_project_path(path, false)
-                .and_then(|_| check_project_name(name))
-                .map(|_| ProjectFile {
+                .and_then(|()| check_project_name(name))
+                .map(|()| ProjectFile {
                     name: name.into(),
                     version: 1,
                     created: Local::now(),
@@ -55,9 +55,9 @@ mod ki_project {
                 })
         }
 
-        pub fn load(path: &PathBuf) -> Result<ProjectFile> {
+        pub fn load(path: &Path) -> Result<ProjectFile> {
             check_project_path(path, true)
-                .and_then(|_| fs::read(&path).map_err(|e| ProjectFileError::Io(e)))
+                .and_then(|()| fs::read(path).map_err(ProjectFileError::Io))
                 .and_then(|file| {
                     serde_yaml::from_slice::<ProjectFile>(&file)
                         .map_err(|err| ProjectFileError::ReadYaml(err.to_string()))
@@ -71,7 +71,7 @@ mod ki_project {
                 path.to_string_lossy()
             );
             fs::File::create(path)
-                .map_err(|err| ProjectFileError::from(err))
+                .map_err(ProjectFileError::from)
                 .and_then(|file| {
                     serde_yaml::to_writer(file, &self)
                         .map_err(|err| ProjectFileError::WriteYaml(err.to_string()))
@@ -79,23 +79,23 @@ mod ki_project {
         }
     }
 
-    fn check_project_path(path: &PathBuf, should_exist: bool) -> Result<()> {
+    fn check_project_path(path: &Path, should_exist: bool) -> Result<()> {
         if path.exists() {
             if !path.is_file() {
-                return Err(ProjectFileError::BadLocation(path.clone()));
+                return Err(ProjectFileError::BadLocation(path.to_owned()));
             }
         } else if should_exist {
-            return Err(ProjectFileError::BadLocation(path.clone()));
+            return Err(ProjectFileError::BadLocation(path.to_owned()));
         }
         match path.extension() {
             Some(ext) => {
                 if ext == "kpr" {
                     Ok(())
                 } else {
-                    Err(ProjectFileError::BadLocation(path.clone()))
+                    Err(ProjectFileError::BadLocation(path.to_owned()))
                 }
             }
-            None => Err(ProjectFileError::BadLocation(path.clone())),
+            None => Err(ProjectFileError::BadLocation(path.to_owned())),
         }
     }
 

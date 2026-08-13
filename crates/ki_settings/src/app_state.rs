@@ -1,11 +1,11 @@
-use crate::error::SettingsError;
 use crate::GlobalSettings;
-use gpui::{point, px, size, App, AppContext, BorrowAppContext, Bounds, Window, WindowBounds};
+use crate::error::SettingsError;
+use gpui::{App, AppContext, BorrowAppContext, Bounds, Window, WindowBounds, point, px, size};
 use gpui_component::ThemeMode;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 const WINDOW_FILE: &str = "state.json";
@@ -32,6 +32,7 @@ enum WindowBoundsContent {
     },
 }
 
+#[allow(clippy::cast_possible_truncation)]
 impl From<WindowBounds> for WindowBoundsContent {
     fn from(value: WindowBounds) -> Self {
         match value {
@@ -69,6 +70,7 @@ impl From<WindowBounds> for WindowBoundsContent {
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 impl From<&WindowBoundsContent> for WindowBounds {
     fn from(value: &WindowBoundsContent) -> Self {
         match value {
@@ -139,17 +141,18 @@ impl Default for AppState {
             bounds: None,
             last_dir_path: dirs::desktop_dir().unwrap(),
             theme: ThemeMode::Dark,
-            sidebar: Default::default(),
+            sidebar: SidebarState::default(),
         }
     }
 }
 
 impl AppState {
-    pub(crate) fn init(config_dir: &PathBuf) -> Self {
+    pub(crate) fn init(config_dir: &Path) -> Self {
         let file_path = config_dir.join(WINDOW_FILE);
         Self::load_or_default(&file_path)
     }
 
+    #[must_use]
     pub fn bounds(&self) -> Option<WindowBounds> {
         if let Some(bounds) = &self.bounds {
             let bounds = WindowBounds::from(bounds);
@@ -180,7 +183,7 @@ impl AppState {
         let window_bounds = window.inner_window_bounds();
         let display = Some(display_uuid);
         let bounds = Some(WindowBoundsContent::from(window_bounds));
-        if self.display != self.display || self.bounds != bounds {
+        if self.display != display || self.bounds != bounds {
             self.display = display;
             self.bounds = bounds;
             return true;
@@ -194,37 +197,36 @@ impl AppState {
                 "Opening window settings file: {}",
                 file_path.to_string_lossy()
             );
-            let settings = fs::read(&file_path)
-                .map_err(|e| SettingsError::Io(e))
+            let settings = fs::read(file_path)
+                .map_err(SettingsError::Io)
                 .and_then(|file| {
                     serde_json::from_slice::<AppState>(&file)
                         .map_err(|err| SettingsError::ReadJson(err.to_string()))
                 });
-            if let Err(err) = &settings {
-                error!(
-                    "Failed to load window settings: {}. Reverting to default",
-                    err
-                );
-                Default::default()
+            match settings {
+                Err(err) => {
+                    error!("Failed to load window settings: {err}. Reverting to default");
+                    AppState::default()
+                }
+                Ok(state) => state,
             }
-            settings.unwrap()
         } else {
-            Default::default()
+            AppState::default()
         }
     }
 
-    pub(crate) fn save(&self, config_dir: &PathBuf) {
+    pub(crate) fn save(&self, config_dir: &Path) {
         let file_path = config_dir.join(WINDOW_FILE);
         debug!("Saving app state to {}", file_path.to_string_lossy());
 
         if let Err(err) = fs::File::create(file_path)
-            .map_err(|err| SettingsError::from(err))
+            .map_err(SettingsError::from)
             .and_then(|file| {
                 serde_json::to_writer_pretty(file, &self)
                     .map_err(|err| SettingsError::WriteJson(err.to_string()))
             })
         {
-            error!("Error saving window settings file: {}", err);
+            error!("Error saving window settings file: {err}");
         }
     }
 }

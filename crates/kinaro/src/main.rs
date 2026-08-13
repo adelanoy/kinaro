@@ -4,14 +4,15 @@ pub(crate) mod actions;
 pub(crate) mod views;
 pub(crate) mod workspace;
 
+use crate::actions::EscAction;
 use crate::views::WorkspaceView;
 use gpui::*;
 use gpui_component::Root;
 use ki_assets::Assets;
-use log::info;
 use ki_settings::app_state::AppState;
+use log::info;
+use std::default::Default;
 use std::path::PathBuf;
-use crate::actions::EscAction;
 
 fn main() {
     let config_dir = dirs::config_local_dir().unwrap().join("Kinaro_gpui");
@@ -46,9 +47,7 @@ fn init_app(config_dir: PathBuf, cx: &mut App) {
     gpui_component::init(cx);
     ki_assets::init(cx);
 
-    cx.bind_keys([
-        KeyBinding::new("escape", EscAction, None),
-    ]);
+    cx.bind_keys([KeyBinding::new("escape", EscAction, None)]);
 }
 
 fn build_window_options(cx: &mut App) -> WindowOptions {
@@ -63,15 +62,17 @@ fn build_window_options(cx: &mut App) -> WindowOptions {
             app_state.bounds(),
         )
     });
-    let mut options = WindowOptions::default();
-    options.window_bounds = bounds;
-    options.display_id = display;
-    options.window_min_size = Some(Size::new(px(800.0), px(600.0)));
-    options.titlebar = Some(TitlebarOptions {
-        title: None,
-        appears_transparent: true,
-        traffic_light_position: Some(point(px(9.0), px(9.0))),
-    });
+    let mut options = WindowOptions {
+        window_bounds: bounds,
+        display_id: display,
+        window_min_size: Some(Size::new(px(800.0), px(600.0))),
+        titlebar: Some(TitlebarOptions {
+            title: None,
+            appears_transparent: true,
+            traffic_light_position: Some(point(px(9.0), px(9.0))),
+        }),
+        ..Default::default()
+    };
 
     #[cfg(target_os = "linux")]
     {

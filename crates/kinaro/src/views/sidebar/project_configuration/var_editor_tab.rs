@@ -164,11 +164,9 @@ impl VariableDataTableDelegate {
             window,
             move |table, _, event: &SelectEvent<Vec<VariableKind>>, _, _| match event {
                 SelectEvent::Confirm(value) if value.is_some() => {
-                    match &mut table.delegate_mut().cell_state {
-                        CellState::CellEdited(_, _, data) => {
-                            data.kind = value.unwrap();
-                        }
-                        _ => {}
+                    if let CellState::CellEdited(_, _, data) = &mut table.delegate_mut().cell_state
+                    {
+                        data.kind = value.unwrap();
                     }
                 }
                 SelectEvent::Confirm(_) => {}
@@ -231,10 +229,10 @@ impl VariableDataTableDelegate {
             }
         };
 
-        if self.delete_variable(current_row, window, cx) {
-            if current_row >= self.project_vars.read(cx).references.len() {
-                self.cell_state = CellState::Unselected
-            }
+        if self.delete_variable(current_row, window, cx)
+            && current_row >= self.project_vars.read(cx).references.len()
+        {
+            self.cell_state = CellState::Unselected
         }
     }
 
@@ -307,16 +305,12 @@ impl VariableDataTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        match self.cell_state {
-            CellState::CellEdited(current_row_ix, current_col_ix, _) => {
-                if current_row_ix == row_ix && current_col_ix == col_ix {
-                    return;
-                } else {
-                    self.update_variable(window, cx);
-                    self._cell_input_sub = None;
-                }
+        if let CellState::CellEdited(current_row_ix, current_col_ix, _) = self.cell_state {
+            if current_row_ix == row_ix && current_col_ix == col_ix {
+                return;
             }
-            _ => {}
+            self.update_variable(window, cx);
+            self._cell_input_sub = None;
         }
 
         let var = self
@@ -410,13 +404,12 @@ impl VariableDataTableDelegate {
         F: FnOnce(&mut VariableReference, SharedString),
     {
         match event {
-            InputEvent::Change => match &mut table.delegate_mut().cell_state {
-                CellState::CellEdited(_, _, data) => {
+            InputEvent::Change => {
+                if let CellState::CellEdited(_, _, data) = &mut table.delegate_mut().cell_state {
                     let text = state.read(cx).value();
                     f(data, text);
                 }
-                _ => {}
-            },
+            }
             InputEvent::PressEnter {
                 secondary: _,
                 shift: _,
@@ -427,31 +420,25 @@ impl VariableDataTableDelegate {
     }
 
     fn end_edit_cell(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-        match self.cell_state {
-            CellState::CellEdited(row, _, _) => {
-                self.update_variable(window, cx);
-                self._cell_input_sub = None;
-                self.cell_state = CellState::CellSelected(row);
-            }
-            _ => {}
+        if let CellState::CellEdited(row, _, _) = self.cell_state {
+            self.update_variable(window, cx);
+            self._cell_input_sub = None;
+            self.cell_state = CellState::CellSelected(row);
         }
     }
 
     fn update_variable(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-        let profile = self
-            .switch_on
-            .then(|| self.profile_select_state.read(cx).selected_value().copied())
-            .unwrap_or_default();
-        match &self.cell_state {
-            CellState::CellEdited(_, _, data) => {
-                if let Err(err) = self
-                    .project_vars
-                    .update(cx, |this, cx| this.update_variable(profile, &data, cx))
-                {
-                    window.push_notification(err, cx);
-                }
-            }
-            _ => {}
+        let profile = if self.switch_on {
+            self.profile_select_state.read(cx).selected_value().copied()
+        } else {
+            Default::default()
+        };
+        if let CellState::CellEdited(_, _, data) = &self.cell_state
+            && let Err(err) = self
+                .project_vars
+                .update(cx, |this, cx| this.update_variable(profile, data, cx))
+        {
+            window.push_notification(err, cx);
         }
     }
 }

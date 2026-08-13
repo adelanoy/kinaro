@@ -10,10 +10,10 @@ pub enum WorkspaceError {
     /// General Io workspace error
     #[error("WorkspaceError::Io (err: {})", .0)]
     Io(String),
-    /// A Json serialization has failed
+    /// A JSON serialization has failed
     #[error("WorkspaceError::WriteJson (err: {:?})", .0)]
     Write(serde_json::Error),
-    /// A Json deserialization has failed
+    /// A JSON deserialization has failed
     #[error("WorkspaceError::ReadJson (err: {:?})", .0)]
     Read(serde_json::Error),
     /// General project errors
@@ -21,9 +21,9 @@ pub enum WorkspaceError {
     Project(#[from] ProjectError),
 }
 
-impl Into<Notification> for WorkspaceError {
-    fn into(self) -> Notification {
-        match self {
+impl From<WorkspaceError> for Notification {
+    fn from(value: WorkspaceError) -> Notification {
+        match value {
             WorkspaceError::ProjectNotLoaded => Notification::warning("The project is invalid"),
             WorkspaceError::Io(err) => Notification::error(format!("IO Error: {}", err)),
             WorkspaceError::Write(err) => {
@@ -42,10 +42,10 @@ pub enum ProjectError {
     /// General Io workspace error
     #[error("ProjectError::Io (err: {})", .0)]
     Io(String),
-    /// A Json serialization has failed
+    /// A write serialization has failed
     #[error("ProjectError::Write (err: {:?})", .0)]
     Write(String),
-    /// A Json deserialization has failed
+    /// A read deserialization has failed
     #[error("ProjectError::Read (err: {:?})", .0)]
     Read(String),
     /// A project could not be written or read to this invalid location
@@ -77,9 +77,9 @@ impl From<ProjectFileError> for ProjectError {
     }
 }
 
-impl Into<Notification> for ProjectError {
-    fn into(self) -> Notification {
-        match self {
+impl From<ProjectError> for Notification {
+    fn from(value: ProjectError) -> Notification {
+        match value {
             ProjectError::Io(err) => {
                 Notification::error(format!("I/O error on project file: {}", err))
             }

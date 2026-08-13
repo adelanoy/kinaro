@@ -44,11 +44,11 @@ impl SelectItem for VariableKind {
     type Value = VariableKind;
 
     fn title(&self) -> SharedString {
-        SharedString::new(format!("{}", self))
+        SharedString::new(format!("{self}"))
     }
 
     fn value(&self) -> &Self::Value {
-        &self
+        self
     }
 }
 
@@ -78,12 +78,12 @@ impl PartialEq for FileProfile {
 
 impl PartialOrd for FileProfile {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.name.partial_cmp(&other.name)
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for FileProfile {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap()
+        self.name.cmp(&other.name)
     }
 }
