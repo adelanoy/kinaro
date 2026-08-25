@@ -4,7 +4,7 @@ use crate::workspace::{
 };
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
+use gpui_component::button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants};
 use gpui_component::dialog::{DialogAction, DialogClose, DialogFooter};
 use gpui_component::form::{field, v_form};
 use gpui_component::input::{Input, InputState};
@@ -495,7 +495,6 @@ impl Render for ProjectSelector {
         div()
             .on_action(cx.listener(Self::on_create_project))
             .on_action(cx.listener(Self::on_open_project))
-            .p_1()
             .h_full()
             .min_w_32()
             .child(
@@ -509,7 +508,8 @@ impl Render for ProjectSelector {
                     .trigger(
                         Button::new("btn-project-selector")
                             .secondary()
-                            .size_full()
+                            .small()
+                            .rounded(ButtonRounded::Small)
                             .child(
                                 div()
                                     .flex()

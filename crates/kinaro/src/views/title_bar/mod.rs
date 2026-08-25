@@ -24,9 +24,13 @@ impl Render for AppTitleBar {
         let is_dark_mode = cx.theme().mode == ThemeMode::Dark;
 
         TitleBar::new()
-            .h_full()
+            .h_10()
             .justify_between()
-            .child(self.project_selector.clone())
+            .child(div()
+                .flex()
+                .items_center()
+                .child(self.project_selector.clone())
+            )
             .child(
                 div()
                     .flex()
