@@ -3388,7 +3388,7 @@ dependencies = [
 name = "ki_settings"
 version = "0.1.0"
 dependencies = [
- "dirs 6.0.0",
+ "dirs 5.0.1",
  "gpui",
  "gpui-component",
  "log",
@@ -3412,7 +3412,7 @@ name = "kinaro"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "dirs 6.0.0",
+ "dirs 5.0.1",
  "gpui",
  "gpui-component",
  "gpui_platform",

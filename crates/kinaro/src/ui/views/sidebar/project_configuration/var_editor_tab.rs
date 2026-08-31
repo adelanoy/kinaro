@@ -1,4 +1,4 @@
-use crate::views::sidebar::project_configuration::ProjectConfigurationTab;
+use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTab;
 use crate::workspace::Project;
 use crate::workspace::variable::{ProfileInfo, ProjectVariables, VariableReference};
 use gpui::prelude::FluentBuilder;

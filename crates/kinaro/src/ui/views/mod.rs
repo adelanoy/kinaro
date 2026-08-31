@@ -1,8 +1,8 @@
 mod sidebar;
 mod title_bar;
 
-use crate::views::sidebar::ProjectSidebar;
-use crate::views::title_bar::AppTitleBar;
+use crate::ui::views::sidebar::ProjectSidebar;
+use crate::ui::views::title_bar::AppTitleBar;
 use crate::workspace::Workspace;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants, Toggle};
@@ -151,7 +151,6 @@ impl Render for WorkspaceView {
                 ),
             )
             .children(Root::render_dialog_layer(window, cx))
-            .children(Root::render_sheet_layer(window, cx))
             .children(Root::render_notification_layer(window, cx))
     }
 }

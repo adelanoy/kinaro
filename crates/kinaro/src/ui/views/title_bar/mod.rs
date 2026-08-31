@@ -1,6 +1,6 @@
 pub mod project_selector;
 
-use crate::views::title_bar::project_selector::ProjectSelector;
+use crate::ui::views::title_bar::project_selector::ProjectSelector;
 use crate::workspace::Workspace;
 use gpui::*;
 use gpui_component::switch::Switch;

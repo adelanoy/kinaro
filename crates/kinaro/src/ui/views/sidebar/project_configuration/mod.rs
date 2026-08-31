@@ -1,6 +1,6 @@
-use crate::views::sidebar::project_configuration::profile_editor_tab::ProfileEditor;
-use crate::views::sidebar::project_configuration::project_tree_tab::ProjectTreeTab;
-use crate::views::sidebar::project_configuration::var_editor_tab::VariableEditor;
+use crate::ui::views::sidebar::project_configuration::profile_editor_tab::ProfileEditor;
+use crate::ui::views::sidebar::project_configuration::project_tree_tab::ProjectTree;
+use crate::ui::views::sidebar::project_configuration::var_editor_tab::VariableEditor;
 use crate::workspace::Project;
 use gpui::{
     AnyView, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString,
@@ -36,17 +36,17 @@ impl ProjectConfigurationTabs {
         cx: &mut App,
     ) -> Vec<Entity<ProjectConfigurationTabContainer>> {
         vec![
+            ProjectConfigurationTabContainer::container::<ProjectTree>(
+                active_project.clone(),
+                window,
+                cx,
+            ),
             ProjectConfigurationTabContainer::container::<VariableEditor>(
                 active_project.clone(),
                 window,
                 cx,
             ),
             ProjectConfigurationTabContainer::container::<ProfileEditor>(
-                active_project.clone(),
-                window,
-                cx,
-            ),
-            ProjectConfigurationTabContainer::container::<ProjectTreeTab>(
                 active_project.clone(),
                 window,
                 cx,

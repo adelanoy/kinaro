@@ -1,11 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 pub(crate) mod actions;
-pub(crate) mod views;
+pub(crate) mod ui;
 pub(crate) mod workspace;
 
 use crate::actions::EscAction;
-use crate::views::WorkspaceView;
+use crate::ui::views::WorkspaceView;
 use gpui::*;
 use gpui_component::Root;
 use ki_assets::Assets;

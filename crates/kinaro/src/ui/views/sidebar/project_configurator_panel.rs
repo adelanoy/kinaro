@@ -1,4 +1,4 @@
-use crate::views::sidebar::project_configuration::ProjectConfigurationTabs;
+use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTabs;
 use crate::workspace::variable::{ProfileInfo, ProjectVariablesEvent};
 use crate::workspace::{Project, ProjectEvent};
 use gpui::*;
@@ -33,15 +33,12 @@ impl ProjectConfigurator {
         })
         .detach();
 
-        let _project_event_sub = cx.subscribe_in(
-            &project,
-            window,
-            move |this, _, event, window, cx| match event {
-                ProjectEvent::ActiveProfileChanged(id) => {
+        let _project_event_sub =
+            cx.subscribe_in(&project, window, move |this, _, event, window, cx| {
+                if let ProjectEvent::ActiveProfileChanged(id) = event {
                     this.update_selected_profile_select_state(id, window, cx)
                 }
-            },
-        );
+            });
         let project_vars = project.read(cx).variables.clone();
         let _project_vars_event_sub = cx.subscribe_in(
             &project_vars,

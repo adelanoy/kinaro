@@ -1,4 +1,4 @@
-use crate::workspace::test::test_suite::TestSuite;
+use gpui::{EventEmitter, SharedString};
 use ki_project::{FileTestInfo, FileTestsContainer};
 use uuid::Uuid;
 
@@ -6,19 +6,30 @@ pub mod test_case;
 pub mod test_step;
 pub mod test_suite;
 
+pub use test_suite::TestSuite;
+pub use test_case::TestCase;
+pub use test_step::TestStep;
+
+#[derive(Debug, Clone)]
+pub enum TestNodeKind {
+    Suite,
+    Case,
+    Step
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TestInfo {
     pub id: Uuid,
-    pub name: String,
+    pub name: SharedString,
     pub description: Option<String>,
     pub active: bool,
 }
 
 impl TestInfo {
-    pub fn from_file(file_test_info: &FileTestInfo) -> Self {
+    pub fn from_file(file_test_info: FileTestInfo) -> Self {
         Self {
             id: file_test_info.id,
-            name: file_test_info.name.clone(),
+            name: file_test_info.name.into(),
             description: file_test_info.description.clone(),
             active: file_test_info.active,
         }
@@ -27,11 +38,23 @@ impl TestInfo {
     pub fn get_file(&self) -> FileTestInfo {
         FileTestInfo {
             id: self.id,
-            name: self.name.clone(),
+            name: self.name.to_string(),
             description: self.description.clone(),
             active: self.active,
         }
     }
+}
+
+pub enum TestsContainerEvent {
+    TestSuiteAdded(Vec<Uuid>),
+    TestSuiteRemoved(Vec<Uuid>),
+    TestSuiteMoved((Vec<Uuid>, Vec<Uuid>)),
+    TestCaseAdded(Vec<Uuid>),
+    TestCaseRemoved(Vec<Uuid>),
+    TestCaseMoved((Vec<Uuid>, Vec<Uuid>)),
+    TestStepAdded(Vec<Uuid>),
+    TestStepRemoved(Vec<Uuid>),
+    TestStepMoved((Vec<Uuid>, Vec<Uuid>)),
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
@@ -40,15 +63,20 @@ pub struct TestsContainer {
 }
 
 impl TestsContainer {
-    pub fn from_file(file_container: &FileTestsContainer) -> Self {
+
+    pub fn from_file(file_container: FileTestsContainer) -> Self {
         Self {
-            test_suites: TestSuite::from_file(&file_container.suites),
+            test_suites: TestSuite::from_file(file_container.suites),
         }
     }
 
     pub fn to_file(&self) -> FileTestsContainer {
         FileTestsContainer {
-            suites: self.test_suites.iter().map(|suite| suite.get_file()).collect(),
+            suites: self
+                .test_suites
+                .iter()
+                .map(|suite| suite.get_file())
+                .collect(),
         }
     }
 
@@ -222,3 +250,5 @@ impl TestsContainer {
         Ok(positions)
     }*/
 }
+
+impl EventEmitter<TestsContainerEvent> for TestsContainer {}

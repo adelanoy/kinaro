@@ -34,4 +34,4 @@ chrono = { version = "*", features = ["serde"] }
 thiserror = "2"
 anyhow = "1"
 log = "0.4"
-dirs = "6"
+dirs = "5.0.1"

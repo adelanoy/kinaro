@@ -1,5 +1,5 @@
 use crate::actions::EscAction;
-use crate::views::sidebar::project_configuration::ProjectConfigurationTab;
+use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTab;
 use crate::workspace::Project;
 use crate::workspace::variable::{ProfileInfo, ProjectVariables};
 use gpui::prelude::*;

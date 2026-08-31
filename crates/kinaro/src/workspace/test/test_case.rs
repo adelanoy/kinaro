@@ -9,13 +9,13 @@ pub struct TestCase {
 }
 
 impl TestCase {
-    pub fn from_file(file_test_cases: &[FileTestCase]) -> Vec<TestCase> {
+    pub fn from_file(file_test_cases: Vec<FileTestCase>) -> Vec<TestCase> {
         file_test_cases
-            .iter()
+            .into_iter()
             .map(|file_test_suite| Self {
-                info: TestInfo::from_file(&file_test_suite.info),
+                info: TestInfo::from_file(file_test_suite.info),
                 is_anonymous: file_test_suite.is_anonymous,
-                steps: TestStep::from_file(&file_test_suite.steps),
+                steps: TestStep::from_file(file_test_suite.steps),
             })
             .collect()
     }

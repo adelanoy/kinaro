@@ -10,12 +10,12 @@ pub struct TestSuite {
 }
 
 impl TestSuite {
-    pub fn from_file(file_test_suites: &[FileTestSuite]) -> Vec<TestSuite> {
+    pub fn from_file(file_test_suites: Vec<FileTestSuite>) -> Vec<TestSuite> {
         file_test_suites
-            .iter()
+            .into_iter()
             .map(|file_test_suite| Self {
-                info: TestInfo::from_file(&file_test_suite.info),
-                cases: TestCase::from_file(&file_test_suite.cases),
+                info: TestInfo::from_file(file_test_suite.info),
+                cases: TestCase::from_file(file_test_suite.cases),
             })
             .collect()
     }
