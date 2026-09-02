@@ -4,7 +4,6 @@ use gpui_component::IconNamed;
 #[derive(IntoElement, Clone)]
 pub enum IconAsset {
     ChevronUpDown,
-    Delete,
     Plus,
     Refresh,
     Rename,
@@ -19,7 +18,6 @@ impl IconNamed for IconAsset {
     fn path(self) -> SharedString {
         match self {
             IconAsset::ChevronUpDown => "icons/chevron-up-down.svg",
-            IconAsset::Delete => "icons/delete.svg",
             IconAsset::Plus => "icons/plus.svg",
             IconAsset::Refresh => "icons/refresh.svg",
             IconAsset::Rename => "icons/rename.svg",

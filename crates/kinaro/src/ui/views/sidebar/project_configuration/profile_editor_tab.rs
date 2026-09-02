@@ -13,15 +13,12 @@ use gpui_component::{
 };
 use ki_assets::icon::IconAsset;
 use ki_utils::ui::CellState;
-use serde::Deserialize;
 
-#[allow(clippy::unsafe_derive_deserialize)]
-#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Action, Clone, PartialEq, Eq)]
 #[action(namespace = profile, no_json)]
 struct DeleteProfileAction(usize);
 
-#[allow(clippy::unsafe_derive_deserialize)]
-#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Action, Clone, PartialEq, Eq)]
 #[action(namespace = profile, no_json)]
 struct DuplicateProfileAction(usize);
 

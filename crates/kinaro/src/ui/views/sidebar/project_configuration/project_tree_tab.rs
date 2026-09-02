@@ -4,11 +4,42 @@ use crate::workspace::Project;
 use crate::workspace::test::{TestCase, TestNodeKind, TestStep, TestSuite};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::{Icon, IconName, h_flex, v_flex};
+use gpui_component::menu::{ContextMenuExt, PopupMenu};
+use gpui_component::{ActiveTheme, Icon, IconName, h_flex, v_flex};
 use ki_assets::icon::IconAsset;
 use log::warn;
 use std::collections::HashSet;
 use uuid::Uuid;
+
+type ContextMenuBuilder = dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu;
+
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = profile, no_json)]
+struct RemoveNode(usize);
+
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = profile, no_json)]
+struct AddTestSuite(usize);
+
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = profile, no_json)]
+struct AddTestCase(usize);
+
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = profile, no_json)]
+struct AddTestStep(usize);
+
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = profile, no_json)]
+struct DuplicateNode(usize);
+
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = profile, no_json)]
+struct SwitchNodeActiveStatus(usize);
+
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = profile, no_json)]
+struct DisableNode(usize);
 
 pub(super) struct ProjectTree {
     tree_state: Entity<KiTreeState<ProjectTreeDelegate>>,
@@ -30,6 +61,9 @@ impl ProjectTree {
                 .delegate_mut()
                 .change_node_open_status(*ix, *status, cx),
         });
+    }
+    fn on_remove_node(action: &RemoveNode, _window: &mut Window, _cx: &mut App) {
+        println!("Removed node {}", action.0);
     }
 }
 
@@ -87,7 +121,7 @@ impl ProjectTreeDelegate {
                 id: suite.info.id,
                 kind: TestNodeKind::Suite,
                 label: suite.info.name.clone(),
-                enabled: suite.info.active,
+                disabled: suite.info.active,
                 depth: 0,
                 leaf: is_empty,
                 open: is_open,
@@ -109,7 +143,7 @@ impl ProjectTreeDelegate {
                     id: case.info.id,
                     kind: TestNodeKind::Case,
                     label: case.info.name.clone(),
-                    enabled: case.info.active,
+                    disabled: case.info.active,
                     depth: 1,
                     leaf: is_empty,
                     open: is_open,
@@ -131,7 +165,7 @@ impl ProjectTreeDelegate {
                 id: case.info.id,
                 kind: TestNodeKind::Step,
                 label: case.info.name.clone(),
-                enabled: case.info.active,
+                disabled: case.info.active,
                 depth,
                 leaf: true,
                 open: false,
@@ -175,6 +209,40 @@ impl ProjectTreeDelegate {
         // Implement a fine-grained update instead of rebuilding the full tree?
         self.update_tests_entries(cx);
     }
+
+    fn build_context_menu(
+        ix: usize,
+        disabled: bool,
+        kind: TestNodeKind,
+    ) -> Box<ContextMenuBuilder> {
+        let builder = move |menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
+            let mut menu = menu
+                .submenu_with_icon(
+                    Some(IconAsset::Plus.into()),
+                    "Add",
+                    window,
+                    cx,
+                    move |submenu, _, _| {
+                        let mut submenu = submenu;
+                        if matches!(kind, TestNodeKind::Suite) {
+                            submenu = submenu.menu("Test Suite", Box::new(AddTestSuite(ix)));
+                        }
+                        if matches!(kind, TestNodeKind::Suite) || matches!(kind, TestNodeKind::Case)
+                        {
+                            submenu = submenu.menu("Test Case", Box::new(AddTestCase(ix)));
+                        }
+                        submenu.menu("Test Step", Box::new(AddTestStep(ix)))
+                    },
+                )
+                .menu_with_icon("Remove", IconName::Delete, Box::new(RemoveNode(ix)))
+                .menu_with_icon("Duplicate", IconName::Copy, Box::new(DuplicateNode(ix)))
+                .menu_with_check("Enabled", !disabled, Box::new(SwitchNodeActiveStatus(ix)));
+
+            menu
+        };
+
+        Box::new(builder)
+    }
 }
 
 impl KiTreeDelegate for ProjectTreeDelegate {
@@ -190,28 +258,32 @@ impl KiTreeDelegate for ProjectTreeDelegate {
         &self,
         ix: usize,
         _window: &mut Window,
-        _cx: &mut Context<KiTreeState<Self>>,
+        cx: &mut Context<KiTreeState<Self>>,
     ) -> impl IntoElement {
         let entry = &self.tree_entries[ix];
         let icon = self.entry_icon(entry);
         let left_padding = if icon.is_some() { px(0.) } else { px(14.) };
 
         h_flex()
-            .id(ix)
+            .id(entry.id)
             .size_full()
             .pl(left_padding)
             .when_some(icon, |this, icon| this.child(icon))
             .child(entry.label.clone())
+            .when(entry.disabled, |this| {
+                this.text_color(cx.theme().muted_foreground)
+            })
+            .context_menu(Self::build_context_menu(ix, entry.disabled, entry.kind))
     }
 }
 
 impl Render for ProjectTree {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
+            .id("project-tree")
+            .on_action(Self::on_remove_node)
             .size_full()
             .p_1()
-            .child("test")
             .child(KiTree::new(self.tree_state.clone()))
-            .child("test2")
     }
 }

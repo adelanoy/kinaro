@@ -16,7 +16,7 @@ pub struct KiTreeEntry {
     pub id: Uuid,
     pub kind: TestNodeKind,
     pub label: SharedString,
-    pub enabled: bool,
+    pub disabled: bool,
     pub depth: usize,
     pub leaf: bool,
     pub open: bool,
@@ -48,7 +48,6 @@ pub struct KiTreeState<D: KiTreeDelegate> {
     scroll_handle: UniformListScrollHandle,
     delegate: D,
     selected_ix: Option<usize>,
-    right_clicked_ix: Option<usize>,
 }
 
 impl<D: KiTreeDelegate> KiTreeState<D> {
@@ -78,7 +77,6 @@ impl<D: KiTreeDelegate> KiTreeState<D> {
             scroll_handle: UniformListScrollHandle::default(),
             delegate,
             selected_ix: None,
-            right_clicked_ix: None,
         }
     }
 }
@@ -87,69 +85,69 @@ impl<D: KiTreeDelegate> EventEmitter<KiTreeEvent> for KiTreeState<D> {}
 
 impl<D: KiTreeDelegate> Render for KiTreeState<D> {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        uniform_list(
-            "tree_entries",
-            self.delegate.row_count(cx),
-            cx.processor(move |state, visible_range: Range<usize>, window, cx| {
-                visible_range
-                    .map(|ix| {
-                        let KiTreeEntry {
-                            leaf,
-                            open,
-                            depth,
-                            ..
-                        } = state.delegate.entry(ix, cx);
-                        let is_selected = state.selected_ix == Some(ix);
-                        let mut left_padding = px(16.) * depth ;
-                        if leaf {
-                            // medium icon + x_gap: 14px + 4px
-                            left_padding += px(18.);
-                        }
-                        ListItem::new(ix)
-                            .w_full()
-                            .rounded(cx.theme().radius)
-                            .pl(left_padding)
-                            .selected(is_selected)
-                            .child(
-                                h_flex()
-                                    .gap_x_1()
-                                    .size_full()
-                                    // Chevron icon
-                                    .when(!leaf, {
-                                        let entity = cx.entity();
-                                        move |this| {
-                                            let mut icon = Icon::new(IconName::ChevronDown);
-                                            if !open {
-                                                icon = icon.rotate(percentage(0.75));
-                                            }
-                                            this.child(
-                                                Button::new(ix)
-                                                    .text()
-                                                    .icon(icon)
-                                                    .cursor(CursorStyle::Arrow)
-                                                    .on_click(move |_, _, cx| {
-                                                        entity.update(cx, |_, cx| {
-                                                            use crate::ui::components::tree::KiTreeEvent::NodeStateChanged;
-                                                            cx.stop_propagation();
-                                                            cx.emit(NodeStateChanged(ix, !open))
-                                                        })
-                                                    }),
-                                            )
-                                        }
-                                    })
-                                    // Entry content
-                                    .child(state.delegate.entry_render(ix, window, cx)),
-                            )
-                            .on_click(
-                                cx.listener(move |this, e, _, cx| this.on_entry_click(e, ix, cx)),
-                            )
-                    })
-                    .collect()
-            }),
-        )
-        .flex_grow_1()
-        .size_full()
-        .track_scroll(&self.scroll_handle)
+        div()
+            .size_full()
+            .child(
+                uniform_list(
+                    "tree_entries",
+                    self.delegate().row_count(cx),
+                    cx.processor(move |state, visible_range: Range<usize>, window, cx| {
+                        visible_range
+                            .map(|ix| {
+                                let entry = state.delegate().entry(ix, cx);
+                                let is_selected = state.selected_ix == Some(ix);
+                                let mut left_padding = px(16.) * entry.depth;
+                                if entry.leaf {
+                                    // medium icon + x_gap: 14px + 4px
+                                    left_padding += px(18.);
+                                }
+                                ListItem::new(ix)
+                                    .w_full()
+                                    .rounded(cx.theme().radius)
+                                    .pl(left_padding)
+                                    .selected(is_selected)
+                                    .child(
+                                        h_flex()
+                                            .gap_x_1()
+                                            .size_full()
+                                            // Chevron icon
+                                            .when(!entry.leaf, {
+                                                let entity = cx.entity();
+                                                move |this| {
+                                                    let mut icon = Icon::new(IconName::ChevronDown);
+                                                    if !entry.open {
+                                                        icon = icon.rotate(percentage(0.75));
+                                                    }
+                                                    this.child(
+                                                        Button::new(ix)
+                                                            .text()
+                                                            .icon(icon)
+                                                            .cursor(CursorStyle::Arrow)
+                                                            .tab_stop(false)
+                                                            .on_click(move |_, _, cx| {
+                                                                entity.update(cx, |_, cx| {
+                                                                    use crate::ui::components::tree::KiTreeEvent::NodeStateChanged;
+                                                                    cx.stop_propagation();
+                                                                    cx.emit(NodeStateChanged(ix, !entry.open))
+                                                                })
+                                                            }),
+                                                    )
+                                                }
+                                            })
+                                            // Entry content
+                                            .child(state.delegate().entry_render(ix, window, cx)),
+                                    )
+                                    .on_click(
+                                        cx.listener(move |this, e, _, cx| this.on_entry_click(e, ix, cx)),
+                                    )
+                            })
+                            .collect()
+                    }),
+                )
+                    .flex_grow_1()
+                    .size_full()
+                    .track_scroll(&self.scroll_handle)
+            )
     }
 }
 
@@ -181,5 +179,6 @@ impl<D: KiTreeDelegate> RenderOnce for KiTree<D> {
             .on_action(window.listener_for(&self.state, KiTreeState::on_action_down))*/
             .child(self.state.clone())
             .vertical_scrollbar(&scroll_handle)
+            .overflow_hidden()
     }
 }

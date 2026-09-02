@@ -10,7 +10,7 @@ pub use test_suite::TestSuite;
 pub use test_case::TestCase;
 pub use test_step::TestStep;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum TestNodeKind {
     Suite,
     Case,
