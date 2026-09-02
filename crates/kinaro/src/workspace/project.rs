@@ -1,6 +1,6 @@
 use crate::workspace::endpoint::WorkspaceEndpoint;
 use crate::workspace::error::ProjectError;
-use crate::workspace::test::TestsContainer;
+use crate::workspace::test::{TestsContainer, TestsContainerEvent};
 use crate::workspace::variable::{ProjectVariables, ProjectVariablesEvent};
 use crate::workspace::{FileProjectMetadata, Workspace};
 use chrono::{DateTime, Local};
@@ -33,6 +33,7 @@ pub struct Project {
     pub tests: Entity<TestsContainer>,
     // unserialized data
     _variables_event_sub: Subscription,
+    _tests_event_sub: Subscription,
     active_profile: Option<Uuid>,
     opened_tree_nodes: HashSet<Uuid>,
     pub(super) path: PathBuf,
@@ -76,12 +77,12 @@ impl Project {
         &self.opened_tree_nodes
     }
 
-    pub fn add_opened_tree_node(&mut self, id: Uuid, cx: &mut Context<Self>) {
+    pub fn expand_tree_node(&mut self, id: Uuid, cx: &mut Context<Self>) {
         self.opened_tree_nodes.insert(id);
         cx.emit(ProjectEvent::TreeNodesChanged);
     }
 
-    pub fn remove_opened_tree_node(&mut self, id: &Uuid, cx: &mut Context<Self>) {
+    pub fn collapse_tree_node(&mut self, id: &Uuid, cx: &mut Context<Self>) {
         self.opened_tree_nodes.remove(id);
         cx.emit(ProjectEvent::TreeNodesChanged);
     }
@@ -110,15 +111,10 @@ impl Project {
             let _variables_event_sub = cx.subscribe(&variables, Self::on_profiles_variables_event);
             let endpoints = WorkspaceEndpoint::from_file(&file_project.endpoints);
             let tests = cx.new(|_| TestsContainer::from_file(file_project.tests));
-            let active_profile = match metadata.active_profile {
-                None => None,
-                Some(id) => variables
-                    .read(cx)
-                    .profiles
-                    .iter()
-                    .find(|p| p.id == id)
-                    .map(|p| p.id),
-            };
+            let _tests_event_sub = cx.subscribe(&tests, Self::on_tests_event);
+            let active_profile = metadata
+                .active_profile
+                .filter(|id| variables.read(cx).profiles.iter().any(|p| p.id == *id));
             Self {
                 name: SharedString::new(file_project.name),
                 created: file_project.created,
@@ -127,6 +123,7 @@ impl Project {
                 endpoints,
                 tests,
                 _variables_event_sub,
+                _tests_event_sub,
                 active_profile,
                 opened_tree_nodes: metadata.opened_tree_nodes.clone(),
                 path: path.to_owned(),
@@ -138,8 +135,9 @@ impl Project {
 
     pub(super) fn new(path: PathBuf, name: SharedString, cx: &mut Context<Self>) -> Self {
         let variables = cx.new(|_| Default::default());
-        let tests = cx.new(|_| Default::default());
         let _variables_event_sub = cx.subscribe(&variables, Self::on_profiles_variables_event);
+        let tests = cx.new(|_| Default::default());
+        let _tests_event_sub = cx.subscribe(&tests, Self::on_tests_event);
         let mut this = Self {
             path,
             name,
@@ -148,6 +146,7 @@ impl Project {
             variables,
             endpoints: vec![],
             _variables_event_sub,
+            _tests_event_sub,
             tests,
             active_profile: None,
             opened_tree_nodes: HashSet::new(),
@@ -210,6 +209,20 @@ impl Project {
             cx.emit(ProjectEvent::ActiveProfileChanged(self.active_profile));
         }
 
+        self.save(cx);
+    }
+
+    fn on_tests_event(
+        &mut self,
+        _tests: Entity<TestsContainer>,
+        e: &TestsContainerEvent,
+        cx: &mut Context<Self>,
+    ) {
+        // Check if the currently active profile has been deleted
+        if let TestsContainerEvent::Removed(id) = e {
+            self.opened_tree_nodes.remove(id);
+        }
+        cx.emit(ProjectEvent::TreeNodesChanged);
         self.save(cx);
     }
 }

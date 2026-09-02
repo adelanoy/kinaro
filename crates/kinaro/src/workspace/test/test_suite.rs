@@ -1,7 +1,6 @@
-use std::fmt::Debug;
-
-use crate::workspace::test::{test_case::TestCase, TestInfo};
+use crate::workspace::test::{TestInfo, test_case::TestCase};
 use ki_project::FileTestSuite;
+use std::fmt::Debug;
 
 #[derive(Clone, Debug, Eq)]
 pub struct TestSuite {
@@ -24,6 +23,25 @@ impl TestSuite {
         FileTestSuite {
             info: self.info.get_file(),
             cases: self.cases.iter().map(|case| case.get_file()).collect(),
+        }
+    }
+
+    #[allow(unused)]
+    pub fn info_from_path(&self, path: &[usize]) -> Option<&TestInfo> {
+        let case = self.cases.get(path[0])?;
+        if path.len() == 1 {
+            Some(&case.info)
+        } else {
+            case.info_from_path(&path[1])
+        }
+    }
+
+    pub fn info_mut_from_path(&mut self, path: &[usize]) -> Option<&mut TestInfo> {
+        let case = self.cases.get_mut(path[0])?;
+        if path.len() == 1 {
+            Some(&mut case.info)
+        } else {
+            case.info_mut_from_path(&path[1])
         }
     }
 }

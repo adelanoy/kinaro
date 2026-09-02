@@ -1,4 +1,4 @@
-use crate::workspace::test::{test_step::TestStep, TestInfo};
+use crate::workspace::test::{TestInfo, test_step::TestStep};
 use ki_project::FileTestCase;
 
 #[derive(Clone, Debug, Eq)]
@@ -26,6 +26,15 @@ impl TestCase {
             is_anonymous: self.is_anonymous,
             steps: self.steps.iter().map(|case| case.get_file()).collect(),
         }
+    }
+
+    #[allow(unused)]
+    pub fn info_from_path(&self, ix: &usize) -> Option<&TestInfo> {
+        self.steps.get(*ix).map(|step| &step.info)
+    }
+
+    pub fn info_mut_from_path(&mut self, ix: &usize) -> Option<&mut TestInfo> {
+        self.steps.get_mut(*ix).map(|step| &mut step.info)
     }
 }
 

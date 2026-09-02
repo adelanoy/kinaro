@@ -12,7 +12,7 @@ pub struct FileTestInfo {
     pub name: String,
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub active: bool,
+    pub disabled: bool,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]

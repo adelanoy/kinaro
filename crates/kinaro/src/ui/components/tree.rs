@@ -8,24 +8,25 @@ use gpui_component::{ActiveTheme, Icon, IconName, h_flex};
 use std::ops::Range;
 use uuid::Uuid;
 
-const CONTEXT: &str = "Tree";
+pub const CONTEXT: &str = "Tree";
 
 #[derive(Debug, Clone)]
-pub struct KiTreeEntry {
-    /// The entry's id
+pub struct ProjectTreeEntry {
     pub id: Uuid,
+    pub path: Vec<usize>,
     pub kind: TestNodeKind,
     pub label: SharedString,
     pub disabled: bool,
+    pub parent_disabled: bool,
     pub depth: usize,
     pub leaf: bool,
-    pub open: bool,
+    pub expanded: bool,
 }
 
 pub trait KiTreeDelegate: Sized + 'static {
     fn row_count(&self, cx: &App) -> usize;
 
-    fn entry(&self, ix: usize, cx: &Context<KiTreeState<Self>>) -> KiTreeEntry;
+    fn entry(&self, ix: usize, cx: &Context<KiTreeState<Self>>) -> &ProjectTreeEntry;
 
     fn entry_render(
         &self,
@@ -39,7 +40,8 @@ pub trait KiTreeDelegate: Sized + 'static {
 pub enum KiTreeEvent {
     EntryClicked(usize),
     EntryDoubleClicked(usize),
-    NodeStateChanged(usize, bool),
+    NodeExpanded(usize),
+    NodeCollapsed(usize),
 }
 
 #[derive(Debug)]
@@ -51,12 +53,19 @@ pub struct KiTreeState<D: KiTreeDelegate> {
 }
 
 impl<D: KiTreeDelegate> KiTreeState<D> {
+    #[inline]
     pub fn delegate(&self) -> &D {
         &self.delegate
     }
 
+    #[inline]
     pub fn delegate_mut(&mut self) -> &mut D {
         &mut self.delegate
+    }
+    
+    #[inline]
+    pub fn selected_index(&self) -> Option<usize> {
+        self.selected_ix
     }
 
     fn on_entry_click(&mut self, e: &ClickEvent, ix: usize, cx: &mut Context<KiTreeState<D>>) {
@@ -67,6 +76,12 @@ impl<D: KiTreeDelegate> KiTreeState<D> {
             self.selected_ix = Some(ix);
             cx.emit(KiTreeEvent::EntryClicked(ix));
         }
+    }
+
+    fn on_entry_right_click(&mut self, ix: usize, cx: &mut Context<KiTreeState<D>>) {
+        cx.stop_propagation();
+        self.selected_ix = Some(ix);
+        cx.emit(KiTreeEvent::EntryClicked(ix));
     }
 }
 
@@ -96,6 +111,7 @@ impl<D: KiTreeDelegate> Render for KiTreeState<D> {
                             .map(|ix| {
                                 let entry = state.delegate().entry(ix, cx);
                                 let is_selected = state.selected_ix == Some(ix);
+                                let is_open = entry.expanded;
                                 let mut left_padding = px(16.) * entry.depth;
                                 if entry.leaf {
                                     // medium icon + x_gap: 14px + 4px
@@ -115,7 +131,7 @@ impl<D: KiTreeDelegate> Render for KiTreeState<D> {
                                                 let entity = cx.entity();
                                                 move |this| {
                                                     let mut icon = Icon::new(IconName::ChevronDown);
-                                                    if !entry.open {
+                                                    if !is_open {
                                                         icon = icon.rotate(percentage(0.75));
                                                     }
                                                     this.child(
@@ -126,9 +142,14 @@ impl<D: KiTreeDelegate> Render for KiTreeState<D> {
                                                             .tab_stop(false)
                                                             .on_click(move |_, _, cx| {
                                                                 entity.update(cx, |_, cx| {
-                                                                    use crate::ui::components::tree::KiTreeEvent::NodeStateChanged;
+                                                                    use crate::ui::components::tree::KiTreeEvent::NodeExpanded;
+                                                                    use crate::ui::components::tree::KiTreeEvent::NodeCollapsed;
                                                                     cx.stop_propagation();
-                                                                    cx.emit(NodeStateChanged(ix, !entry.open))
+                                                                    if is_open {
+                                                                        cx.emit(NodeCollapsed(ix))
+                                                                    }else {
+                                                                        cx.emit(NodeExpanded(ix))
+                                                                    }
                                                                 })
                                                             }),
                                                     )
@@ -139,6 +160,9 @@ impl<D: KiTreeDelegate> Render for KiTreeState<D> {
                                     )
                                     .on_click(
                                         cx.listener(move |this, e, _, cx| this.on_entry_click(e, ix, cx)),
+                                    )
+                                    .on_mouse_down(MouseButton::Right,
+                                        cx.listener(move |this, _, _, cx| this.on_entry_right_click(ix, cx)),
                                     )
                             })
                             .collect()

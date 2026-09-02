@@ -3,13 +3,14 @@ use gpui_component::IconNamed;
 
 #[derive(IntoElement, Clone)]
 pub enum IconAsset {
-    ChevronUpDown,
-    Plus,
+    Ban,
     Refresh,
     Rename,
     SidebarCollapsed,
     SidebarOpen,
-    Switch,
+    TestCase,
+    TestStep,
+    TestSuite,
     Tree,
     Variable,
 }
@@ -17,13 +18,14 @@ pub enum IconAsset {
 impl IconNamed for IconAsset {
     fn path(self) -> SharedString {
         match self {
-            IconAsset::ChevronUpDown => "icons/chevron-up-down.svg",
-            IconAsset::Plus => "icons/plus.svg",
+            IconAsset::Ban => "icons/ban.svg",
             IconAsset::Refresh => "icons/refresh.svg",
             IconAsset::Rename => "icons/rename.svg",
             IconAsset::SidebarCollapsed => "icons/sidebar-collapsed.svg",
             IconAsset::SidebarOpen => "icons/sidebar-open.svg",
-            IconAsset::Switch => "icons/switch.svg",
+            IconAsset::TestCase => "icons/test-case.svg",
+            IconAsset::TestStep => "icons/test-step.svg",
+            IconAsset::TestSuite => "icons/test-suite.svg",
             IconAsset::Tree => "icons/tree.svg",
             IconAsset::Variable => "icons/variable.svg",
         }

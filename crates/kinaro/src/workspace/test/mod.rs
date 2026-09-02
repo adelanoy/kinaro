@@ -1,28 +1,30 @@
-use gpui::{EventEmitter, SharedString};
+use gpui::{Context, EventEmitter, SharedString};
 use ki_project::{FileTestInfo, FileTestsContainer};
+use log::warn;
 use uuid::Uuid;
 
 pub mod test_case;
 pub mod test_step;
 pub mod test_suite;
 
-pub use test_suite::TestSuite;
 pub use test_case::TestCase;
 pub use test_step::TestStep;
+pub use test_suite::TestSuite;
 
 #[derive(Debug, Clone, Copy)]
 pub enum TestNodeKind {
     Suite,
     Case,
-    Step
+    Step,
+    AnonymousStep,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TestInfo {
     pub id: Uuid,
     pub name: SharedString,
-    pub description: Option<String>,
-    pub active: bool,
+    pub description: Option<SharedString>,
+    pub disabled: bool,
 }
 
 impl TestInfo {
@@ -30,8 +32,8 @@ impl TestInfo {
         Self {
             id: file_test_info.id,
             name: file_test_info.name.into(),
-            description: file_test_info.description.clone(),
-            active: file_test_info.active,
+            description: file_test_info.description.map(|s| s.into()),
+            disabled: file_test_info.disabled,
         }
     }
 
@@ -39,44 +41,64 @@ impl TestInfo {
         FileTestInfo {
             id: self.id,
             name: self.name.to_string(),
-            description: self.description.clone(),
-            active: self.active,
+            description: self.description.clone().map(|s| s.to_string()),
+            disabled: self.disabled,
         }
     }
 }
 
 pub enum TestsContainerEvent {
-    TestSuiteAdded(Vec<Uuid>),
-    TestSuiteRemoved(Vec<Uuid>),
-    TestSuiteMoved((Vec<Uuid>, Vec<Uuid>)),
-    TestCaseAdded(Vec<Uuid>),
-    TestCaseRemoved(Vec<Uuid>),
-    TestCaseMoved((Vec<Uuid>, Vec<Uuid>)),
-    TestStepAdded(Vec<Uuid>),
-    TestStepRemoved(Vec<Uuid>),
-    TestStepMoved((Vec<Uuid>, Vec<Uuid>)),
+    Removed(Uuid),
+    Added(Uuid),
+    Modified(Uuid),
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct TestsContainer {
-    pub test_suites: Vec<TestSuite>,
+    pub suites: Vec<TestSuite>,
 }
 
 impl TestsContainer {
-
     pub fn from_file(file_container: FileTestsContainer) -> Self {
         Self {
-            test_suites: TestSuite::from_file(file_container.suites),
+            suites: TestSuite::from_file(file_container.suites),
         }
     }
 
     pub fn to_file(&self) -> FileTestsContainer {
         FileTestsContainer {
-            suites: self
-                .test_suites
-                .iter()
-                .map(|suite| suite.get_file())
-                .collect(),
+            suites: self.suites.iter().map(|suite| suite.get_file()).collect(),
+        }
+    }
+
+    pub fn switch_active_status(&mut self, path: &[usize], cx: &mut Context<Self>) {
+        if path.is_empty() {
+            return;
+        }
+        let Some(info) = self.info_mut_from_path(path) else {
+            warn!("switch_active_status: unknow path: {:?}", path);
+            return;
+        };
+        info.disabled = !info.disabled;
+        cx.emit(TestsContainerEvent::Modified(info.id));
+    }
+
+    #[allow(unused)]
+    pub fn info_from_path(&self, path: &[usize]) -> Option<&TestInfo> {
+        let suite = self.suites.get(path[0])?;
+        if path.len() == 1 {
+            Some(&suite.info)
+        } else {
+            suite.info_from_path(&path[1..path.len()])
+        }
+    }
+
+    pub fn info_mut_from_path(&mut self, path: &[usize]) -> Option<&mut TestInfo> {
+        let suite = self.suites.get_mut(path[0])?;
+        if path.len() == 1 {
+            Some(&mut suite.info)
+        } else {
+            suite.info_mut_from_path(&path[1..path.len()])
         }
     }
 

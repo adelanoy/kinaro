@@ -101,16 +101,17 @@ impl Render for ProjectConfigurator {
         v_flex()
             .track_focus(&self.focus_handle)
             .size_full()
+            .px_1()
             .child(
                 h_flex()
-                    .text_xs()
+                    .text_sm()
                     .text_color(cx.theme().sidebar_foreground.opacity(0.7))
                     .h_8()
                     .child("Project configuration"),
             )
             .child(
                 h_flex()
-                    .text_xs()
+                    .text_sm()
                     .gap_x_2()
                     .pb_2()
                     .child("Profile")
