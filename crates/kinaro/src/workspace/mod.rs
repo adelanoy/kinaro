@@ -1,6 +1,6 @@
 use crate::workspace::error::{ProjectError, WorkspaceError};
 pub(crate) use crate::workspace::project::{Project, ProjectEvent};
-use gpui::{actions, App, Entity, EventEmitter, SharedString, Subscription};
+use gpui::{App, Entity, EventEmitter, SharedString, Subscription};
 use gpui::{AppContext, Context};
 use ki_settings::GlobalSettings;
 use log::{debug, error};
@@ -57,9 +57,6 @@ impl WorkspaceFile {
         }
     }
 }
-
-///// WORKSPACE ACTIONS /////
-actions!(workspace, [CreateProject, OpenProject]);
 
 ///// WORKSPACE EVENTS /////
 pub enum WorkspaceEvent {

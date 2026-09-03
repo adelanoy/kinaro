@@ -1,4 +1,4 @@
-use crate::actions::EscAction;
+use crate::actions::{DeleteProfileAction, DuplicateProfileAction, Escape};
 use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTab;
 use crate::workspace::Project;
 use crate::workspace::variable::{ProfileInfo, ProjectVariables};
@@ -13,14 +13,6 @@ use gpui_component::{
 };
 use ki_assets::icon::IconAsset;
 use ki_utils::ui::CellState;
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = profile, no_json)]
-struct DeleteProfileAction(usize);
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = profile, no_json)]
-struct DuplicateProfileAction(usize);
 
 pub(super) struct ProfileEditor {
     focus_handle: FocusHandle,
@@ -81,7 +73,7 @@ impl ProfileEditor {
 
     fn on_clear_selection(
         &mut self,
-        _action: &EscAction,
+        _action: &Escape,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {

@@ -4,7 +4,6 @@ pub(crate) mod actions;
 pub(crate) mod ui;
 pub(crate) mod workspace;
 
-use crate::actions::EscAction;
 use crate::ui::views::WorkspaceView;
 use gpui::*;
 use gpui_component::Root;
@@ -46,8 +45,7 @@ fn init_app(config_dir: PathBuf, cx: &mut App) {
     info!("Initializing component lib");
     gpui_component::init(cx);
     ki_assets::init(cx);
-
-    cx.bind_keys([KeyBinding::new("escape", EscAction, None)]);
+    actions::init(cx);
 }
 
 fn build_window_options(cx: &mut App) -> WindowOptions {

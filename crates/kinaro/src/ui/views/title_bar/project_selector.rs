@@ -1,23 +1,20 @@
-use crate::workspace::project::PROJECT_FILE_EXT;
-use crate::workspace::{
-    CreateProject, OpenProject, Project, Workspace, WorkspaceEvent, WorkspaceProjectInfo,
-};
+use crate::actions::{CreateProject, OpenProject};
+use crate::workspace::{Project, Workspace, WorkspaceEvent, WorkspaceProjectInfo};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants};
 use gpui_component::dialog::{DialogAction, DialogClose, DialogFooter};
-use gpui_component::form::{field, v_form};
 use gpui_component::input::{Input, InputState};
+use gpui_component::kbd::Kbd;
 use gpui_component::label::Label;
 use gpui_component::notification::Notification;
 use gpui_component::popover::Popover;
 use gpui_component::separator::Separator;
 use gpui_component::{
-    ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt, gray_500, gray_600, h_flex,
-    red_300, red_400, v_flex,
+    Disableable, Icon, IconName, Sizable, WindowExt, gray_500, gray_600, h_flex, red_300, red_400,
+    v_flex,
 };
 use ki_assets::icon::IconAsset;
-use ki_settings::app_state::AppState;
 use std::path::PathBuf;
 
 struct ProjectManagementPopover {
@@ -150,7 +147,7 @@ impl ProjectManagementPopover {
 }
 
 impl Render for ProjectManagementPopover {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let project_menu: Vec<AnyElement> = self
             .project_infos
             .iter()
@@ -299,12 +296,19 @@ impl Render for ProjectManagementPopover {
                     .w_full()
                     .h_10()
                     .child(
-                        div()
-                            .flex()
+                        h_flex()
                             .w_full()
-                            .gap_x_2()
-                            .child(IconName::FolderOpen)
-                            .child(Label::new("Open Project").text_sm()),
+                            .justify_between()
+                            .child(
+                                h_flex()
+                                    .gap_x_2()
+                                    .child(IconName::FolderOpen)
+                                    .child(Label::new("Open Project").text_sm()),
+                            )
+                            .when_some(
+                                Kbd::binding_for_action(&OpenProject, None, window),
+                                |this, kbd| this.child(kbd),
+                            ),
                     )
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.open = false;
@@ -318,12 +322,19 @@ impl Render for ProjectManagementPopover {
                     .w_full()
                     .h_10()
                     .child(
-                        div()
-                            .flex()
+                        h_flex()
                             .w_full()
-                            .gap_x_2()
-                            .child(IconName::Plus)
-                            .child(Label::new("Create Project").text_sm()),
+                            .justify_between()
+                            .child(
+                                h_flex()
+                                    .gap_x_2()
+                                    .child(IconName::Plus)
+                                    .child(Label::new("Create Project").text_sm()),
+                            )
+                            .when_some(
+                                Kbd::binding_for_action(&CreateProject, None, window),
+                                |this, kbd| this.child(kbd),
+                            ),
                     )
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.open = false;
@@ -335,9 +346,9 @@ impl Render for ProjectManagementPopover {
 }
 
 pub(super) struct ProjectSelector {
-    workspace: Entity<Workspace>,
     active_project: Option<Entity<Project>>,
     menu_content: Entity<ProjectManagementPopover>,
+    focus_handle: FocusHandle,
     _workspace_event_sub: Subscription,
 }
 
@@ -353,134 +364,11 @@ impl ProjectSelector {
         let menu_content = cx.new(|cx| ProjectManagementPopover::new(workspace.clone(), cx));
 
         Self {
-            workspace,
             active_project,
             menu_content,
+            focus_handle: cx.focus_handle(),
             _workspace_event_sub,
         }
-    }
-
-    fn on_create_project(
-        &mut self,
-        _: &CreateProject,
-        window: &mut Window,
-        cx: &mut Context<ProjectSelector>,
-    ) {
-        let workspace = self.workspace.clone();
-        let name_input = cx.new(|cx| InputState::new(window, cx));
-        let path_input = cx.new(|cx| InputState::new(window, cx));
-        window.open_dialog(cx, move |dialog, _, cx| {
-            dialog
-                .title("Create Project")
-                .child(
-                    v_form()
-                        .layout(Axis::Horizontal)
-                        .label_width(px(100.))
-                        .with_size(gpui_component::Size::Small)
-                        .child(
-                            field()
-                                .label("Name")
-                                .child(Input::new(&name_input))
-                                .required(true),
-                        )
-                        .child(
-                            field().label("Path").required(true).child(
-                                h_flex()
-                                    .gap_2()
-                                    .border_1()
-                                    .border_color(cx.theme().input)
-                                    .bg(cx.theme().input_background())
-                                    .rounded(cx.theme().radius)
-                                    .child(
-                                        div().flex_1().child(
-                                            Input::new(&path_input).pl_0().appearance(false),
-                                        ),
-                                    )
-                                    .child(
-                                        Button::new("file")
-                                            .ghost()
-                                            .icon(IconName::FolderOpen)
-                                            .on_click(prompt_to_save_project(
-                                                path_input.clone(),
-                                                cx,
-                                            )),
-                                    ),
-                            ),
-                        ),
-                )
-                .footer(
-                    DialogFooter::new()
-                        .child(
-                            DialogClose::new()
-                                .child(Button::new("cancel").label("Cancel").outline()),
-                        )
-                        .child(DialogAction::new().child(
-                            Button::new("confirm").primary().label("Create").disabled(
-                                name_input.read(cx).value().is_empty()
-                                    || path_input.read_with(cx, |state, _| {
-                                        state.value().is_empty()
-                                            || !state.value().ends_with(PROJECT_FILE_EXT)
-                                    }),
-                            ),
-                        )),
-                )
-                .on_ok({
-                    let name = name_input.clone();
-                    let path = path_input.clone();
-                    let workspace = workspace.clone();
-                    move |_, window, cx| {
-                        let project_name = name.read(cx).value();
-                        let project = PathBuf::from(path.read(cx).value().to_string());
-                        let project_dir = project.parent();
-                        if project_dir.is_none() || !project_dir.unwrap().exists() {
-                            window.push_notification(
-                                Notification::error("Cannot create project: invalid location"),
-                                cx,
-                            );
-                            return false;
-                        }
-
-                        workspace.update(cx, |workspace, cx| {
-                            workspace.create_project(project_name, project, cx)
-                        });
-                        true
-                    }
-                })
-        });
-    }
-
-    fn on_open_project(&mut self, _: &OpenProject, window: &mut Window, cx: &mut Context<Self>) {
-        let path = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: false,
-            prompt: None,
-        });
-        cx.spawn_in(window, async move |this, cx| {
-            let Ok(result) = path.await else {
-                return;
-            };
-            if let Some(paths) = result.ok().flatten()
-                && !paths.is_empty()
-            {
-                let window_handle = cx.window_handle();
-                _ = this.update(cx, |this, cx| {
-                    if let Err(err) = this
-                        .workspace
-                        .update(cx, |this, cx| this.open_project(paths[0].clone(), cx))
-                    {
-                        _ = window_handle.update(cx, |_, window, cx| {
-                            window.push_notification(format!("{:?}", err), cx);
-                        });
-                    }
-                    AppState::update(cx, |state, _| {
-                        state.last_dir_path = paths[0].clone();
-                        true
-                    });
-                });
-            }
-        })
-        .detach();
     }
 }
 
@@ -493,8 +381,7 @@ impl Render for ProjectSelector {
             .unwrap_or(SharedString::new("--"));
         let popover_open = self.menu_content.read(cx).open;
         div()
-            .on_action(cx.listener(Self::on_create_project))
-            .on_action(cx.listener(Self::on_open_project))
+            .track_focus(&self.focus_handle)
             .h_full()
             .min_w_32()
             .child(
@@ -522,37 +409,5 @@ impl Render for ProjectSelector {
                     )
                     .child(self.menu_content.clone()),
             )
-    }
-}
-
-fn prompt_to_save_project(
-    path_input: Entity<InputState>,
-    cx: &mut App,
-) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
-    let last_path = AppState::read(cx, |state| state.last_dir_path.clone());
-    move |_, window, cx| {
-        let path =
-            cx.prompt_for_new_path(&last_path, Some(&format!("project.{}", PROJECT_FILE_EXT)));
-        window
-            .spawn(cx, {
-                let path_input = path_input.clone();
-                async move |cx| {
-                    let Ok(result) = path.await else {
-                        return;
-                    };
-                    if let Some(path) = result.ok().flatten() {
-                        _ = cx.window_handle().update(cx, |_, window, cx| {
-                            let path_str = SharedString::new(path.to_string_lossy());
-                            path_input
-                                .update(cx, |state, cx| state.set_value(path_str, window, cx));
-                            AppState::update(cx, |state, _| {
-                                state.last_dir_path = path.parent().unwrap().to_owned();
-                                true
-                            });
-                        });
-                    }
-                }
-            })
-            .detach();
     }
 }

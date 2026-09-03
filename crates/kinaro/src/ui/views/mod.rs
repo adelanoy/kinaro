@@ -1,24 +1,31 @@
 mod sidebar;
 mod title_bar;
 
+use crate::actions::{CreateProject, OpenProject};
 use crate::ui::views::sidebar::ProjectSidebar;
 use crate::ui::views::title_bar::AppTitleBar;
 use crate::workspace::Workspace;
+use crate::workspace::project::PROJECT_FILE_EXT;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants, Toggle};
+use gpui_component::dialog::{DialogAction, DialogClose, DialogFooter};
+use gpui_component::form::{field, v_form};
+use gpui_component::input::{Input, InputState};
 use gpui_component::notification::Notification;
 use gpui_component::resizable::{h_resizable, resizable_panel};
 use gpui_component::tab::{Tab, TabBar};
-use gpui_component::{IconName, Root, Sizable, WindowExt, h_flex, v_flex};
+use gpui_component::{ActiveTheme, Disableable, IconName, Root, Sizable, WindowExt, h_flex, v_flex};
 use ki_assets::icon::IconAsset;
 use ki_settings::app_state::AppState;
+use std::path::PathBuf;
 
 pub struct WorkspaceView {
-    _workspace: Entity<Workspace>,
+    workspace: Entity<Workspace>,
     title_bar: Entity<AppTitleBar>,
     project_sidebar: Entity<ProjectSidebar>,
     sidebar_collapsed: bool,
     sidebar_width: f32,
+    focus_handle: FocusHandle,
 }
 
 impl WorkspaceView {
@@ -54,13 +61,142 @@ impl WorkspaceView {
             }
         });
 
+        // Request focus at startup for global shortcut to work
+        let focus_handle = cx.focus_handle();
+        window.focus(&focus_handle, cx);
+
         Self {
-            _workspace: workspace,
+            workspace,
             title_bar,
             project_sidebar,
             sidebar_collapsed,
             sidebar_width,
+            focus_handle,
         }
+    }
+    fn on_create_project(
+        &mut self,
+        _: &CreateProject,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let workspace = self.workspace.clone();
+        let name_input = cx.new(|cx| InputState::new(window, cx));
+        let path_input = cx.new(|cx| InputState::new(window, cx));
+        window.open_dialog(cx, move |dialog, _, cx| {
+            dialog
+                .title("Create Project")
+                .child(
+                    v_form()
+                        .layout(Axis::Horizontal)
+                        .label_width(px(100.))
+                        .with_size(gpui_component::Size::Small)
+                        .child(
+                            field()
+                                .label("Name")
+                                .child(Input::new(&name_input))
+                                .required(true),
+                        )
+                        .child(
+                            field().label("Path").required(true).child(
+                                h_flex()
+                                    .gap_2()
+                                    .border_1()
+                                    .border_color(cx.theme().input)
+                                    .bg(cx.theme().input_background())
+                                    .rounded(cx.theme().radius)
+                                    .child(
+                                        div().flex_1().child(
+                                            Input::new(&path_input).pl_0().appearance(false),
+                                        ),
+                                    )
+                                    .child(
+                                        Button::new("file")
+                                            .ghost()
+                                            .icon(IconName::FolderOpen)
+                                            .on_click(prompt_to_save_project(
+                                                path_input.clone(),
+                                                cx,
+                                            )),
+                                    ),
+                            ),
+                        ),
+                )
+                .footer(
+                    DialogFooter::new()
+                        .child(
+                            DialogClose::new()
+                                .child(Button::new("cancel").label("Cancel").outline()),
+                        )
+                        .child(DialogAction::new().child(
+                            Button::new("confirm").primary().label("Create").disabled(
+                                name_input.read(cx).value().is_empty()
+                                    || path_input.read_with(cx, |state, _| {
+                                    state.value().is_empty()
+                                        || !state.value().ends_with(PROJECT_FILE_EXT)
+                                }),
+                            ),
+                        )),
+                )
+                .on_ok({
+                    let name = name_input.clone();
+                    let path = path_input.clone();
+                    let workspace = workspace.clone();
+                    move |_, window, cx| {
+                        let project_name = name.read(cx).value();
+                        let project = PathBuf::from(path.read(cx).value().to_string());
+                        let project_dir = project.parent();
+                        if project_dir.is_none() || !project_dir.unwrap().exists() {
+                            window.push_notification(
+                                Notification::error("Cannot create project: invalid location"),
+                                cx,
+                            );
+                            return false;
+                        }
+
+                        workspace.update(cx, |workspace, cx| {
+                            workspace.create_project(project_name, project, cx)
+                        });
+                        true
+                    }
+                })
+        });
+    }
+
+    fn on_open_project(&mut self, _: &OpenProject, window: &mut Window, cx: &mut Context<Self>) {
+        let focus_handle = self.focus_handle.clone();
+        let path = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: None,
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(result) = path.await else {
+                return;
+            };
+            let window_handle = cx.window_handle();
+            if let Some(paths) = result.ok().flatten()
+                && !paths.is_empty()
+            {
+                _ = this.update(cx, |this, cx| {
+                    if let Err(err) = this
+                        .workspace
+                        .update(cx, |this, cx| this.open_project(paths[0].clone(), cx))
+                    {
+                        _ = window_handle.update(cx, |_, window, cx| {
+                            window.push_notification(format!("{:?}", err), cx);
+                        });
+                    }
+                    AppState::update(cx, |state, _| {
+                        state.last_dir_path = paths[0].clone();
+                        true
+                    });
+                });
+            }
+            _ = window_handle.update(cx, |_, window, cx| window.focus(&focus_handle, cx));
+        })
+            .detach();
     }
 }
 
@@ -75,7 +211,10 @@ impl Render for WorkspaceView {
 
         div()
             .id("kinaro-root")
+            .track_focus(&self.focus_handle)
             .size_full()
+            .on_action(cx.listener(Self::on_create_project))
+            .on_action(cx.listener(Self::on_open_project))
             .child(
                 v_flex().size_full().child(self.title_bar.clone()).child(
                     h_resizable("kinaro-main-view")
@@ -152,5 +291,37 @@ impl Render for WorkspaceView {
             )
             .children(Root::render_dialog_layer(window, cx))
             .children(Root::render_notification_layer(window, cx))
+    }
+}
+
+fn prompt_to_save_project(
+    path_input: Entity<InputState>,
+    cx: &mut App,
+) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+    let last_path = AppState::read(cx, |state| state.last_dir_path.clone());
+    move |_, window, cx| {
+        let path =
+            cx.prompt_for_new_path(&last_path, Some(&format!("project.{}", PROJECT_FILE_EXT)));
+        window
+            .spawn(cx, {
+                let path_input = path_input.clone();
+                async move |cx| {
+                    let Ok(result) = path.await else {
+                        return;
+                    };
+                    if let Some(path) = result.ok().flatten() {
+                        _ = cx.window_handle().update(cx, |_, window, cx| {
+                            let path_str = SharedString::new(path.to_string_lossy());
+                            path_input
+                                .update(cx, |state, cx| state.set_value(path_str, window, cx));
+                            AppState::update(cx, |state, _| {
+                                state.last_dir_path = path.parent().unwrap().to_owned();
+                                true
+                            });
+                        });
+                    }
+                }
+            })
+            .detach();
     }
 }

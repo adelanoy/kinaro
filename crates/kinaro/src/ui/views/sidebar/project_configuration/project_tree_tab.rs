@@ -1,3 +1,4 @@
+use crate::actions::{AddTestCase, AddTestStep, AddTestSuite, Duplicate, RemoveNode, SwitchNodeActiveStatus, PROJECT_TREE_CONTEXT_KEY};
 use crate::ui::components::tree::{
     KiTree, KiTreeDelegate, KiTreeEvent, KiTreeState, ProjectTreeEntry,
 };
@@ -14,35 +15,10 @@ use log::warn;
 use std::collections::HashSet;
 use uuid::Uuid;
 
-pub const PROJECT_TREE_CONTEXT_KEY: &str = "ProjectTree";
-
 type ContextMenuBuilder = dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu;
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = profile, no_json)]
-struct RemoveNode(usize);
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = profile, no_json)]
-struct AddTestSuite(usize);
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = profile, no_json)]
-struct AddTestCase(usize);
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = profile, no_json)]
-struct AddTestStep(usize);
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = profile, no_json)]
-struct DuplicateNode(usize);
-
-actions!([SwitchNodeActiveStatus]);
 
 pub(super) struct ProjectTree {
     tree_state: Entity<KiTreeState<ProjectTreeDelegate>>,
-    focus_handle: FocusHandle,
     _tree_sub: Subscription,
 }
 
@@ -67,11 +43,10 @@ impl ProjectTree {
 
     fn on_remove_node(
         &mut self,
-        action: &RemoveNode,
+        _action: &RemoveNode,
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) {
-        println!("Removed node {}", action.0);
     }
 
     fn on_switch_active_status(
@@ -105,15 +80,8 @@ impl ProjectConfigurationTab for ProjectTree {
                 cx.new(|cx| KiTreeState::new(ProjectTreeDelegate::new(project, cx), cx));
             let _tree_sub = cx.subscribe_in(&tree_state, window, Self::on_tree_event);
 
-            cx.bind_keys([KeyBinding::new(
-                "ctrl-shift-d",
-                SwitchNodeActiveStatus,
-                Some(PROJECT_TREE_CONTEXT_KEY),
-            )]);
-
             Self {
                 tree_state,
-                focus_handle: cx.focus_handle(),
                 _tree_sub,
             }
         })
@@ -307,11 +275,7 @@ impl ProjectTreeDelegate {
         self.update_tests_entries(cx);
     }
 
-    fn build_context_menu(
-        ix: usize,
-        disabled: bool,
-        kind: TestNodeKind,
-    ) -> Box<ContextMenuBuilder> {
+    fn build_context_menu(disabled: bool, kind: TestNodeKind) -> Box<ContextMenuBuilder> {
         let builder = move |menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
             menu.submenu_with_icon(
                 Some(IconName::Plus.into()),
@@ -321,16 +285,16 @@ impl ProjectTreeDelegate {
                 move |submenu, _, _| {
                     let mut submenu = submenu;
                     if matches!(kind, TestNodeKind::Suite) {
-                        submenu = submenu.menu("Test Suite", Box::new(AddTestSuite(ix)));
+                        submenu = submenu.menu("Test Suite", Box::new(AddTestSuite));
                     }
                     if matches!(kind, TestNodeKind::Suite) || matches!(kind, TestNodeKind::Case) {
-                        submenu = submenu.menu("Test Case", Box::new(AddTestCase(ix)));
+                        submenu = submenu.menu("Test Case", Box::new(AddTestCase));
                     }
-                    submenu.menu("Test Step", Box::new(AddTestStep(ix)))
+                    submenu.menu("Test Step", Box::new(AddTestStep))
                 },
             )
-            .menu_with_icon("Remove", IconName::Delete, Box::new(RemoveNode(ix)))
-            .menu_with_icon("Duplicate", IconName::Copy, Box::new(DuplicateNode(ix)))
+            .menu_with_icon("Remove", IconName::Delete, Box::new(RemoveNode))
+            .menu_with_icon("Duplicate", IconName::Copy, Box::new(Duplicate))
             .menu_with_check("Enabled", !disabled, Box::new(SwitchNodeActiveStatus))
         };
 
@@ -370,7 +334,7 @@ impl KiTreeDelegate for ProjectTreeDelegate {
             .when(entry.disabled, |this| {
                 this.text_color(cx.theme().muted_foreground)
             })
-            .context_menu(Self::build_context_menu(ix, entry.disabled, entry.kind))
+            .context_menu(Self::build_context_menu(entry.disabled, entry.kind))
     }
 }
 
@@ -380,7 +344,7 @@ impl Render for ProjectTree {
         v_flex()
             .id("project-tree")
             .key_context(PROJECT_TREE_CONTEXT_KEY)
-            .track_focus(&self.focus_handle)
+            //.track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_remove_node))
             .on_action(cx.listener(Self::on_switch_active_status))
             .size_full()

@@ -7,8 +7,9 @@ use gpui_component::scroll::ScrollableElement;
 use gpui_component::{ActiveTheme, Icon, IconName, h_flex};
 use std::ops::Range;
 use uuid::Uuid;
+use crate::actions::Escape;
 
-pub const CONTEXT: &str = "Tree";
+pub const TREE_CONTEXT: &str = "Tree";
 
 #[derive(Debug, Clone)]
 pub struct ProjectTreeEntry {
@@ -62,7 +63,7 @@ impl<D: KiTreeDelegate> KiTreeState<D> {
     pub fn delegate_mut(&mut self) -> &mut D {
         &mut self.delegate
     }
-    
+
     #[inline]
     pub fn selected_index(&self) -> Option<usize> {
         self.selected_ix
@@ -187,15 +188,19 @@ impl<D: KiTreeDelegate> KiTree<D> {
 }
 
 impl<D: KiTreeDelegate> RenderOnce for KiTree<D> {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let focus_handle = self.state.read(cx).focus_handle.clone();
         let scroll_handle = self.state.read(cx).scroll_handle.clone();
 
         div()
-            .id(CONTEXT)
+            .id(TREE_CONTEXT)
             .size_full()
-            .key_context(CONTEXT)
+            .key_context(TREE_CONTEXT)
             .track_focus(&focus_handle)
+            .on_action(window.listener_for(&self.state, |state, _: &Escape, _, cx| {
+                state.selected_ix = None;
+                cx.notify();
+            }))
             /*.on_action(window.listener_for(&self.state, KiTreeState::on_action_confirm))
             .on_action(window.listener_for(&self.state, KiTreeState::on_action_left))
             .on_action(window.listener_for(&self.state, KiTreeState::on_action_right))
