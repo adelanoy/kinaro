@@ -1,5 +1,4 @@
 use crate::workspace::error::{ProjectError, WorkspaceError};
-pub(crate) use crate::workspace::project::{Project, ProjectEvent};
 use gpui::{App, Entity, EventEmitter, SharedString, Subscription};
 use gpui::{AppContext, Context};
 use ki_settings::GlobalSettings;
@@ -15,6 +14,13 @@ pub mod error;
 pub mod project;
 pub mod test;
 pub mod variable;
+
+pub use project::Project;
+pub use project::ProjectEvent;
+pub use test::test_case::TestCase;
+pub use test::test_step::TestStep;
+pub use test::test_suite::TestSuite;
+pub use test::TestNodeKind;
 
 const WORKSPACES_FILENAME: &str = "workspace.json";
 
@@ -94,23 +100,18 @@ impl Workspace {
 
         let workspace_projects: HashMap<PathBuf, WorkspaceProject> = projects
             .into_iter()
-            .map(
-                |metadata| match Project::load(&metadata, cx) {
-                    Ok(project) => {
-                        // Refresh the metadata now that the project is loaded, in case they were change externally
-                        let path = project.read(cx).path.clone();
-                        let _sub = cx.subscribe(&project, Self::on_project_event);
-                        (
-                            path.clone(),
-                            WorkspaceProject::project(project, _sub, cx),
-                        )
-                    }
-                    Err(err) => (
-                        metadata.path.clone(),
-                        WorkspaceProject::error(err, metadata),
-                    ),
-                },
-            )
+            .map(|metadata| match Project::load(&metadata, cx) {
+                Ok(project) => {
+                    // Refresh the metadata now that the project is loaded, in case they were change externally
+                    let path = project.read(cx).path.clone();
+                    let _sub = cx.subscribe(&project, Self::on_project_event);
+                    (path.clone(), WorkspaceProject::project(project, _sub, cx))
+                }
+                Err(err) => (
+                    metadata.path.clone(),
+                    WorkspaceProject::error(err, metadata),
+                ),
+            })
             .collect();
 
         // Update the active_project, in case it points to an unloaded/moved project
@@ -262,15 +263,13 @@ impl Workspace {
             };
 
             updated_wp = match &project.data {
-                WorkspaceProjectData::Error(_, metadata) => {
-                    match Project::load(metadata, cx) {
-                        Ok(project) => {
-                            let _sub = cx.subscribe(&project, Self::on_project_event);
-                            Some(WorkspaceProject::project(project, _sub, cx))
-                        }
-                        Err(err) => Some(WorkspaceProject::error(err, metadata.clone())),
+                WorkspaceProjectData::Error(_, metadata) => match Project::load(metadata, cx) {
+                    Ok(project) => {
+                        let _sub = cx.subscribe(&project, Self::on_project_event);
+                        Some(WorkspaceProject::project(project, _sub, cx))
                     }
-                }
+                    Err(err) => Some(WorkspaceProject::error(err, metadata.clone())),
+                },
                 WorkspaceProjectData::Loaded { .. } => None,
             };
         }

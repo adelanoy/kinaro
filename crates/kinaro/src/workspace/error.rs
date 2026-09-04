@@ -63,6 +63,9 @@ pub enum ProjectError {
     /// An operation was attempted on a missing variable
     #[error("ProjectError::VariableNotFound")]
     VariableNotFound,
+    /// An operation was attempted on a missing test
+    #[error("ProjectError::TestNotFound")]
+    TestNotFound,
 }
 
 impl From<ProjectFileError> for ProjectError {
@@ -101,6 +104,7 @@ impl From<ProjectError> for Notification {
             }
             ProjectError::ProfileNotFound => Notification::warning("Unknown profile"),
             ProjectError::VariableNotFound => Notification::warning("Unknown variable"),
+            ProjectError::TestNotFound => Notification::warning("The test could not be found"),
         }
     }
 }

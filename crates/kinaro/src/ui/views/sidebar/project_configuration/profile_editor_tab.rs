@@ -258,7 +258,7 @@ impl ProfileDataTableDelegate {
 
     fn on_cell_input_event<F>(
         table: &mut TableState<Self>,
-        state: &Entity<InputState>,
+        input: &Entity<InputState>,
         event: &InputEvent,
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
@@ -270,7 +270,7 @@ impl ProfileDataTableDelegate {
             InputEvent::Change => {
                 let cell_state = &mut table.delegate_mut().cell_state;
                 if let CellState::CellEdited(_, _, data) = cell_state {
-                    let text = state.read(cx).value();
+                    let text = input.read(cx).value();
                     f(data, text);
                 }
             }

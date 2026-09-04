@@ -1,15 +1,22 @@
-use crate::actions::{AddTestCase, AddTestStep, AddTestSuite, Duplicate, RemoveNode, SwitchNodeActiveStatus, PROJECT_TREE_CONTEXT_KEY};
+use crate::actions::{
+    AddTestCase, AddTestStep, AddTestSuite, Duplicate, PROJECT_TREE_CONTEXT_KEY, RemoveNode,
+    Rename, SwitchNodeActiveStatus,
+};
 use crate::ui::components::tree::{
     KiTree, KiTreeDelegate, KiTreeEvent, KiTreeState, ProjectTreeEntry,
 };
 use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTab;
-use crate::workspace::Project;
-use crate::workspace::test::{TestCase, TestNodeKind, TestStep, TestSuite};
+use crate::workspace::{Project, TestCase, TestNodeKind, TestStep, TestSuite};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::menu::{ContextMenuExt, PopupMenu};
-use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Sizable, h_flex, v_flex};
+use gpui_component::{
+    ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt,
+    button::{Button, ButtonVariants},
+    h_flex,
+    input::{Input, InputEvent, InputState},
+    menu::{ContextMenuExt, PopupMenu},
+    v_flex,
+};
 use ki_assets::icon::IconAsset;
 use log::warn;
 use std::collections::HashSet;
@@ -63,6 +70,16 @@ impl ProjectTree {
             tree.delegate_mut().on_switch_active_status(ix, cx);
         })
     }
+
+    fn on_rename_entry(&mut self, _: &Rename, window: &mut Window, cx: &mut Context<Self>) {
+        self.tree_state.update(cx, |tree, cx| {
+            let Some(ix) = tree.selected_index() else {
+                warn!("on_rename_entry: no tree_state selected_ix");
+                return;
+            };
+            tree.delegate_mut().setup_rename_entry(ix, window, cx);
+        });
+    }
 }
 
 impl ProjectConfigurationTab for ProjectTree {
@@ -77,7 +94,7 @@ impl ProjectConfigurationTab for ProjectTree {
     fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<impl Render> {
         cx.new(|cx| {
             let tree_state =
-                cx.new(|cx| KiTreeState::new(ProjectTreeDelegate::new(project, cx), cx));
+                cx.new(|cx| KiTreeState::new(ProjectTreeDelegate::new(project, window, cx), cx));
             let _tree_sub = cx.subscribe_in(&tree_state, window, Self::on_tree_event);
 
             Self {
@@ -91,13 +108,22 @@ impl ProjectConfigurationTab for ProjectTree {
 struct ProjectTreeDelegate {
     project: Entity<Project>,
     tree_entries: Vec<ProjectTreeEntry>,
+    rename_input_state: Entity<InputState>,
+    _rename_input_sub: Option<Subscription>,
 }
 
 impl ProjectTreeDelegate {
-    fn new(project: Entity<Project>, cx: &mut Context<KiTreeState<Self>>) -> Self {
+    fn new(
+        project: Entity<Project>,
+        window: &mut Window,
+        cx: &mut Context<KiTreeState<Self>>,
+    ) -> Self {
+        let rename_input_state = cx.new(|cx| InputState::new(window, cx));
         let mut delegate = Self {
             project,
             tree_entries: vec![],
+            rename_input_state,
+            _rename_input_sub: None,
         };
         delegate.update_tests_entries(cx);
         delegate
@@ -106,136 +132,9 @@ impl ProjectTreeDelegate {
     fn update_tests_entries(&mut self, cx: &mut Context<KiTreeState<Self>>) {
         self.tree_entries = self.project.read_with(cx, |project, cx| {
             let opened_nodes = project.opened_tree_nodes();
-            Self::get_ts_entries(&project.tests.read(cx).suites, opened_nodes)
+            get_ts_entries(&project.tests.read(cx).suites, opened_nodes)
         });
         cx.notify();
-    }
-
-    fn get_ts_entries(suites: &[TestSuite], opened_nodes: &HashSet<Uuid>) -> Vec<ProjectTreeEntry> {
-        let mut entries = Vec::new();
-        for (ix, suite) in suites.iter().enumerate() {
-            let leaf = suite.cases.is_empty();
-            let expanded = opened_nodes.contains(&suite.info.id);
-            let disabled = suite.info.disabled;
-            entries.push(ProjectTreeEntry {
-                id: suite.info.id,
-                path: vec![ix],
-                kind: TestNodeKind::Suite,
-                label: suite.info.name.clone(),
-                disabled,
-                parent_disabled: false,
-                depth: 0,
-                leaf,
-                expanded,
-            });
-            if !leaf && expanded {
-                entries.extend(Self::get_tc_entries(
-                    &suite.cases,
-                    ix,
-                    disabled,
-                    opened_nodes,
-                ));
-            }
-        }
-        entries
-    }
-
-    fn get_tc_entries(
-        cases: &[TestCase],
-        parent_ix: usize,
-        parent_disabled: bool,
-        opened_nodes: &HashSet<Uuid>,
-    ) -> Vec<ProjectTreeEntry> {
-        let mut entries = Vec::new();
-        for (ix, case) in cases.iter().enumerate() {
-            let is_empty = case.steps.is_empty();
-            let path = vec![parent_ix, ix];
-            if !case.is_anonymous {
-                let is_open = opened_nodes.contains(&case.info.id);
-                let disabled = case.info.disabled;
-                entries.push(ProjectTreeEntry {
-                    id: case.info.id,
-                    path: path.clone(),
-                    kind: TestNodeKind::Case,
-                    label: case.info.name.clone(),
-                    disabled,
-                    parent_disabled,
-                    depth: 1,
-                    leaf: is_empty,
-                    expanded: is_open,
-                });
-                if !is_empty && is_open {
-                    entries.extend(Self::get_steps_entries(
-                        &case.steps,
-                        path,
-                        disabled || parent_disabled,
-                    ));
-                }
-            } else if case.steps.len() == 1 {
-                entries.push(Self::get_anonymous_step_entry(
-                    &case.steps[0],
-                    path,
-                    parent_disabled,
-                ));
-            }
-        }
-        entries
-    }
-
-    fn get_steps_entries(
-        cases: &[TestStep],
-        parent_ix: Vec<usize>,
-        parent_disabled: bool,
-    ) -> Vec<ProjectTreeEntry> {
-        cases
-            .iter()
-            .enumerate()
-            .map(|(ix, case)| {
-                let mut path = parent_ix.clone();
-                path.push(ix);
-                ProjectTreeEntry {
-                    id: case.info.id,
-                    path,
-                    kind: TestNodeKind::Step,
-                    label: case.info.name.clone(),
-                    disabled: case.info.disabled,
-                    parent_disabled,
-                    depth: 2,
-                    leaf: true,
-                    expanded: false,
-                }
-            })
-            .collect()
-    }
-
-    fn get_anonymous_step_entry(
-        step: &TestStep,
-        parent_ix: Vec<usize>,
-        parent_disabled: bool,
-    ) -> ProjectTreeEntry {
-        let mut path = parent_ix;
-        path.push(0);
-        ProjectTreeEntry {
-            id: step.info.id,
-            path,
-            kind: TestNodeKind::AnonymousStep,
-            label: step.info.name.clone(),
-            disabled: step.info.disabled,
-            parent_disabled,
-            depth: 1,
-            leaf: true,
-            expanded: false,
-        }
-    }
-
-    fn entry_icon(&self, entry: &ProjectTreeEntry) -> Option<Icon> {
-        match entry.kind {
-            TestNodeKind::Suite => Some(Icon::new(IconAsset::TestSuite)),
-            TestNodeKind::Case => Some(Icon::new(IconAsset::TestCase)),
-            TestNodeKind::Step | TestNodeKind::AnonymousStep => {
-                Some(Icon::new(IconAsset::TestStep))
-            }
-        }
     }
 
     /// Updates the [`ProjectTreeEntry`] *open* property according to the provided value
@@ -253,9 +152,9 @@ impl ProjectTreeDelegate {
         };
         self.project.update(cx, move |project, cx| {
             if open {
-                project.expand_tree_node(entry.id, cx);
+                project.expand_tree_node(entry.id(), cx);
             } else {
-                project.collapse_tree_node(&entry.id, cx);
+                project.collapse_tree_node(&entry.id(), cx);
             }
         });
         // Implement a fine-grained update instead of rebuilding the full tree?
@@ -275,31 +174,202 @@ impl ProjectTreeDelegate {
         self.update_tests_entries(cx);
     }
 
-    fn build_context_menu(disabled: bool, kind: TestNodeKind) -> Box<ContextMenuBuilder> {
-        let builder = move |menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
-            menu.submenu_with_icon(
-                Some(IconName::Plus.into()),
-                "Add",
-                window,
-                cx,
-                move |submenu, _, _| {
-                    let mut submenu = submenu;
-                    if matches!(kind, TestNodeKind::Suite) {
-                        submenu = submenu.menu("Test Suite", Box::new(AddTestSuite));
-                    }
-                    if matches!(kind, TestNodeKind::Suite) || matches!(kind, TestNodeKind::Case) {
-                        submenu = submenu.menu("Test Case", Box::new(AddTestCase));
-                    }
-                    submenu.menu("Test Step", Box::new(AddTestStep))
-                },
-            )
-            .menu_with_icon("Remove", IconName::Delete, Box::new(RemoveNode))
-            .menu_with_icon("Duplicate", IconName::Copy, Box::new(Duplicate))
-            .menu_with_check("Enabled", !disabled, Box::new(SwitchNodeActiveStatus))
+    // Renaming
+    fn setup_rename_entry(
+        &mut self,
+        ix: usize,
+        window: &mut Window,
+        cx: &mut Context<KiTreeState<Self>>,
+    ) {
+        let Some(entry) = self.tree_entries.get_mut(ix) else {
+            warn!("on_rename_entry: unknown item ix: {}", ix);
+            return;
         };
-
-        Box::new(builder)
+        let name = entry.label.clone();
+        self.rename_input_state.update(cx, |input, cx| {
+            input.set_value(name, window, cx);
+            input.focus(window, cx);
+        });
+        self._rename_input_sub = Some(cx.subscribe_in(
+            &self.rename_input_state,
+            window,
+            Self::on_rename_input_event,
+        ));
     }
+    fn on_rename_input_event(
+        tree_state: &mut KiTreeState<Self>,
+        input: &Entity<InputState>,
+        event: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<KiTreeState<Self>>,
+    ) {
+        match event {
+            InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                // Case: if Esc is pressed, selected_ix is None, and Blur event is raised, unwrap ix would panic
+                if let Some(ix) = tree_state.selected_index() {
+                    tree_state
+                        .delegate_mut()
+                        .rename_entry(ix, input.read(cx).value(), window, cx);
+                    tree_state.focus_handle(cx).focus(window, cx);
+                }
+                tree_state.delegate_mut()._rename_input_sub = None;
+            }
+            _ => {}
+        }
+    }
+
+    fn rename_entry(
+        &mut self,
+        ix: usize,
+        name: SharedString,
+        window: &mut Window,
+        cx: &mut Context<KiTreeState<Self>>,
+    ) {
+        let path = self.tree_entries[ix].path.clone();
+        if let Err(err) = self.project.update(cx, |project, cx| {
+            project
+                .tests
+                .update(cx, |tests, cx| tests.rename_at(&path, name, cx))
+        }) {
+            window.push_notification(err, cx);
+        } else {
+            self.update_tests_entries(cx);
+        }
+    }
+}
+
+fn get_ts_entries(suites: &[TestSuite], opened_nodes: &HashSet<Uuid>) -> Vec<ProjectTreeEntry> {
+    let mut entries = Vec::new();
+    for suite in suites.iter() {
+        let id = suite.info.id;
+        let leaf = suite.cases.is_empty();
+        let expanded = opened_nodes.contains(&suite.info.id);
+        let disabled = suite.info.disabled;
+        entries.push(ProjectTreeEntry {
+            path: vec![id],
+            kind: TestNodeKind::Suite,
+            label: suite.info.name.clone(),
+            disabled,
+            parent_disabled: false,
+            depth: 0,
+            leaf,
+            expanded,
+        });
+        if !leaf && expanded {
+            entries.extend(get_tc_entries(&suite.cases, id, disabled, opened_nodes));
+        }
+    }
+    entries
+}
+
+fn get_tc_entries(
+    cases: &[TestCase],
+    parent_id: Uuid,
+    parent_disabled: bool,
+    opened_nodes: &HashSet<Uuid>,
+) -> Vec<ProjectTreeEntry> {
+    let mut entries = Vec::new();
+    for case in cases.iter() {
+        let is_empty = case.steps.is_empty();
+        let path = vec![parent_id, case.info.id];
+        if !case.is_anonymous {
+            let is_open = opened_nodes.contains(&case.info.id);
+            let disabled = case.info.disabled;
+            entries.push(ProjectTreeEntry {
+                path: path.clone(),
+                kind: TestNodeKind::Case,
+                label: case.info.name.clone(),
+                disabled,
+                parent_disabled,
+                depth: 1,
+                leaf: is_empty,
+                expanded: is_open,
+            });
+            if !is_empty && is_open {
+                entries.extend(get_steps_entries(
+                    &case.steps,
+                    path,
+                    disabled || parent_disabled,
+                ));
+            }
+        } else if case.steps.len() == 1 {
+            entries.push(get_anonymous_step_entry(
+                &case.steps[0],
+                path,
+                parent_disabled,
+            ));
+        }
+    }
+    entries
+}
+
+fn get_steps_entries(
+    cases: &[TestStep],
+    parent_ix: Vec<Uuid>,
+    parent_disabled: bool,
+) -> Vec<ProjectTreeEntry> {
+    cases
+        .iter()
+        .map(|step| {
+            let mut path = parent_ix.clone();
+            path.push(step.info.id);
+            ProjectTreeEntry {
+                path,
+                kind: TestNodeKind::Step,
+                label: step.info.name.clone(),
+                disabled: step.info.disabled,
+                parent_disabled,
+                depth: 2,
+                leaf: true,
+                expanded: false,
+            }
+        })
+        .collect()
+}
+
+fn get_anonymous_step_entry(
+    step: &TestStep,
+    parent_ix: Vec<Uuid>,
+    parent_disabled: bool,
+) -> ProjectTreeEntry {
+    let mut path = parent_ix;
+    path.push(step.info.id);
+    ProjectTreeEntry {
+        path,
+        kind: TestNodeKind::AnonymousStep,
+        label: step.info.name.clone(),
+        disabled: step.info.disabled,
+        parent_disabled,
+        depth: 1,
+        leaf: true,
+        expanded: false,
+    }
+}
+
+fn build_context_menu(disabled: bool, kind: TestNodeKind) -> Box<ContextMenuBuilder> {
+    let builder = move |menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
+        menu.submenu_with_icon(
+            Some(IconName::Plus.into()),
+            "Add",
+            window,
+            cx,
+            move |submenu, _, _| {
+                let mut submenu = submenu;
+                if matches!(kind, TestNodeKind::Suite) {
+                    submenu = submenu.menu("Test Suite", Box::new(AddTestSuite));
+                }
+                if matches!(kind, TestNodeKind::Suite) || matches!(kind, TestNodeKind::Case) {
+                    submenu = submenu.menu("Test Case", Box::new(AddTestCase));
+                }
+                submenu.menu("Test Step", Box::new(AddTestStep))
+            },
+        )
+        .menu_with_icon("Remove", IconName::Delete, Box::new(RemoveNode))
+        .menu_with_icon("Duplicate", IconName::Copy, Box::new(Duplicate))
+        .menu_with_check("Enabled", !disabled, Box::new(SwitchNodeActiveStatus))
+        .menu_with_icon("Rename", IconAsset::Rename, Box::new(Rename))
+    };
+    Box::new(builder)
 }
 
 impl KiTreeDelegate for ProjectTreeDelegate {
@@ -314,39 +384,49 @@ impl KiTreeDelegate for ProjectTreeDelegate {
     fn entry_render(
         &self,
         ix: usize,
+        selected: bool,
         _window: &mut Window,
         cx: &mut Context<KiTreeState<Self>>,
     ) -> impl IntoElement {
         let entry = &self.tree_entries[ix];
-        let icon = self.entry_icon(entry);
+        let icon = entry.icon();
+        let is_edited = selected && self._rename_input_sub.is_some();
         let left_padding = if icon.is_some() { px(0.) } else { px(14.) };
 
         h_flex()
-            .id(entry.id)
+            .id(entry.id())
             .size_full()
             .pl(left_padding)
             .gap_x_1()
             .when_some(icon, |this, icon| this.child(icon))
-            .child(entry.label.clone())
-            .when(entry.disabled || entry.parent_disabled, |this| {
-                this.child(Icon::new(IconAsset::Ban).xsmall())
-            })
-            .when(entry.disabled, |this| {
-                this.text_color(cx.theme().muted_foreground)
-            })
-            .context_menu(Self::build_context_menu(entry.disabled, entry.kind))
+            .when_else(
+                is_edited,
+                |this| this.child(Input::new(&self.rename_input_state)),
+                |this| {
+                    this.child(entry.label.clone())
+                        .when(entry.disabled || entry.parent_disabled, |this| {
+                            this.child(Icon::new(IconAsset::Ban).xsmall())
+                        })
+                        .when(entry.disabled, |this| {
+                            this.text_color(cx.theme().muted_foreground)
+                        })
+                },
+            )
+            .context_menu(build_context_menu(entry.disabled, entry.kind))
     }
 }
 
 impl Render for ProjectTree {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let entry_selected = self.tree_state.read(cx).selected_index().is_some();
+        let focus_handle = self.tree_state.read(cx).focus_handle(cx);
         v_flex()
             .id("project-tree")
+            .track_focus(&focus_handle)
             .key_context(PROJECT_TREE_CONTEXT_KEY)
-            //.track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_remove_node))
             .on_action(cx.listener(Self::on_switch_active_status))
+            .on_action(cx.listener(Self::on_rename_entry))
             .size_full()
             .gap_y_2()
             .p_1()

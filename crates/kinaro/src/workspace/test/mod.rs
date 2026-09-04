@@ -1,15 +1,15 @@
+use crate::workspace::project::Result;
 use gpui::{Context, EventEmitter, SharedString};
 use ki_project::{FileTestInfo, FileTestsContainer};
 use log::warn;
 use uuid::Uuid;
+use crate::workspace::TestSuite;
+use crate::workspace::error::ProjectError::TestNotFound;
 
 pub mod test_case;
 pub mod test_step;
 pub mod test_suite;
 
-pub use test_case::TestCase;
-pub use test_step::TestStep;
-pub use test_suite::TestSuite;
 
 #[derive(Debug, Clone, Copy)]
 pub enum TestNodeKind {
@@ -71,7 +71,7 @@ impl TestsContainer {
         }
     }
 
-    pub fn switch_active_status(&mut self, path: &[usize], cx: &mut Context<Self>) {
+    pub fn switch_active_status(&mut self, path: &[Uuid], cx: &mut Context<Self>) {
         if path.is_empty() {
             return;
         }
@@ -83,9 +83,31 @@ impl TestsContainer {
         cx.emit(TestsContainerEvent::Modified(info.id));
     }
 
+    pub fn rename_at(
+        &mut self,
+        path: &[Uuid],
+        name: SharedString,
+        cx: &mut Context<Self>,
+    ) -> Result<()> {
+        if path.is_empty() {
+            return Ok(());
+        }
+        let Some(test_info) = self.info_mut_from_path(path) else {
+            warn!("rename_at: unknow path: {:?}", path);
+            return Err(TestNotFound);
+        };
+
+        if test_info.name != name {
+            test_info.name = name;
+            cx.emit(TestsContainerEvent::Modified(test_info.id));
+        }
+
+        Ok(())
+    }
+
     #[allow(unused)]
-    pub fn info_from_path(&self, path: &[usize]) -> Option<&TestInfo> {
-        let suite = self.suites.get(path[0])?;
+    pub fn info_from_path(&self, path: &[Uuid]) -> Option<&TestInfo> {
+        let suite = self.suites.iter().find(|suite| suite.info.id == path[0])?;
         if path.len() == 1 {
             Some(&suite.info)
         } else {
@@ -93,8 +115,11 @@ impl TestsContainer {
         }
     }
 
-    pub fn info_mut_from_path(&mut self, path: &[usize]) -> Option<&mut TestInfo> {
-        let suite = self.suites.get_mut(path[0])?;
+    pub fn info_mut_from_path(&mut self, path: &[Uuid]) -> Option<&mut TestInfo> {
+        let suite = self
+            .suites
+            .iter_mut()
+            .find(|suite| suite.info.id == path[0])?;
         if path.len() == 1 {
             Some(&mut suite.info)
         } else {

@@ -7,14 +7,14 @@ use gpui_component::scroll::ScrollableElement;
 use gpui_component::{ActiveTheme, Icon, IconName, h_flex};
 use std::ops::Range;
 use uuid::Uuid;
+use ki_assets::icon::IconAsset;
 use crate::actions::Escape;
 
 pub const TREE_CONTEXT: &str = "Tree";
 
 #[derive(Debug, Clone)]
 pub struct ProjectTreeEntry {
-    pub id: Uuid,
-    pub path: Vec<usize>,
+    pub path: Vec<Uuid>,
     pub kind: TestNodeKind,
     pub label: SharedString,
     pub disabled: bool,
@@ -22,6 +22,20 @@ pub struct ProjectTreeEntry {
     pub depth: usize,
     pub leaf: bool,
     pub expanded: bool,
+}
+
+impl ProjectTreeEntry {
+    pub fn icon(&self) -> Option<Icon> {
+        match self.kind {
+            TestNodeKind::Suite => Some(Icon::new(IconAsset::TestSuite)),
+            TestNodeKind::Case => Some(Icon::new(IconAsset::TestCase)),
+            TestNodeKind::Step | TestNodeKind::AnonymousStep => Some(Icon::new(IconAsset::TestStep)),
+        }
+    }
+
+    pub fn id(&self) -> Uuid {
+        self.path[self.path.len() - 1]
+    }
 }
 
 pub trait KiTreeDelegate: Sized + 'static {
@@ -32,6 +46,7 @@ pub trait KiTreeDelegate: Sized + 'static {
     fn entry_render(
         &self,
         ix: usize,
+        selected: bool,
         window: &mut Window,
         cx: &mut Context<KiTreeState<Self>>,
     ) -> impl IntoElement;
@@ -39,7 +54,6 @@ pub trait KiTreeDelegate: Sized + 'static {
 
 #[derive(Debug)]
 pub enum KiTreeEvent {
-    EntryClicked(usize),
     EntryDoubleClicked(usize),
     NodeExpanded(usize),
     NodeCollapsed(usize),
@@ -75,14 +89,18 @@ impl<D: KiTreeDelegate> KiTreeState<D> {
             cx.emit(KiTreeEvent::EntryDoubleClicked(ix));
         } else {
             self.selected_ix = Some(ix);
-            cx.emit(KiTreeEvent::EntryClicked(ix));
         }
     }
 
     fn on_entry_right_click(&mut self, ix: usize, cx: &mut Context<KiTreeState<D>>) {
         cx.stop_propagation();
         self.selected_ix = Some(ix);
-        cx.emit(KiTreeEvent::EntryClicked(ix));
+    }
+}
+
+impl<D: KiTreeDelegate> Focusable for KiTreeState<D> {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
     }
 }
 
@@ -157,7 +175,7 @@ impl<D: KiTreeDelegate> Render for KiTreeState<D> {
                                                 }
                                             })
                                             // Entry content
-                                            .child(state.delegate().entry_render(ix, window, cx)),
+                                            .child(state.delegate().entry_render(ix, is_selected, window, cx)),
                                     )
                                     .on_click(
                                         cx.listener(move |this, e, _, cx| this.on_entry_click(e, ix, cx)),
@@ -189,14 +207,12 @@ impl<D: KiTreeDelegate> KiTree<D> {
 
 impl<D: KiTreeDelegate> RenderOnce for KiTree<D> {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let focus_handle = self.state.read(cx).focus_handle.clone();
         let scroll_handle = self.state.read(cx).scroll_handle.clone();
 
         div()
             .id(TREE_CONTEXT)
             .size_full()
             .key_context(TREE_CONTEXT)
-            .track_focus(&focus_handle)
             .on_action(window.listener_for(&self.state, |state, _: &Escape, _, cx| {
                 state.selected_ix = None;
                 cx.notify();

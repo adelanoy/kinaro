@@ -1,18 +1,10 @@
-use gpui::{actions, Action, App, KeyBinding};
+use gpui::{Action, App, KeyBinding, actions};
 pub const PROJECT_TREE_CONTEXT_KEY: &str = "ProjectTree";
 
 // SHARED
-actions!(
-    [
-        Delete,
-        Duplicate,
-        Escape,
-        MoveUp,
-        MoveDown,
-        MoveLeft,
-        MoveRight,
-    ]
-);
+actions!([
+    Delete, Duplicate, Escape, MoveUp, MoveDown, MoveLeft, MoveRight, Rename,
+]);
 
 // Profiles
 #[derive(Action, Clone, PartialEq, Eq)]
@@ -27,7 +19,13 @@ pub struct DuplicateProfileAction(pub usize);
 actions!([CreateProject, OpenProject]);
 
 // PROJECT TREE
-actions!([AddTestSuite, AddTestCase, AddTestStep, RemoveNode, SwitchNodeActiveStatus]);
+actions!([
+    AddTestSuite,
+    AddTestCase,
+    AddTestStep,
+    RemoveNode,
+    SwitchNodeActiveStatus
+]);
 
 pub fn init(cx: &mut App) {
     cx.bind_keys([
@@ -40,10 +38,12 @@ pub fn init(cx: &mut App) {
         // WORKSPACE
         KeyBinding::new("ctrl-n", CreateProject, None),
         KeyBinding::new("ctrl-o", OpenProject, None),
+        // PROJECT TREE
         KeyBinding::new(
             "ctrl-shift-d",
             SwitchNodeActiveStatus,
             Some(PROJECT_TREE_CONTEXT_KEY),
-        )
+        ),
+        KeyBinding::new("ctrl-r", Rename, Some(PROJECT_TREE_CONTEXT_KEY)),
     ]);
 }
