@@ -1,7 +1,7 @@
 use crate::GlobalSettings;
 use crate::error::SettingsError;
-use gpui::{App, AppContext, BorrowAppContext, Bounds, Window, WindowBounds, point, px, size};
-use gpui_component::ThemeMode;
+use gpui_kit::component::ThemeMode;
+use gpui_kit::{App, AppContext, BorrowAppContext, Bounds, Window, WindowBounds, point, px, size};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::fs;

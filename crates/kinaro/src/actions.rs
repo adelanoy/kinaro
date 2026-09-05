@@ -1,4 +1,4 @@
-use gpui::{Action, App, KeyBinding, actions};
+use gpui_kit::{Action, App, KeyBinding, actions};
 pub const PROJECT_TREE_CONTEXT_KEY: &str = "ProjectTree";
 
 // SHARED

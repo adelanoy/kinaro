@@ -1,10 +1,10 @@
 use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTabs;
 use crate::workspace::variable::{ProfileInfo, ProjectVariablesEvent};
 use crate::workspace::{Project, ProjectEvent};
-use gpui::*;
-use gpui_component::select::{Select, SelectEvent, SelectState};
-use gpui_component::separator::Separator;
-use gpui_component::{ActiveTheme, IndexPath, Sizable, h_flex, v_flex};
+use gpui_kit::component::select::{Select, SelectEvent, SelectState};
+use gpui_kit::component::separator::Separator;
+use gpui_kit::component::{ActiveTheme, IndexPath, Sizable, h_flex, v_flex};
+use gpui_kit::*;
 use uuid::Uuid;
 
 pub(super) struct ProjectConfigurator {

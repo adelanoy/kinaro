@@ -1,7 +1,4 @@
-use crate::test::{
-    test_step::{FileTestStep},
-    FileTestInfo,
-};
+use crate::test::{FileTestInfo, test_step::FileTestStep};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

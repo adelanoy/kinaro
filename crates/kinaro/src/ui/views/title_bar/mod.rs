@@ -2,9 +2,9 @@ pub mod project_selector;
 
 use crate::ui::views::title_bar::project_selector::ProjectSelector;
 use crate::workspace::Workspace;
-use gpui::*;
-use gpui_component::switch::Switch;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable, Theme, ThemeMode, TitleBar};
+use gpui_kit::component::switch::Switch;
+use gpui_kit::component::{ActiveTheme, Icon, IconName, Sizable, Theme, ThemeMode, TitleBar};
+use gpui_kit::*;
 use ki_settings::app_state::AppState;
 
 pub struct AppTitleBar {
@@ -26,10 +26,11 @@ impl Render for AppTitleBar {
         TitleBar::new()
             .h_10()
             .justify_between()
-            .child(div()
-                .flex()
-                .items_center()
-                .child(self.project_selector.clone())
+          .child(
+            div()
+              .flex()
+              .items_center()
+              .child(self.project_selector.clone()),
             )
             .child(
                 div()

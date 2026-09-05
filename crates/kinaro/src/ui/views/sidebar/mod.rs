@@ -3,9 +3,9 @@ mod project_configurator_panel;
 
 use crate::ui::views::sidebar::project_configurator_panel::ProjectConfigurator;
 use crate::workspace::{Workspace, WorkspaceEvent};
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::v_flex;
+use gpui_kit::component::v_flex;
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
 
 pub struct ProjectSidebar {
     project_configurator: Option<Entity<ProjectConfigurator>>,

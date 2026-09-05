@@ -9,8 +9,7 @@ authors.workspace = true
 ki_utils.workspace = true
 
 # Externals
-gpui.workspace = true
-gpui-component.workspace = true
+gpui-kit.workspace = true
 serde.workspace = true
 uuid.workspace = true
 chrono.workspace = true

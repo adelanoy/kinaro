@@ -2,15 +2,15 @@ use crate::actions::{DeleteProfileAction, DuplicateProfileAction, Escape};
 use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTab;
 use crate::workspace::Project;
 use crate::workspace::variable::{ProfileInfo, ProjectVariables};
-use gpui::prelude::*;
-use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::menu::PopupMenu;
-use gpui_component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
-use gpui_component::{
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::menu::PopupMenu;
+use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
+use gpui_kit::component::{
     ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt, h_flex, v_flex,
 };
+use gpui_kit::prelude::*;
+use gpui_kit::*;
 use ki_assets::icon::IconAsset;
 use ki_utils::ui::CellState;
 

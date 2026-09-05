@@ -1,4 +1,4 @@
-use gpui_component::notification::Notification;
+use gpui_kit::component::notification::Notification;
 use ki_project::ProjectFileError;
 use std::path::PathBuf;
 

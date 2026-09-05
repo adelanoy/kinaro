@@ -11,9 +11,7 @@ ki_settings.workspace = true
 ki_project.workspace = true
 ki_utils.workspace = true
 
-gpui.workspace = true
-gpui_platform.workspace = true
-gpui-component.workspace = true
+gpui-kit.workspace = true
 log.workspace = true
 dirs.workspace = true
 uuid.workspace = true

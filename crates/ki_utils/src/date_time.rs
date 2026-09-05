@@ -1,9 +1,9 @@
 #[allow(dead_code)]
 pub mod java_date_format {
-    use chrono::{DateTime, Local, NaiveDateTime};
-    use serde::{self, Deserialize, Deserializer, Serializer};
+  use chrono::{DateTime, Local, NaiveDateTime};
+  use serde::{self, Deserialize, Deserializer, Serializer};
 
-    const FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
+  const FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
 
     ///Serialize a `chrono::DateTime`
     ///

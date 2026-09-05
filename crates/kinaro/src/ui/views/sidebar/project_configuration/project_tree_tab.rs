@@ -7,9 +7,7 @@ use crate::ui::components::tree::{
 };
 use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTab;
 use crate::workspace::{Project, TestCase, TestNodeKind, TestStep, TestSuite};
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
@@ -17,6 +15,8 @@ use gpui_component::{
     menu::{ContextMenuExt, PopupMenu},
     v_flex,
 };
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
 use ki_assets::icon::IconAsset;
 use log::warn;
 use std::collections::HashSet;
@@ -350,7 +350,7 @@ fn build_context_menu(disabled: bool, kind: TestNodeKind) -> Box<ContextMenuBuil
     let builder = move |menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
         menu.submenu_with_icon(
             Some(IconName::Plus.into()),
-            "Add",
+            "New",
             window,
             cx,
             move |submenu, _, _| {
@@ -364,10 +364,13 @@ fn build_context_menu(disabled: bool, kind: TestNodeKind) -> Box<ContextMenuBuil
                 submenu.menu("Test Step", Box::new(AddTestStep))
             },
         )
-        .menu_with_icon("Remove", IconName::Delete, Box::new(RemoveNode))
+          .separator()
         .menu_with_icon("Duplicate", IconName::Copy, Box::new(Duplicate))
+          .separator()
         .menu_with_check("Enabled", !disabled, Box::new(SwitchNodeActiveStatus))
         .menu_with_icon("Rename", IconAsset::Rename, Box::new(Rename))
+          .separator()
+          .menu_with_icon("Remove", IconName::Delete, Box::new(RemoveNode))
     };
     Box::new(builder)
 }

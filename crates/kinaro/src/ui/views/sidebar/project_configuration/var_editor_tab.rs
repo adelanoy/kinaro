@@ -1,17 +1,17 @@
 use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTab;
 use crate::workspace::Project;
 use crate::workspace::variable::{ProfileInfo, ProjectVariables, VariableReference};
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::label::Label;
-use gpui_component::select::{Select, SelectEvent, SelectState};
-use gpui_component::switch::Switch;
-use gpui_component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
-use gpui_component::{
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::label::Label;
+use gpui_kit::component::select::{Select, SelectEvent, SelectState};
+use gpui_kit::component::switch::Switch;
+use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
+use gpui_kit::component::{
     ActiveTheme, Disableable, Icon, IconName, IndexPath, Sizable, WindowExt, h_flex, v_flex,
 };
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
 use ki_assets::icon::IconAsset;
 use ki_project::VariableKind;
 use ki_utils::ui::CellState;

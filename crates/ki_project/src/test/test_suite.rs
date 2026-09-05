@@ -1,9 +1,6 @@
 use std::fmt::Debug;
 
-use crate::test::{
-    FileTestInfo,
-    test_case::{FileTestCase},
-};
+use crate::test::{FileTestInfo, test_case::FileTestCase};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -6,15 +6,20 @@ use crate::ui::views::sidebar::ProjectSidebar;
 use crate::ui::views::title_bar::AppTitleBar;
 use crate::workspace::Workspace;
 use crate::workspace::project::PROJECT_FILE_EXT;
-use gpui::*;
-use gpui_component::button::{Button, ButtonVariants, Toggle};
-use gpui_component::dialog::{DialogAction, DialogClose, DialogFooter};
-use gpui_component::form::{field, v_form};
-use gpui_component::input::{Input, InputState};
-use gpui_component::notification::Notification;
-use gpui_component::resizable::{h_resizable, resizable_panel};
-use gpui_component::tab::{Tab, TabBar};
-use gpui_component::{ActiveTheme, Disableable, IconName, Root, Sizable, WindowExt, h_flex, v_flex};
+use gpui_kit::component::button::{Button, ButtonVariants, Toggle};
+use gpui_kit::component::dialog::{DialogAction, DialogClose, DialogFooter};
+use gpui_kit::component::form::{field, v_form};
+use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::resizable::{h_resizable, resizable_panel};
+use gpui_kit::component::tab::{Tab, TabBar};
+use gpui_kit::component::{
+    ActiveTheme, Disableable, IconName, Root, Sizable, Size, WindowExt, h_flex, v_flex,
+};
+use gpui_kit::{
+    App, AppContext, Axis, ClickEvent, Context, Entity, FocusHandle, InteractiveElement,
+    IntoElement, ParentElement, PathPromptOptions, Render, SharedString, Styled, Window, div, px,
+};
 use ki_assets::icon::IconAsset;
 use ki_settings::app_state::AppState;
 use std::path::PathBuf;
@@ -90,7 +95,7 @@ impl WorkspaceView {
                     v_form()
                         .layout(Axis::Horizontal)
                         .label_width(px(100.))
-                        .with_size(gpui_component::Size::Small)
+                      .with_size(Size::Small)
                         .child(
                             field()
                                 .label("Name")
@@ -133,7 +138,7 @@ impl WorkspaceView {
                                 name_input.read(cx).value().is_empty()
                                     || path_input.read_with(cx, |state, _| {
                                     state.value().is_empty()
-                                        || !state.value().ends_with(PROJECT_FILE_EXT)
+                                      || !state.value().ends_with(PROJECT_FILE_EXT)
                                 }),
                             ),
                         )),
@@ -196,7 +201,7 @@ impl WorkspaceView {
             }
             _ = window_handle.update(cx, |_, window, cx| window.focus(&focus_handle, cx));
         })
-            .detach();
+          .detach();
     }
 }
 

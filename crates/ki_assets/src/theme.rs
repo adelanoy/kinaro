@@ -1,5 +1,5 @@
-use gpui::App;
-use gpui_component::{Theme, ThemeRegistry};
+use gpui_kit::App;
+use gpui_kit::component::{Theme, ThemeRegistry};
 use ki_settings::app_state::AppState;
 use log::warn;
 use std::borrow::Cow;

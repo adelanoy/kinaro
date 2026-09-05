@@ -10,7 +10,6 @@ log.workspace = true
 ki_settings.workspace = true
 
 # Externals
-gpui.workspace = true
-gpui-component.workspace = true
+gpui-kit.workspace = true
 rust-embed = "8"
 anyhow = "1.0.102"

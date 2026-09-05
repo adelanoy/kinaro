@@ -1,5 +1,5 @@
 use crate::app_state::AppState;
-use gpui::{App, Global, Task};
+use gpui_kit::{App, Global, Task};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;

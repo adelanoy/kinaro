@@ -5,8 +5,8 @@ pub(crate) mod ui;
 pub(crate) mod workspace;
 
 use crate::ui::views::WorkspaceView;
-use gpui::*;
-use gpui_component::Root;
+use gpui_kit::component::Root;
+use gpui_kit::{App, AppContext, Size, TitlebarOptions, WindowOptions, point, px};
 use ki_assets::Assets;
 use ki_settings::app_state::AppState;
 use log::info;
@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 fn main() {
     let config_dir = dirs::config_local_dir().unwrap().join("Kinaro_gpui");
-    gpui_platform::application()
+    gpui_kit::platform::application()
         .with_assets(Assets)
         .run(move |cx| {
             init_app(config_dir, cx);
@@ -43,7 +43,7 @@ fn init_app(config_dir: PathBuf, cx: &mut App) {
     ki_settings::init(config_dir, cx);
 
     info!("Initializing component lib");
-    gpui_component::init(cx);
+    gpui_kit::init(cx);
     ki_assets::init(cx);
     actions::init(cx);
 }
@@ -74,6 +74,7 @@ fn build_window_options(cx: &mut App) -> WindowOptions {
 
     #[cfg(target_os = "linux")]
     {
+        use gpui_kit::WindowDecorations;
         options.window_decorations = Some(WindowDecorations::Client)
     }
     options

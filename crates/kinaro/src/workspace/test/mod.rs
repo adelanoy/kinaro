@@ -1,15 +1,14 @@
+use crate::workspace::TestSuite;
+use crate::workspace::error::ProjectError::TestNotFound;
 use crate::workspace::project::Result;
-use gpui::{Context, EventEmitter, SharedString};
+use gpui_kit::{Context, EventEmitter, SharedString};
 use ki_project::{FileTestInfo, FileTestsContainer};
 use log::warn;
 use uuid::Uuid;
-use crate::workspace::TestSuite;
-use crate::workspace::error::ProjectError::TestNotFound;
 
 pub mod test_case;
 pub mod test_step;
 pub mod test_suite;
-
 
 #[derive(Debug, Clone, Copy)]
 pub enum TestNodeKind {

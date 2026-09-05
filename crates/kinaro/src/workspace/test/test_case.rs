@@ -1,6 +1,6 @@
-use uuid::Uuid;
 use crate::workspace::test::{TestInfo, test_step::TestStep};
 use ki_project::FileTestCase;
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Eq)]
 pub struct TestCase {
@@ -31,11 +31,17 @@ impl TestCase {
 
     #[allow(unused)]
     pub fn info_from_path(&self, id: &Uuid) -> Option<&TestInfo> {
-        self.steps.iter().find(|step| step.info.id == *id).map(|step| &step.info)
+        self.steps
+          .iter()
+          .find(|step| step.info.id == *id)
+          .map(|step| &step.info)
     }
 
     pub fn info_mut_from_path(&mut self, id: &Uuid) -> Option<&mut TestInfo> {
-        self.steps.iter_mut().find(|step| step.info.id == *id).map(|step| &mut step.info)
+        self.steps
+          .iter_mut()
+          .find(|step| step.info.id == *id)
+          .map(|step| &mut step.info)
     }
 }
 

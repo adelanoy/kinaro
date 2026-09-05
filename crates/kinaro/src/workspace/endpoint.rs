@@ -1,4 +1,4 @@
-use ki_project::{FileEndpoint, HttpMethod, FileRestParameter};
+use ki_project::{FileEndpoint, FileRestParameter, HttpMethod};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

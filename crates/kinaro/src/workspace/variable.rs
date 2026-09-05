@@ -1,7 +1,7 @@
 use crate::workspace::error::ProjectError;
 use crate::workspace::project;
-use gpui::{Context, EventEmitter, SharedString};
-use gpui_component::select::SelectItem;
+use gpui_kit::component::select::SelectItem;
+use gpui_kit::{Context, EventEmitter, SharedString};
 use ki_project::{FileProfile, FileProjectVariables, FileVariable, VariableKind};
 use ki_utils::ui::next_available_name;
 use log::warn;

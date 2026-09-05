@@ -1,19 +1,19 @@
 use crate::actions::{CreateProject, OpenProject};
 use crate::workspace::{Project, Workspace, WorkspaceEvent, WorkspaceProjectInfo};
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants};
-use gpui_component::dialog::{DialogAction, DialogClose, DialogFooter};
-use gpui_component::input::{Input, InputState};
-use gpui_component::kbd::Kbd;
-use gpui_component::label::Label;
-use gpui_component::notification::Notification;
-use gpui_component::popover::Popover;
-use gpui_component::separator::Separator;
-use gpui_component::{
+use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants};
+use gpui_kit::component::dialog::{DialogAction, DialogClose, DialogFooter};
+use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::kbd::Kbd;
+use gpui_kit::component::label::Label;
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::popover::Popover;
+use gpui_kit::component::separator::Separator;
+use gpui_kit::component::{
     Disableable, Icon, IconName, Sizable, WindowExt, gray_500, gray_600, h_flex, red_300, red_400,
     v_flex,
 };
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
 use ki_assets::icon::IconAsset;
 use std::path::PathBuf;
 

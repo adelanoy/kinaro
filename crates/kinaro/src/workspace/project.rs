@@ -4,7 +4,7 @@ use crate::workspace::test::{TestsContainer, TestsContainerEvent};
 use crate::workspace::variable::{ProjectVariables, ProjectVariablesEvent};
 use crate::workspace::{FileProjectMetadata, Workspace};
 use chrono::{DateTime, Local};
-use gpui::{AppContext, Context, Entity, EventEmitter, SharedString, Subscription};
+use gpui_kit::{AppContext, Context, Entity, EventEmitter, SharedString, Subscription};
 use ki_project::ProjectFile;
 use log::error;
 use std::collections::HashSet;

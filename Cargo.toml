@@ -24,9 +24,7 @@ ki_assets = { path = "crates/ki_assets" }
 ki_log = { path = "crates/ki_log" }
 ki_utils = {path = "crates/ki_utils"}
 
-gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
-gpui-component = { git = "https://github.com/longbridge/gpui-component", branch = "main" }
+gpui-kit = { version = "0.6.0", default-features = false, features = ["component"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["serde", "v4"] }

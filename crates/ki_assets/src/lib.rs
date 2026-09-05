@@ -3,7 +3,7 @@ pub mod icon;
 pub mod theme;
 
 use anyhow::anyhow;
-use gpui::{App, AssetSource, Result, SharedString};
+use gpui_kit::{App, AssetSource, Result, SharedString};
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
 

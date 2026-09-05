@@ -1,5 +1,5 @@
-use gpui::SharedString;
-use gpui_component::select::SelectItem;
+use gpui_kit::SharedString;
+use gpui_kit::component::select::SelectItem;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;

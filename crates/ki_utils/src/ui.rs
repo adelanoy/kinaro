@@ -1,4 +1,4 @@
-use gpui::SharedString;
+use gpui_kit::SharedString;
 use std::sync::LazyLock;
 
 pub static EMPTY_SHARED_STRING: LazyLock<SharedString> = LazyLock::new(|| SharedString::new(""));
@@ -40,10 +40,10 @@ pub fn next_available_name<'a>(
 
 #[cfg(test)]
 mod test {
-    use crate::ui::next_available_name;
-    use gpui::SharedString;
+  use crate::ui::next_available_name;
+  use gpui_kit::SharedString;
 
-    #[test]
+  #[test]
     fn next_available_name_no_append() {
         let reference_collection = [SharedString::new("old_item")];
         let new_item = next_available_name("new_item", &mut reference_collection.iter());

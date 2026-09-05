@@ -1,6 +1,6 @@
 use crate::workspace::error::{ProjectError, WorkspaceError};
-use gpui::{App, Entity, EventEmitter, SharedString, Subscription};
-use gpui::{AppContext, Context};
+use gpui_kit::{App, Entity, EventEmitter, SharedString, Subscription};
+use gpui_kit::{AppContext, Context};
 use ki_settings::GlobalSettings;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
@@ -17,10 +17,10 @@ pub mod variable;
 
 pub use project::Project;
 pub use project::ProjectEvent;
+pub use test::TestNodeKind;
 pub use test::test_case::TestCase;
 pub use test::test_step::TestStep;
 pub use test::test_suite::TestSuite;
-pub use test::TestNodeKind;
 
 const WORKSPACES_FILENAME: &str = "workspace.json";
 

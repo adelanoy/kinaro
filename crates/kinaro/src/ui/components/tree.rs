@@ -1,14 +1,14 @@
+use crate::actions::Escape;
 use crate::workspace::test::TestNodeKind;
-use gpui::prelude::FluentBuilder;
-use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::list::ListItem;
-use gpui_component::scroll::ScrollableElement;
-use gpui_component::{ActiveTheme, Icon, IconName, h_flex};
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::list::ListItem;
+use gpui_kit::component::scroll::ScrollableElement;
+use gpui_kit::component::{ActiveTheme, Icon, IconName, h_flex};
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::*;
+use ki_assets::icon::IconAsset;
 use std::ops::Range;
 use uuid::Uuid;
-use ki_assets::icon::IconAsset;
-use crate::actions::Escape;
 
 pub const TREE_CONTEXT: &str = "Tree";
 
@@ -29,7 +29,9 @@ impl ProjectTreeEntry {
         match self.kind {
             TestNodeKind::Suite => Some(Icon::new(IconAsset::TestSuite)),
             TestNodeKind::Case => Some(Icon::new(IconAsset::TestCase)),
-            TestNodeKind::Step | TestNodeKind::AnonymousStep => Some(Icon::new(IconAsset::TestStep)),
+            TestNodeKind::Step | TestNodeKind::AnonymousStep => {
+                Some(Icon::new(IconAsset::TestStep))
+            }
         }
     }
 
@@ -161,8 +163,8 @@ impl<D: KiTreeDelegate> Render for KiTreeState<D> {
                                                             .tab_stop(false)
                                                             .on_click(move |_, _, cx| {
                                                                 entity.update(cx, |_, cx| {
-                                                                    use crate::ui::components::tree::KiTreeEvent::NodeExpanded;
                                                                     use crate::ui::components::tree::KiTreeEvent::NodeCollapsed;
+                                                                    use crate::ui::components::tree::KiTreeEvent::NodeExpanded;
                                                                     cx.stop_propagation();
                                                                     if is_open {
                                                                         cx.emit(NodeCollapsed(ix))
@@ -213,10 +215,12 @@ impl<D: KiTreeDelegate> RenderOnce for KiTree<D> {
             .id(TREE_CONTEXT)
             .size_full()
             .key_context(TREE_CONTEXT)
-            .on_action(window.listener_for(&self.state, |state, _: &Escape, _, cx| {
-                state.selected_ix = None;
-                cx.notify();
-            }))
+          .on_action(
+              window.listener_for(&self.state, |state, _: &Escape, _, cx| {
+                  state.selected_ix = None;
+                  cx.notify();
+              }),
+          )
             /*.on_action(window.listener_for(&self.state, KiTreeState::on_action_confirm))
             .on_action(window.listener_for(&self.state, KiTreeState::on_action_left))
             .on_action(window.listener_for(&self.state, KiTreeState::on_action_right))
