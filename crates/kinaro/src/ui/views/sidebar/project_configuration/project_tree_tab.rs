@@ -44,7 +44,7 @@ impl ProjectTree {
             KiTreeEvent::NodeCollapsed(ix) => {
                 tree.delegate_mut().on_expand_status_change(*ix, false, cx)
             }
-            _ => {}
+            KiTreeEvent::EntryDoubleClicked(ix) => println!("Entry action: {}", ix),
         });
     }
 
@@ -422,10 +422,8 @@ impl KiTreeDelegate for ProjectTreeDelegate {
 impl Render for ProjectTree {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let entry_selected = self.tree_state.read(cx).selected_index().is_some();
-        let focus_handle = self.tree_state.read(cx).focus_handle(cx);
         v_flex()
             .id("project-tree")
-            .track_focus(&focus_handle)
             .key_context(PROJECT_TREE_CONTEXT_KEY)
             .on_action(cx.listener(Self::on_remove_node))
             .on_action(cx.listener(Self::on_switch_active_status))

@@ -6,7 +6,9 @@ pub(crate) mod workspace;
 
 use crate::ui::views::WorkspaceView;
 use gpui_kit::component::Root;
-use gpui_kit::{App, AppContext, Size, TitlebarOptions, WindowOptions, point, px};
+use gpui_kit::{
+    App, AppContext, Size, TitlebarOptions, WindowDecorations, WindowOptions, point, px,
+};
 use ki_assets::Assets;
 use ki_settings::app_state::AppState;
 use log::info;
@@ -60,7 +62,8 @@ fn build_window_options(cx: &mut App) -> WindowOptions {
             app_state.bounds(),
         )
     });
-    let mut options = WindowOptions {
+
+    WindowOptions {
         window_bounds: bounds,
         display_id: display,
         window_min_size: Some(Size::new(px(800.0), px(600.0))),
@@ -69,13 +72,11 @@ fn build_window_options(cx: &mut App) -> WindowOptions {
             appears_transparent: true,
             traffic_light_position: Some(point(px(9.0), px(9.0))),
         }),
+        window_decorations: if cfg!(target_os = "linux") {
+            Some(WindowDecorations::Client)
+        } else {
+            Default::default()
+        },
         ..Default::default()
-    };
-
-    #[cfg(target_os = "linux")]
-    {
-        use gpui_kit::WindowDecorations;
-        options.window_decorations = Some(WindowDecorations::Client)
     }
-    options
 }

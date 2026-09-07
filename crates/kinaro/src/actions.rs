@@ -3,7 +3,7 @@ pub const PROJECT_TREE_CONTEXT_KEY: &str = "ProjectTree";
 
 // SHARED
 actions!([
-    Delete, Duplicate, Escape, MoveUp, MoveDown, MoveLeft, MoveRight, Rename,
+    Delete, Duplicate, Enter, Escape, MoveUp, MoveDown, MoveLeft, MoveRight, Rename,
 ]);
 
 // Profiles
@@ -30,11 +30,14 @@ actions!([
 pub fn init(cx: &mut App) {
     cx.bind_keys([
         // SHARED
+        KeyBinding::new("ctrl-d", Duplicate, None),
         KeyBinding::new("escape", Escape, None),
+        KeyBinding::new("enter", Enter, None),
         KeyBinding::new("up", MoveUp, None),
         KeyBinding::new("down", MoveDown, None),
         KeyBinding::new("left", MoveLeft, None),
         KeyBinding::new("right", MoveRight, None),
+        KeyBinding::new("f2", Rename, None),
         // WORKSPACE
         KeyBinding::new("ctrl-n", CreateProject, None),
         KeyBinding::new("ctrl-o", OpenProject, None),
@@ -44,6 +47,5 @@ pub fn init(cx: &mut App) {
             SwitchNodeActiveStatus,
             Some(PROJECT_TREE_CONTEXT_KEY),
         ),
-        KeyBinding::new("ctrl-r", Rename, Some(PROJECT_TREE_CONTEXT_KEY)),
     ]);
 }
