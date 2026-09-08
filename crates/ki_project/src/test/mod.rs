@@ -8,15 +8,15 @@ pub mod test_suite;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FileTestInfo {
-    pub id: Uuid,
-    pub name: String,
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub disabled: bool,
+  pub id: Uuid,
+  pub name: String,
+  pub description: Option<String>,
+  #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+  pub disabled: bool,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct FileTestsContainer {
-    pub suites: Vec<FileTestSuite>,
+  pub suites: Vec<FileTestSuite>,
 }

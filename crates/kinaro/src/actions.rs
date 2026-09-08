@@ -19,25 +19,25 @@ actions!([
 ]);
 
 pub fn init(cx: &mut App) {
-    cx.bind_keys([
-        // SHARED
-      KeyBinding::new("delete", Delete, None),
-        KeyBinding::new("ctrl-d", Duplicate, None),
-        KeyBinding::new("escape", Escape, None),
-        KeyBinding::new("enter", Enter, None),
-        KeyBinding::new("up", MoveUp, None),
-        KeyBinding::new("down", MoveDown, None),
-        KeyBinding::new("left", MoveLeft, None),
-        KeyBinding::new("right", MoveRight, None),
-        KeyBinding::new("f2", Rename, None),
-        // WORKSPACE
-        KeyBinding::new("ctrl-n", CreateProject, None),
-        KeyBinding::new("ctrl-o", OpenProject, None),
-        // PROJECT TREE
-        KeyBinding::new(
-            "ctrl-shift-d",
-            SwitchNodeActiveStatus,
-            Some(PROJECT_TREE_CONTEXT_KEY),
-        ),
-    ]);
+  cx.bind_keys([
+    // SHARED
+    KeyBinding::new("delete", Delete, None),
+    KeyBinding::new("ctrl-d", Duplicate, None),
+    KeyBinding::new("escape", Escape, None),
+    KeyBinding::new("enter", Enter, None),
+    KeyBinding::new("up", MoveUp, None),
+    KeyBinding::new("down", MoveDown, None),
+    KeyBinding::new("left", MoveLeft, None),
+    KeyBinding::new("right", MoveRight, None),
+    KeyBinding::new("f2", Rename, None),
+    // WORKSPACE
+    KeyBinding::new("ctrl-n", CreateProject, None),
+    KeyBinding::new("ctrl-o", OpenProject, None),
+    // PROJECT TREE
+    KeyBinding::new(
+      "ctrl-shift-d",
+      SwitchNodeActiveStatus,
+      Some(PROJECT_TREE_CONTEXT_KEY),
+    ),
+  ]);
 }

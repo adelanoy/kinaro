@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FileTestSuite {
-    #[serde(flatten)]
-    pub info: FileTestInfo,
-    pub cases: Vec<FileTestCase>,
+  #[serde(flatten)]
+  pub info: FileTestInfo,
+  pub cases: Vec<FileTestCase>,
 }
