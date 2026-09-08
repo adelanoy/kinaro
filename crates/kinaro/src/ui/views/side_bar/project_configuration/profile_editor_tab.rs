@@ -1,18 +1,16 @@
-use crate::actions::{DeleteProfileAction, DuplicateProfileAction, Escape};
-use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTab;
+use crate::actions::{Delete, Duplicate, Escape};
+use crate::ui::views::side_bar::project_configuration::ProjectConfigurationTab;
 use crate::workspace::Project;
 use crate::workspace::variable::{ProfileInfo, ProjectVariables};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::menu::PopupMenu;
+use gpui_kit::component::separator::Separator;
 use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
-use gpui_kit::component::{
-    ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt, h_flex, v_flex,
-};
+use gpui_kit::component::{Disableable, Icon, IconName, Sizable, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
-use ki_utils::ui::CellState;
+use ki_utils::ui::{CellState, MovingLabel};
 
 pub(super) struct ProfileEditor {
     focus_handle: FocusHandle,
@@ -35,9 +33,6 @@ impl ProfileEditor {
             TableEvent::DoubleClickedCell(row_ix, col_ix) => this
                 .delegate_mut()
                 .on_cell_edited(*row_ix, *col_ix, window, cx),
-            TableEvent::SelectRow(ix) => {
-                this.delegate_mut().on_row_selected(*ix, window, cx);
-            }
             TableEvent::ClearSelection => {
                 this.delegate_mut().cell_state = CellState::Unselected;
                 this.delegate_mut()._cell_input_sub = None;
@@ -48,26 +43,23 @@ impl ProfileEditor {
 
     fn on_delete_row_action(
         &mut self,
-        row: &DeleteProfileAction,
+        _action: &Delete,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let row_ix = row.0;
         self.table_state.update(cx, |this, cx| {
-            this.delegate_mut().delete_profile(row_ix, window, cx);
+            this.delegate_mut().delete_profile(window, cx);
         });
     }
 
     fn on_duplicate_row_action(
         &mut self,
-        row: &DuplicateProfileAction,
+        _action: &Duplicate,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.table_state.update(cx, |table_state, cx| {
-            table_state
-                .delegate_mut()
-                .duplicate_profile(row.0, window, cx);
+            table_state.delegate_mut().duplicate_profile(window, cx);
         });
     }
 
@@ -88,7 +80,7 @@ impl ProjectConfigurationTab for ProfileEditor {
     }
 
     fn icon() -> impl Into<Icon> {
-        IconAsset::Variable
+        IconAsset::Profile
     }
 
     fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<impl Render> {
@@ -99,7 +91,7 @@ impl ProjectConfigurationTab for ProfileEditor {
                     window,
                     cx,
                 )
-                .row_selectable(true)
+                .row_selectable(false)
                 .col_selectable(false)
                 .cell_selectable(true)
             });
@@ -171,19 +163,6 @@ impl ProfileDataTableDelegate {
             _ => {}
         }
         self.cell_state = CellState::CellSelected(row_ix);
-    }
-
-    fn on_row_selected(
-        &mut self,
-        row_ix: usize,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
-        if matches!(self.cell_state, CellState::CellEdited(_, _, _)) {
-            self.update_profile(window, cx);
-            self._cell_input_sub = None;
-        }
-        self.cell_state = CellState::RowSelected(row_ix);
     }
 
     fn on_cell_edited(
@@ -303,7 +282,7 @@ impl ProfileDataTableDelegate {
 
     fn add_profile(&mut self, cx: &mut Context<TableState<Self>>) {
         let current_row = match self.cell_state {
-            CellState::RowSelected(row_ix) | CellState::CellSelected(row_ix) => Some(row_ix),
+            CellState::CellSelected(row_ix) => Some(row_ix),
             CellState::Unselected => None,
             _ => {
                 return;
@@ -314,51 +293,36 @@ impl ProfileDataTableDelegate {
             .update(cx, |this, cx| this.add_profile(current_row, name, cx));
     }
 
-    fn delete_profile(
-        &mut self,
-        row_ix: usize,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) -> bool {
-        let result = self
-            .project_vars
-            .update(cx, |this, cx| this.delete_profile(row_ix, cx));
-        match result {
-            Ok(_) => true,
-            Err(err) => {
-                window.push_notification(err, cx);
-                false
-            }
-        }
-    }
-
-    fn delete_selected_profile(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-        let current_row = match self.cell_state {
-            CellState::RowSelected(row_ix) | CellState::CellSelected(row_ix) => row_ix,
+    fn delete_profile(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+        let row_ix = match self.cell_state {
+            CellState::CellSelected(row_ix) => row_ix,
             _ => {
                 return;
             }
         };
-
-        if self.delete_profile(current_row, window, cx)
-            && current_row >= self.project_vars.read(cx).profiles.len()
+        if let Err(err) = self
+            .project_vars
+            .update(cx, |this, cx| this.delete_profile(row_ix, cx))
         {
-            self.cell_state = CellState::Unselected
+            window.push_notification(err, cx);
         }
+        cx.notify();
     }
 
-    fn duplicate_profile(
-        &mut self,
-        row_ix: usize,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
+    fn duplicate_profile(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+        let row_ix = match self.cell_state {
+            CellState::CellSelected(row_ix) => row_ix,
+            _ => {
+                return;
+            }
+        };
         if let Err(err) = self
             .project_vars
             .update(cx, |this, cx| this.duplicate_profile(row_ix, cx))
         {
             window.push_notification(err, cx);
         }
+        cx.notify();
     }
 
     fn move_profile(
@@ -399,8 +363,8 @@ impl TableDelegate for ProfileDataTableDelegate {
         div()
             .id(("row", row_ix))
             .on_drag(
-                MovingProfile {
-                    name: self
+                MovingLabel {
+                    label: self
                         .project_vars
                         .read(cx)
                         .profiles
@@ -408,35 +372,20 @@ impl TableDelegate for ProfileDataTableDelegate {
                         .unwrap()
                         .name
                         .clone(),
-                    row: row_ix,
+                    data: row_ix,
                 },
                 |drag, _, _, cx| {
                     cx.stop_propagation();
                     cx.new(|_| drag.clone())
                 },
             )
-            .on_drop(cx.listener(move |table, e: &MovingProfile, window, cx| {
-                table.delegate_mut().move_profile(e.row, row_ix, window, cx);
-            }))
-    }
-
-    fn context_menu(
-        &mut self,
-        row_ix: usize,
-        menu: PopupMenu,
-        _window: &mut Window,
-        _cx: &mut Context<TableState<Self>>,
-    ) -> PopupMenu {
-        menu.menu_with_icon(
-            SharedString::new("Delete"),
-            IconName::Delete,
-            Box::new(DeleteProfileAction(row_ix)),
-        )
-        .menu_with_icon(
-            SharedString::new("Duplicate"),
-            IconName::Copy,
-            Box::new(DuplicateProfileAction(row_ix)),
-        )
+            .on_drop(
+                cx.listener(move |table, e: &MovingLabel<usize>, window, cx| {
+                    table
+                        .delegate_mut()
+                        .move_profile(e.data, row_ix, window, cx);
+                }),
+            )
     }
 
     fn render_td(
@@ -471,13 +420,17 @@ impl TableDelegate for ProfileDataTableDelegate {
         _window: &mut Window,
         _cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
-        div().size_full().into_any_element()
+        div()
+            .size_full()
+            .items_center()
+            .child("No Data")
+            .into_any_element()
     }
 }
 
 impl Render for ProfileEditor {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (is_editing, no_row_selected) = self.table_state.read_with(cx, |this, _| {
+        let (is_editing, no_selection) = self.table_state.read_with(cx, |this, _| {
             let delegate = this.delegate();
             (
                 matches!(delegate.cell_state, CellState::CellEdited(_, _, _)),
@@ -498,11 +451,35 @@ impl Render for ProfileEditor {
                     .w_full()
                     .flex_row_reverse()
                     .child(
+                        Button::new("btn-delete-profile")
+                            .ghost()
+                            .small()
+                            .disabled(is_editing || no_selection)
+                            .icon(IconName::Delete)
+                            .tooltip_with_action("Delete the selected profile", &Delete, None)
+                            .on_click(move |_, window, cx| {
+                                window.dispatch_action(Box::new(Delete), cx);
+                            }),
+                    )
+                    .child(Separator::vertical())
+                    .child(
+                        Button::new("btn-duplicate-profile")
+                            .ghost()
+                            .small()
+                            .disabled(is_editing || no_selection)
+                            .icon(IconName::Copy)
+                            .tooltip_with_action("Duplicate the selected profile", &Duplicate, None)
+                            .on_click(move |_, window, cx| {
+                                window.dispatch_action(Box::new(Duplicate), cx);
+                            }),
+                    )
+                    .child(
                         Button::new("btn-add-profile")
                             .ghost()
                             .small()
                             .disabled(is_editing)
                             .icon(IconName::Plus)
+                            .tooltip("Adds a new profile")
                             .on_click({
                                 let table_state = self.table_state.clone();
                                 move |_, _, cx| {
@@ -511,47 +488,8 @@ impl Render for ProfileEditor {
                                     });
                                 }
                             }),
-                    )
-                    .child(
-                        Button::new("btn-delete-profile")
-                            .ghost()
-                            .small()
-                            .disabled(is_editing || no_row_selected)
-                            .icon(IconName::Delete)
-                            .on_click({
-                                let table_state = self.table_state.clone();
-                                move |_, window, cx| {
-                                    table_state.update(cx, |this, cx| {
-                                        this.delegate_mut().delete_selected_profile(window, cx);
-                                    });
-                                }
-                            }),
                     ),
             )
             .child(DataTable::new(&self.table_state).small())
-    }
-}
-
-#[derive(Clone)]
-struct MovingProfile {
-    row: usize,
-    name: SharedString,
-}
-
-impl Render for MovingProfile {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .px_4()
-            .py_1()
-            .bg(cx.theme().table_head)
-            .text_color(cx.theme().muted_foreground)
-            .opacity(0.9)
-            .border_1()
-            .border_color(cx.theme().border)
-            .rounded_md()
-            .shadow_md()
-            .min_w(px(100.))
-            .max_w(px(450.))
-            .child(self.name.clone())
     }
 }

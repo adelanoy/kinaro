@@ -1,4 +1,4 @@
-use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTabs;
+use crate::ui::views::side_bar::project_configuration::ProjectConfigurationTabs;
 use crate::workspace::variable::{ProfileInfo, ProjectVariablesEvent};
 use crate::workspace::{Project, ProjectEvent};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};

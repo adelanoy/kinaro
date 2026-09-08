@@ -1,7 +1,7 @@
 mod project_configuration;
 mod project_configurator_panel;
 
-use crate::ui::views::sidebar::project_configurator_panel::ProjectConfigurator;
+use crate::ui::views::side_bar::project_configurator_panel::ProjectConfigurator;
 use crate::workspace::{Workspace, WorkspaceEvent};
 use gpui_kit::component::v_flex;
 use gpui_kit::prelude::FluentBuilder;

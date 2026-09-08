@@ -84,7 +84,7 @@ impl ProjectVariables {
         let mut duplicated_profile = profile.clone();
         duplicated_profile.id = Uuid::new_v4();
         duplicated_profile.name =
-            next_available_name(&profile.name, &mut self.references.iter().map(|p| &p.name));
+          next_available_name(&profile.name, &mut self.profiles.iter().map(|p| &p.name));
 
         let index = index + 1;
         if index >= self.profiles.len() {
@@ -108,6 +108,9 @@ impl ProjectVariables {
         to_ix: usize,
         cx: &mut Context<Self>,
     ) -> Result<()> {
+        if from_ix == to_ix {
+            return Ok(());
+        }
         let max_ix = self.profiles.len() - 1;
         if from_ix == to_ix || from_ix > max_ix || to_ix > max_ix {
             return Err(ProjectError::ProfileNotFound);
@@ -229,12 +232,12 @@ impl ProjectVariables {
         Ok(())
     }
 
-    pub fn find_override(&self, var_id: Uuid, profile_id: Uuid) -> Option<SharedString> {
-        let profile = self.profiles.iter().find(|p| p.id == profile_id)?;
+    pub fn find_override(&self, var_id: Uuid, profile_id: &Uuid) -> Option<SharedString> {
+        let profile = self.profiles.iter().find(|p| p.id == *profile_id)?;
         profile.effective_values.get(&var_id).cloned()
     }
 
-    pub fn revert_profile(
+    pub fn revert_overridden_variable(
         &mut self,
         var_id: Uuid,
         profile_id: Uuid,
@@ -286,6 +289,25 @@ impl ProjectVariables {
         } else {
             var.value = updated_variable.value.clone();
         }
+        Ok(())
+    }
+
+    pub fn move_variable(
+        &mut self,
+        from_ix: usize,
+        to_ix: usize,
+        cx: &mut Context<Self>,
+    ) -> Result<()> {
+        if from_ix == to_ix {
+            return Ok(());
+        }
+        let max_ix = self.references.len() - 1;
+        if from_ix == to_ix || from_ix > max_ix || to_ix > max_ix {
+            return Err(ProjectError::VariableNotFound);
+        }
+        let var_to_move = self.references.remove(from_ix);
+        self.references.insert(to_ix, var_to_move);
+        cx.emit(ProjectVariablesEvent::VariablesChanged);
         Ok(())
     }
 

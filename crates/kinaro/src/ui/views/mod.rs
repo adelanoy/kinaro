@@ -1,8 +1,8 @@
-mod sidebar;
+mod side_bar;
 mod title_bar;
 
 use crate::actions::{CreateProject, OpenProject};
-use crate::ui::views::sidebar::ProjectSidebar;
+use crate::ui::views::side_bar::ProjectSidebar;
 use crate::ui::views::title_bar::AppTitleBar;
 use crate::workspace::Workspace;
 use crate::workspace::project::PROJECT_FILE_EXT;

@@ -1,19 +1,19 @@
 use crate::actions::{
-    AddTestCase, AddTestStep, AddTestSuite, Duplicate, PROJECT_TREE_CONTEXT_KEY, RemoveNode,
-    Rename, SwitchNodeActiveStatus,
+  AddTestCase, AddTestStep, AddTestSuite, Duplicate, PROJECT_TREE_CONTEXT_KEY, RemoveNode,
+  Rename, SwitchNodeActiveStatus,
 };
 use crate::ui::components::tree::{
-    KiTree, KiTreeDelegate, KiTreeEvent, KiTreeState, ProjectTreeEntry,
+  KiTree, KiTreeDelegate, KiTreeEvent, KiTreeState, ProjectTreeEntry,
 };
-use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTab;
+use crate::ui::views::side_bar::project_configuration::ProjectConfigurationTab;
 use crate::workspace::{Project, TestCase, TestNodeKind, TestStep, TestSuite};
 use gpui_kit::component::{
-    ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt,
-    button::{Button, ButtonVariants},
-    h_flex,
-    input::{Input, InputEvent, InputState},
-    menu::{ContextMenuExt, PopupMenu},
-    v_flex,
+  ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt,
+  button::{Button, ButtonVariants},
+  h_flex,
+  input::{Input, InputEvent, InputState},
+  menu::{ContextMenuExt, PopupMenu},
+  v_flex,
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;

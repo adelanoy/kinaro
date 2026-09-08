@@ -1,10 +1,12 @@
-use crate::ui::views::sidebar::project_configuration::ProjectConfigurationTab;
+use crate::actions::{Delete, Duplicate, Escape};
+use crate::ui::views::side_bar::project_configuration::ProjectConfigurationTab;
 use crate::workspace::Project;
 use crate::workspace::variable::{ProfileInfo, ProjectVariables, VariableReference};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::label::Label;
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
+use gpui_kit::component::separator::Separator;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
 use gpui_kit::component::{
@@ -14,7 +16,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
 use ki_project::VariableKind;
-use ki_utils::ui::CellState;
+use ki_utils::ui::{CellState, MovingLabel};
 use uuid::Uuid;
 
 pub(super) struct VariableEditor {
@@ -31,14 +33,9 @@ impl VariableEditor {
         cx: &mut Context<Self>,
     ) {
         table.update(cx, |this, cx| match event {
-            TableEvent::SelectCell(row_ix, col_ix) => {
-                if *col_ix == 0 {
-                    this.clear_selection(cx);
-                    return;
-                }
-                this.delegate_mut()
-                    .on_cell_selected(*row_ix, *col_ix, window, cx)
-            }
+            TableEvent::SelectCell(row_ix, col_ix) => this
+                .delegate_mut()
+                .on_cell_selected(*row_ix, *col_ix, window, cx),
             TableEvent::DoubleClickedCell(row_ix, col_ix) => {
                 if *col_ix == 0 {
                     this.clear_selection(cx);
@@ -47,15 +44,44 @@ impl VariableEditor {
                 this.delegate_mut()
                     .on_cell_edited(*row_ix, *col_ix, window, cx)
             }
-            TableEvent::SelectRow(ix) => {
-                this.delegate_mut().on_row_selected(*ix, window, cx);
-            }
             TableEvent::ClearSelection => {
                 this.delegate_mut().cell_state = CellState::Unselected;
                 this.delegate_mut()._cell_input_sub = None;
             }
             _ => {}
         });
+    }
+
+    fn on_delete_row_action(
+        &mut self,
+        _action: &Delete,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.table_state.update(cx, |this, cx| {
+            this.delegate_mut().delete_variable(window, cx);
+        });
+    }
+
+    fn on_duplicate_row_action(
+        &mut self,
+        _action: &Duplicate,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.table_state.update(cx, |table_state, cx| {
+            table_state.delegate_mut().duplicate_variable(window, cx);
+        });
+    }
+
+    fn on_clear_selection(
+        &mut self,
+        _action: &Escape,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.table_state
+            .update(cx, |table_state, cx| table_state.clear_selection(cx));
     }
 }
 
@@ -109,9 +135,6 @@ impl VariableDataTableDelegate {
         cx: &mut Context<TableState<Self>>,
     ) -> Self {
         let table_columns = vec![
-            Column::new("var_action", "action")
-                .width(px(75.0))
-                .fixed_left(),
             Column::new("var_name", "Name").width(px(150.0)),
             Column::new("var_kind", "Type").width(px(120.0)),
             Column::new("var_value", "Value").width(px(200.0)),
@@ -131,21 +154,6 @@ impl VariableDataTableDelegate {
 
         let profile_select_state =
             cx.new(|cx| SelectState::new(profile_infos, Some(IndexPath::default()), window, cx));
-        cx.subscribe_in(
-            &profile_select_state,
-            window,
-            |_, _, e: &SelectEvent<Vec<ProfileInfo>>, _, _| match e {
-                SelectEvent::Confirm(value) => {
-                    if let Some(selected_value) = value {
-                        println!("Selected: {:?}", selected_value);
-                    } else {
-                        println!("Selection cleared");
-                    }
-                }
-            },
-        )
-        .detach();
-
         let cell_input_state = cx.new(|cx| InputState::new(window, cx));
         let var_kind_select_state = cx.new(|cx| {
             SelectState::new(
@@ -188,7 +196,7 @@ impl VariableDataTableDelegate {
 
     fn add_variable(&self, cx: &mut Context<TableState<Self>>) {
         let current_row = match self.cell_state {
-            CellState::RowSelected(row_ix) | CellState::CellSelected(row_ix) => Some(row_ix),
+            CellState::CellSelected(row_ix) => Some(row_ix),
             CellState::Unselected => None,
             _ => {
                 return;
@@ -199,66 +207,48 @@ impl VariableDataTableDelegate {
             .update(cx, |this, cx| this.add_variable(current_row, name, cx));
     }
 
-    fn delete_variable(
-        &mut self,
-        row_ix: usize,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) -> bool {
-        let result = self
-            .project_vars
-            .update(cx, |this, cx| this.delete_variable(row_ix, cx));
-        match result {
-            Ok(_) => true,
-            Err(err) => {
-                window.push_notification(err, cx);
-                false
-            }
-        }
-    }
-
-    fn delete_selected_variable(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
-        let current_row = match self.cell_state {
-            CellState::RowSelected(row_ix) | CellState::CellSelected(row_ix) => row_ix,
+    fn delete_variable(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+        let row_ix = match self.cell_state {
+            CellState::CellSelected(row_ix) => row_ix,
             _ => {
                 return;
             }
         };
-
-        if self.delete_variable(current_row, window, cx)
-            && current_row >= self.project_vars.read(cx).references.len()
+        if let Err(err) = self
+            .project_vars
+            .update(cx, |this, cx| this.delete_variable(row_ix, cx))
         {
-            self.cell_state = CellState::Unselected
+            window.push_notification(err, cx);
         }
+        cx.notify();
     }
 
-    fn duplicate_profile(
-        &mut self,
-        row_ix: usize,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
+    fn duplicate_variable(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+        let row_ix = match self.cell_state {
+            CellState::CellSelected(row_ix) => row_ix,
+            _ => {
+                return;
+            }
+        };
         if let Err(err) = self
             .project_vars
             .update(cx, |this, cx| this.duplicate_variable(row_ix, cx))
         {
             window.push_notification(err, cx);
         }
+        cx.notify();
     }
 
-    fn revert_profile(
+    fn revert_overridden_variable(
         &mut self,
         row_ix: usize,
         profile_id: Uuid,
         cx: &mut Context<TableState<Self>>,
     ) {
         let var_id = self.project_vars.read(cx).references[row_ix].id;
-        self.project_vars
-            .update(cx, |this, cx| this.revert_profile(var_id, profile_id, cx));
+        self.project_vars.update(cx, |this, cx| {
+            this.revert_overridden_variable(var_id, profile_id, cx)
+        });
     }
 
     fn on_cell_selected(
@@ -285,19 +275,6 @@ impl VariableDataTableDelegate {
         self.cell_state = CellState::CellSelected(row_ix);
     }
 
-    fn on_row_selected(
-        &mut self,
-        row_ix: usize,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
-        if matches!(self.cell_state, CellState::CellEdited(_, _, _)) {
-            self.update_variable(window, cx);
-            self._cell_input_sub = None;
-        }
-        self.cell_state = CellState::RowSelected(row_ix);
-    }
-
     fn on_cell_edited(
         &mut self,
         row_ix: usize,
@@ -321,7 +298,7 @@ impl VariableDataTableDelegate {
             .unwrap()
             .clone();
         match col_ix {
-            1 => {
+            0 => {
                 self.cell_input_state.update(cx, |state, cx| {
                     state.set_value(var.name.clone(), window, cx);
                     state.focus(window, cx);
@@ -341,13 +318,13 @@ impl VariableDataTableDelegate {
                     },
                 ));
             }
-            2 => {
+            1 => {
                 self.var_kind_select_state.update(cx, |state, cx| {
                     state.set_selected_value(&var.kind, window, cx);
                     state.focus(window, cx);
                 });
             }
-            3 => {
+            2 => {
                 self.cell_input_state.update(cx, |state, cx| {
                     state.set_value(var.value.clone(), window, cx);
                     state.focus(window, cx);
@@ -367,7 +344,7 @@ impl VariableDataTableDelegate {
                     },
                 ));
             }
-            4 => {
+            3 => {
                 self.cell_input_state.update(cx, |state, cx| {
                     state.set_value(var.description.clone(), window, cx);
                     state.focus(window, cx);
@@ -441,6 +418,21 @@ impl VariableDataTableDelegate {
             window.push_notification(err, cx);
         }
     }
+
+    fn move_variable(
+        &mut self,
+        from: usize,
+        to: usize,
+        window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) {
+        if let Err(err) = self
+            .project_vars
+            .update(cx, |this, cx| this.move_variable(from, to, cx))
+        {
+            window.push_notification(err, cx);
+        }
+    }
 }
 
 impl TableDelegate for VariableDataTableDelegate {
@@ -456,6 +448,40 @@ impl TableDelegate for VariableDataTableDelegate {
         self.table_columns[col_ix].clone()
     }
 
+    fn render_tr(
+        &mut self,
+        row_ix: usize,
+        _window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Stateful<Div> {
+        div()
+            .id(("row", row_ix))
+            .on_drag(
+                MovingLabel {
+                    label: self
+                        .project_vars
+                        .read(cx)
+                        .references
+                        .get(row_ix)
+                        .unwrap()
+                        .name
+                        .clone(),
+                    data: row_ix,
+                },
+                |drag, _, _, cx| {
+                    cx.stop_propagation();
+                    cx.new(|_| drag.clone())
+                },
+            )
+            .on_drop(
+                cx.listener(move |table, e: &MovingLabel<usize>, window, cx| {
+                    table
+                        .delegate_mut()
+                        .move_variable(e.data, row_ix, window, cx);
+                }),
+            )
+    }
+
     fn render_td(
         &mut self,
         row_ix: usize,
@@ -463,97 +489,77 @@ impl TableDelegate for VariableDataTableDelegate {
         _window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
-        let profile_id = if self.switch_on {
-            self.profile_select_state.read(cx).selected_value().copied()
-        } else {
-            None
-        };
-        if col_ix == 0 {
-            return h_flex()
-                .gap_x_2()
-                .items_center()
-                .child(
-                    Button::new("btn-delete-var")
-                        .xsmall()
-                        .ghost()
-                        .icon(IconName::Delete)
-                        .on_click({
-                            let table = cx.entity();
-                            move |_, window, cx| {
-                                cx.stop_propagation();
-                                table.update(cx, |table, cx| {
-                                    table.delegate_mut().delete_variable(row_ix, window, cx);
-                                });
-                            }
-                        }),
-                )
-                .child(
-                    Button::new("btn-duplicate-var")
-                        .xsmall()
-                        .ghost()
-                        .icon(IconName::Copy)
-                        .on_click({
-                            let table = cx.entity();
-                            move |_, window, cx| {
-                                cx.stop_propagation();
-                                table.update(cx, |table, cx| {
-                                    table.delegate_mut().duplicate_profile(row_ix, window, cx);
-                                });
-                            }
-                        }),
-                )
-                .when_some(profile_id, |this, profile_id| {
-                    this.child(
-                        Button::new("btn-revert-var")
-                            .xsmall()
-                            .ghost()
-                            .icon(IconName::Undo)
-                            .on_click({
-                                let table = cx.entity();
-                                move |_, _, cx| {
-                                    cx.stop_propagation();
-                                    table.update(cx, |table, cx| {
-                                        table.delegate_mut().revert_profile(row_ix, profile_id, cx);
-                                    });
-                                }
-                            }),
-                    )
-                })
-                .into_any_element();
-        };
-
         let var = &self.project_vars.read(cx).references[row_ix];
         match &self.cell_state {
             CellState::CellEdited(row, col, _) if *row == row_ix && *col == col_ix => {
                 match col_ix {
-                    1 | 3 | 4 => Input::new(&self.cell_input_state)
+                    0 | 2 | 3 => Input::new(&self.cell_input_state)
                         .small()
                         .into_any_element(),
-                    2 => Select::new(&self.var_kind_select_state)
+                    1 => Select::new(&self.var_kind_select_state)
                         .small()
                         .into_any_element(),
                     _ => unreachable!(),
                 }
             }
             _ => match col_ix {
-                1 => var.name.clone().into_any_element(),
-                2 => SharedString::new(format!("{}", var.kind)).into_any_element(),
-                3 => if let Some(profile_id) = profile_id {
-                    if let Some(overridden_var) =
-                        self.project_vars.read(cx).find_override(var.id, profile_id)
-                    {
-                        Label::new(overridden_var).text_color(cx.theme().green)
-                    } else {
-                        Label::new(var.value.clone())
+                0 => var.name.clone().into_any_element(),
+                1 => SharedString::new(format!("{}", var.kind)).into_any_element(),
+                2 => {
+                    if !self.switch_on {
+                        return Label::new(var.value.clone()).into_any_element();
                     }
-                } else {
-                    Label::new(var.value.clone())
+                    let Some(profile_id) =
+                        self.profile_select_state.read(cx).selected_value().copied()
+                    else {
+                        return Label::new(var.value.clone()).into_any_element();
+                    };
+                    let Some(overridden_var) = self
+                        .project_vars
+                        .read(cx)
+                        .find_override(var.id, &profile_id)
+                    else {
+                        return Label::new(var.value.clone()).into_any_element();
+                    };
+                    h_flex()
+                        .size_full()
+                        .justify_between()
+                        .child(Label::new(overridden_var).text_color(cx.theme().green))
+                        .child(
+                            Button::new("btn-revert-var")
+                                .xsmall()
+                                .ghost()
+                                .icon(IconName::Undo)
+                                .on_click({
+                                    let table = cx.entity();
+                                    move |_, _, cx| {
+                                        cx.stop_propagation();
+                                        table.update(cx, |table, cx| {
+                                            table
+                                                .delegate_mut()
+                                                .revert_overridden_variable(row_ix, profile_id, cx);
+                                        });
+                                    }
+                                }),
+                        )
+                        .into_any_element()
                 }
-                .into_any_element(),
-                4 => var.description.clone().into_any_element(),
+                3 => var.description.clone().into_any_element(),
                 _ => unreachable!(),
             },
         }
+    }
+
+    fn render_empty(
+        &mut self,
+        _window: &mut Window,
+        _cx: &mut Context<TableState<Self>>,
+    ) -> impl IntoElement {
+        div()
+            .size_full()
+            .items_center()
+            .child("No Data")
+            .into_any_element()
     }
 }
 
@@ -562,7 +568,7 @@ impl Render for VariableEditor {
         let table_state = self.table_state.clone();
         let switch_on = table_state.read(cx).delegate().switch_on;
         let profile_select_state = &table_state.read(cx).delegate().profile_select_state;
-        let (is_editing, no_row_selected) = self.table_state.read_with(cx, |this, _| {
+        let (is_editing, no_selection) = self.table_state.read_with(cx, |this, _| {
             let delegate = this.delegate();
             (
                 matches!(delegate.cell_state, CellState::CellEdited(_, _, _)),
@@ -572,6 +578,9 @@ impl Render for VariableEditor {
 
         v_flex()
             .track_focus(&self.focus_handle)
+            .on_action(cx.listener(Self::on_delete_row_action))
+            .on_action(cx.listener(Self::on_duplicate_row_action))
+            .on_action(cx.listener(Self::on_clear_selection))
             .p_1()
             .size_full()
             .gap_y_2()
@@ -605,11 +614,32 @@ impl Render for VariableEditor {
                             .gap_x_2()
                             .flex_row_reverse()
                             .child(
-                                Button::new("btn-add-variable")
+                                Button::new("btn-delete-variable")
                                     .ghost()
                                     .small()
-                                    .disabled(is_editing)
-                                    .icon(IconName::Plus)
+                                    .disabled(is_editing || no_selection)
+                                    .icon(IconName::Delete)
+                                    .tooltip_with_action(
+                                        "Delete the selected variable",
+                                        &Delete,
+                                        None,
+                                    )
+                                    .on_click(move |_, window, cx| {
+                                        window.dispatch_action(Box::new(Delete), cx);
+                                    }),
+                            )
+                            .child(Separator::vertical())
+                            .child(
+                                Button::new("btn-duplicate-variable")
+                                    .ghost()
+                                    .small()
+                                    .disabled(is_editing || no_selection)
+                                    .icon(IconName::Copy)
+                                    .tooltip_with_action(
+                                        "Duplicate the selected variable",
+                                        &Duplicate,
+                                        None,
+                                    )
                                     .on_click({
                                         let table_state = table_state.clone();
                                         move |_, _, cx| {
@@ -620,17 +650,17 @@ impl Render for VariableEditor {
                                     }),
                             )
                             .child(
-                                Button::new("btn-delete-variable")
+                                Button::new("btn-add-variable")
                                     .ghost()
                                     .small()
-                                    .disabled(is_editing || no_row_selected)
-                                    .icon(IconName::Delete)
+                                    .disabled(is_editing)
+                                    .icon(IconName::Plus)
+                                    .tooltip("Adds a new variable")
                                     .on_click({
                                         let table_state = table_state.clone();
-                                        move |_, window, cx| {
+                                        move |_, _, cx| {
                                             table_state.update(cx, |this, cx| {
-                                                this.delegate_mut()
-                                                    .delete_selected_variable(window, cx);
+                                                this.delegate_mut().add_variable(cx);
                                             });
                                         }
                                     }),
