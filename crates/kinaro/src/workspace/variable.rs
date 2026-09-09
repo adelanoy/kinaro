@@ -36,7 +36,6 @@ impl ProjectVariables {
       id: Uuid::new_v4(),
       name: SharedString::new(name),
       description: Default::default(),
-      effective_values: Default::default(),
     };
     if let Some(index) = index {
       if index > self.profiles.len() - 1 {
@@ -57,7 +56,11 @@ impl ProjectVariables {
   /// Emits a [`ProjectVariablesEvent::ProfilesChanged`] if the profile was deleted
   pub fn delete_profile(&mut self, index: usize, cx: &mut Context<Self>) -> Result<()> {
     if index > self.profiles.len() - 1 {
-      warn!("Failed to delete profile at row: {} (max: {})", index, self.profiles.len() - 1);
+      warn!(
+        "Failed to delete profile at row: {} (max: {})",
+        index,
+        self.profiles.len() - 1
+      );
       return Err(ProjectError::ProfileNotFound);
     }
     self.profiles.remove(index);
@@ -152,6 +155,7 @@ impl ProjectVariables {
       description: Default::default(),
       kind: VariableKind::Text,
       value: SharedString::new(""),
+      overrides: HashMap::new(),
     };
     if let Some(index) = index {
       if index > self.references.len() - 1 {
@@ -165,7 +169,6 @@ impl ProjectVariables {
     cx.emit(ProjectVariablesEvent::VariablesChanged);
   }
 
-  //noinspection RsExternalLinter
   /// Deletes a variable
   /// # Result
   /// Returns a [`ProjectError::VariableNotFound`] if the index is out of bound
@@ -173,7 +176,11 @@ impl ProjectVariables {
   /// Emits a [`ProjectVariablesEvent::VariablesChanged`] if the profile was deleted
   pub fn delete_variable(&mut self, index: usize, cx: &mut Context<Self>) -> Result<()> {
     if index > self.references.len() - 1 {
-      warn!("Failed to delete variable at row: {} (max: {})", index, self.references.len() - 1);
+      warn!(
+        "Failed to delete variable at row: {} (max: {})",
+        index,
+        self.references.len() - 1
+      );
       return Err(ProjectError::VariableNotFound);
     }
     self.references.remove(index);
@@ -207,44 +214,44 @@ impl ProjectVariables {
     Ok(())
   }
 
-  pub fn find_override(&self, var_id: Uuid, profile_id: &Uuid) -> Option<SharedString> {
-    let profile = self.profiles.iter().find(|p| p.id == *profile_id)?;
-    profile.effective_values.get(&var_id).cloned()
-  }
-
-  pub fn revert_overridden_variable(&mut self, var_id: Uuid, profile_id: Uuid, cx: &mut Context<ProjectVariables>) {
-    if let Some(profile) = self.profiles.iter_mut().find(|p| p.id == profile_id)
-      && profile.effective_values.remove(&var_id).is_some()
-    {
-      cx.emit(ProjectVariablesEvent::VariablesChanged);
-    }
-  }
-
   /// Merges a variable attributes.
   ///
   /// If a profile id is provided, the profile's override value is updated, else the reference value is updated
   /// # Result
   ///
   /// Returns a [`ProjectError::VariableNotFound`] if the profile could not be found by its id
-  pub fn update_variable(&mut self, profile_id: Option<Uuid>, updated_variable: &VariableReference, cx: &mut Context<Self>) -> Result<()> {
+  pub fn update_variable(
+    &mut self,
+    profile_id: Option<Uuid>,
+    updated_variable: &VariableReference,
+    cx: &mut Context<Self>,
+  ) -> Result<()> {
     let Some(var) = self.references.iter_mut().find(|p| p.id == updated_variable.id) else {
       warn!("Attempt to edit non existing variable with id: {}", updated_variable.id);
       return Err(ProjectError::VariableNotFound);
     };
 
-    if updated_variable != var {
-      var.name = updated_variable.name.clone();
-      var.description = updated_variable.description.clone();
-      var.kind = updated_variable.kind;
-      cx.emit(ProjectVariablesEvent::VariablesChanged);
-    }
-    if let Some(profile_id) = profile_id {
-      if let Some(profile) = self.profiles.iter_mut().find(|p| p.id == profile_id) {
-        profile.effective_values.insert(updated_variable.id, updated_variable.value.clone());
+    if updated_variable == var {
+      if let Some(profile_id) = profile_id
+        && self.profiles.iter().any(|p| p.id == profile_id)
+      {
+        var.overrides.remove(&profile_id);
+        cx.emit(ProjectVariablesEvent::VariablesChanged);
       }
-    } else {
-      var.value = updated_variable.value.clone();
+      return Ok(());
     }
+
+    var.name = updated_variable.name.clone();
+    var.description = updated_variable.description.clone();
+    var.kind = updated_variable.kind;
+    if updated_variable.value != var.value
+      && let Some(profile_id) = profile_id
+      && self.profiles.iter().any(|p| p.id == profile_id)
+    {
+      var.overrides.insert(profile_id, updated_variable.value.clone());
+    }
+
+    cx.emit(ProjectVariablesEvent::VariablesChanged);
     Ok(())
   }
 
@@ -263,14 +270,14 @@ impl ProjectVariables {
   }
 
   ///// CONVERSION
-  pub(super) fn from_file(file_vars: &FileProjectVariables) -> Self {
-    let variables: Vec<VariableReference> = file_vars.variables.iter().map(VariableReference::from_file).collect();
-    let variable_ref: HashMap<Uuid, SharedString> = variables.iter().map(|var| (var.id, var.value.clone())).collect();
-    let profiles = file_vars
-      .profiles
-      .iter()
-      .map(|file_profile| Profile::from_file(file_profile, &variable_ref))
-      .collect::<Vec<Profile>>();
+  pub(super) fn from_file(file_vars: FileProjectVariables) -> Self {
+    let profiles = file_vars.profiles.iter().map(Profile::from_file).collect::<Vec<Profile>>();
+    let profile_ids: Vec<Uuid> = profiles.iter().map(|p| p.id).collect();
+    let variables: Vec<VariableReference> = file_vars
+      .variables
+      .into_iter()
+      .map(|file_var| VariableReference::from_file(file_var, &profile_ids))
+      .collect();
 
     ProjectVariables {
       references: variables,
@@ -295,16 +302,23 @@ pub struct VariableReference {
   pub description: SharedString,
   pub kind: VariableKind,
   pub value: SharedString,
+  overrides: HashMap<Uuid, SharedString>,
 }
 
 impl VariableReference {
-  fn from_file(file_profile: &FileVariable) -> Self {
+  fn from_file(file_vars: FileVariable, profiles: &[Uuid]) -> Self {
     Self {
-      id: file_profile.id,
-      name: SharedString::new(&file_profile.name),
-      description: SharedString::new(&file_profile.description),
-      kind: file_profile.kind,
-      value: SharedString::new(&file_profile.value),
+      id: file_vars.id,
+      name: SharedString::new(&file_vars.name),
+      description: SharedString::new(&file_vars.description),
+      kind: file_vars.kind,
+      value: SharedString::new(&file_vars.value),
+      overrides: file_vars
+        .overrides
+        .into_iter()
+        .filter(|(profile_id, _)| profiles.contains(profile_id))
+        .map(|(profile_id, value)| (profile_id, SharedString::new(value)))
+        .collect(),
     }
   }
 
@@ -315,6 +329,24 @@ impl VariableReference {
       description: self.description.to_string(),
       kind: self.kind,
       value: self.value.to_string(),
+      overrides: self
+        .overrides
+        .iter()
+        .map(|(profile_id, value)| (*profile_id, value.to_string()))
+        .collect(),
+    }
+  }
+
+  pub fn find_override(&self, profile_id: &Uuid) -> Option<SharedString> {
+    self
+      .overrides
+      .iter()
+      .find_map(|(id, value)| if id == profile_id { Some(value.clone()) } else { None })
+  }
+
+  pub fn revert_override(&mut self, profile_id: Uuid, cx: &mut Context<ProjectVariables>) {
+    if self.overrides.remove(&profile_id).is_some() {
+      cx.emit(ProjectVariablesEvent::VariablesChanged);
     }
   }
 }
@@ -324,40 +356,22 @@ pub struct Profile {
   pub id: Uuid,
   pub name: SharedString,
   pub description: SharedString,
-  pub effective_values: HashMap<Uuid, SharedString>,
 }
 
 impl Profile {
-  fn from_file(file_profile: &FileProfile, variable_references: &HashMap<Uuid, SharedString>) -> Self {
-    let effective_values = file_profile
-      .overrides
-      .iter()
-      .filter_map(|(id, value)| {
-        variable_references.get(id).map(|ref_value| {
-          if ref_value == value {
-            None
-          } else {
-            Some((*id, SharedString::new(value)))
-          }
-        })?
-      })
-      .collect();
+  fn from_file(file_profile: &FileProfile) -> Self {
     Self {
       id: file_profile.id,
       name: SharedString::new(&file_profile.name),
       description: SharedString::new(&file_profile.description),
-      effective_values,
     }
   }
 
   fn to_file(&self) -> FileProfile {
-    let overrides = self.effective_values.iter().map(|(id, value)| (*id, value.to_string())).collect();
-
     FileProfile {
       id: self.id,
       name: self.name.to_string(),
       description: self.description.to_string(),
-      overrides,
     }
   }
 }

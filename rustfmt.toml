@@ -1,5 +1,5 @@
 edition = "2024"
-max_width = 140
+max_width = 130
 tab_spaces = 2
 wrap_comments = true
 comment_width = 140

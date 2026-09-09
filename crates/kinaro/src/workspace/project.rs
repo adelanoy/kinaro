@@ -107,7 +107,7 @@ impl Project {
       error
     })?;
     let this = cx.new(|cx| {
-      let variables = cx.new(|_| ProjectVariables::from_file(&file_project.variables));
+      let variables = cx.new(|_| ProjectVariables::from_file(file_project.variables));
       let _variables_event_sub = cx.subscribe(&variables, Self::on_profiles_variables_event);
       let endpoints = WorkspaceEndpoint::from_file(&file_project.endpoints);
       let tests = cx.new(|_| TestsContainer::from_file(file_project.tests));

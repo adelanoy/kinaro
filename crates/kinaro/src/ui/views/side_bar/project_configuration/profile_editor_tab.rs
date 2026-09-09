@@ -4,6 +4,7 @@ use crate::workspace::Project;
 use crate::workspace::variable::{ProfileInfo, ProjectVariables};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::label::Label;
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
 use gpui_kit::component::{Disableable, Icon, IconName, Sizable, WindowExt, h_flex, v_flex};
@@ -94,7 +95,9 @@ impl ProfileDataTableDelegate {
   fn new(project: Entity<Project>, window: &mut Window, cx: &mut Context<TableState<Self>>) -> Self {
     let table_columns = vec![
       Column::new("profile_short_name", "Name").width(px(180.0)).resizable(true),
-      Column::new("profile_description", "Description").width(px(300.0)).resizable(false),
+      Column::new("profile_description", "Description")
+        .width(px(300.0))
+        .resizable(false),
     ];
 
     let cell_input_state = cx.new(|cx| InputState::new(window, cx));
@@ -147,11 +150,13 @@ impl ProfileDataTableDelegate {
           state.set_value(name, window, cx);
           state.focus(window, cx);
         });
-        self._cell_input_sub = Some(
-          cx.subscribe_in(&self.cell_input_state, window, move |table, input_state, event, window, cx| {
+        self._cell_input_sub = Some(cx.subscribe_in(
+          &self.cell_input_state,
+          window,
+          move |table, input_state, event, window, cx| {
             Self::on_cell_input_event(table, input_state, event, window, cx, |profile, value| profile.name = value)
-          }),
-        );
+          },
+        ));
       }
       1 => {
         self.cell_input_state.update(cx, |state, cx| {
@@ -159,11 +164,15 @@ impl ProfileDataTableDelegate {
           state.set_value(description, window, cx);
           state.focus(window, cx);
         });
-        self._cell_input_sub = Some(
-          cx.subscribe_in(&self.cell_input_state, window, move |table, input_state, event, window, cx| {
-            Self::on_cell_input_event(table, input_state, event, window, cx, |profile, value| profile.description = value)
-          }),
-        );
+        self._cell_input_sub = Some(cx.subscribe_in(
+          &self.cell_input_state,
+          window,
+          move |table, input_state, event, window, cx| {
+            Self::on_cell_input_event(table, input_state, event, window, cx, |profile, value| {
+              profile.description = value
+            })
+          },
+        ));
       }
       _ => unreachable!(),
     }
@@ -189,7 +198,10 @@ impl ProfileDataTableDelegate {
           f(data, text);
         }
       }
-      InputEvent::PressEnter { secondary: _, shift: _ } | InputEvent::Blur => table.delegate_mut().end_edit_cell(window, cx),
+      InputEvent::PressEnter { secondary: _, shift: _ } | InputEvent::Blur => {
+        table.delegate_mut().end_edit_cell(window, cx);
+        table.focus_handle(cx).focus(window, cx);
+      }
       _ => {}
     }
   }
@@ -219,7 +231,9 @@ impl ProfileDataTableDelegate {
       }
     };
     let name = "new profile";
-    self.project_vars.update(cx, |this, cx| this.add_profile(current_row, name, cx));
+    self
+      .project_vars
+      .update(cx, |this, cx| this.add_profile(current_row, name, cx));
   }
 
   fn delete_profile(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
@@ -269,38 +283,46 @@ impl TableDelegate for ProfileDataTableDelegate {
   }
 
   fn render_tr(&mut self, row_ix: usize, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> Stateful<Div> {
-    div()
-      .id(("row", row_ix))
-      .on_drag(
-        MovingLabel {
-          label: self.project_vars.read(cx).profiles.get(row_ix).unwrap().name.clone(),
-          data: row_ix,
-        },
-        |drag, _, _, cx| {
-          cx.stop_propagation();
-          cx.new(|_| drag.clone())
-        },
-      )
-      .on_drop(cx.listener(move |table, e: &MovingLabel<usize>, window, cx| {
-        table.delegate_mut().move_profile(e.data, row_ix, window, cx);
-      }))
+    let is_editing = matches!(self.cell_state, CellState::CellEdited(_, _, _));
+    div().id(("row", row_ix)).when(!is_editing, |this| {
+      this
+        .on_drag(
+          MovingLabel {
+            label: self.project_vars.read(cx).profiles.get(row_ix).unwrap().name.clone(),
+            data: row_ix,
+          },
+          |drag, _, _, cx| {
+            cx.stop_propagation();
+            cx.new(|_| drag.clone())
+          },
+        )
+        .on_drop(cx.listener(move |table, e: &MovingLabel<usize>, window, cx| {
+          table.delegate_mut().move_profile(e.data, row_ix, window, cx);
+        }))
+    })
   }
 
-  fn render_td(&mut self, row_ix: usize, col_ix: usize, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> impl IntoElement {
+  fn render_td(
+    &mut self,
+    row_ix: usize,
+    col_ix: usize,
+    _window: &mut Window,
+    cx: &mut Context<TableState<Self>>,
+  ) -> impl IntoElement {
     match &self.cell_state {
       CellState::CellEdited(row, col, _) if *row == row_ix && *col == col_ix => match col_ix {
         0 | 1 => Input::new(&self.cell_input_state).small(),
         _ => unreachable!(),
       }
-        .into_any_element(),
+      .into_any_element(),
       _ => {
         let profile = self.project_vars.read(cx).profiles.get(row_ix).unwrap();
-        match col_ix {
+        let value = match col_ix {
           0 => profile.name.clone(),
           1 => profile.description.clone(),
           _ => unreachable!(),
-        }
-          .into_any_element()
+        };
+        h_flex().size_full().child(Label::new(value)).into_any_element()
       }
     }
   }

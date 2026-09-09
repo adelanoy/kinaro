@@ -19,18 +19,7 @@ pub struct FileVariable {
   pub description: String,
   pub kind: VariableKind,
   pub value: String,
-}
-
-impl Default for FileVariable {
-  fn default() -> Self {
-    FileVariable {
-      id: Uuid::new_v4(),
-      name: String::new(),
-      description: String::new(),
-      kind: VariableKind::Text,
-      value: String::new(),
-    }
-  }
+  pub overrides: HashMap<Uuid, String>,
 }
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Copy, Clone, Debug)]
@@ -67,7 +56,6 @@ pub struct FileProfile {
   pub id: Uuid,
   pub name: String,
   pub description: String,
-  pub overrides: HashMap<Uuid, String>,
 }
 
 impl PartialEq for FileProfile {
