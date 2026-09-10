@@ -32,11 +32,11 @@ pub struct Project {
   pub endpoints: Vec<WorkspaceEndpoint>,
   pub tests: Entity<TestsContainer>,
   // unserialized data
+  pub(super) path: PathBuf,
   _variables_event_sub: Subscription,
   _tests_event_sub: Subscription,
   active_profile: Option<Uuid>,
   opened_tree_nodes: HashSet<Uuid>,
-  pub(super) path: PathBuf,
 }
 
 impl Project {
