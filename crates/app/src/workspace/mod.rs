@@ -420,12 +420,10 @@ impl Workspace {
   fn on_project_event(
     &mut self,
     _project: Entity<Project>,
-    event: &ProjectEvent,
+    _event: &ProjectEvent,
     cx: &mut Context<Self>,
   ) {
-    match event {
-      _ => self.save(cx),
-    }
+    self.save(cx);
   }
 }
 
