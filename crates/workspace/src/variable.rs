@@ -1,11 +1,9 @@
-use crate::error::ProjectError;
-use crate::project;
+use crate::error::{ProjectResult, ProjectError};
 use gpui_kit::component::select::SelectItem;
 use gpui_kit::{Context, EventEmitter, SharedString};
 use ki_project::{FileProfile, FileProjectVariables, FileVariable, FileVariableKind};
 use ki_utils::ui::next_available_name;
 use log::warn;
-use project::Result;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
@@ -81,7 +79,7 @@ impl ProjectVariables {
   /// # Events
   /// Emits a [`ProjectVariablesEvent::ProfilesChanged`]
   pub fn add_profile(&mut self, index: Option<usize>, name: &str, cx: &mut Context<Self>) {
-    let name = next_available_name(name, &mut self.profiles.iter().map(|p| &p.name));
+    let name = next_available_name(name, self.profiles.iter().map(|p| p.name.clone()));
     let new_profile = Profile {
       id: Uuid::new_v4(),
       name: SharedString::new(name),
@@ -104,7 +102,7 @@ impl ProjectVariables {
   /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
   /// # Events
   /// Emits a [`ProjectVariablesEvent::ProfilesChanged`] if the profile was deleted
-  pub fn delete_profile(&mut self, index: usize, cx: &mut Context<Self>) -> Result<()> {
+  pub fn delete_profile(&mut self, index: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
     if index > self.profiles.len() - 1 {
       warn!(
         "Failed to delete profile at row: {} (max: {})",
@@ -125,14 +123,14 @@ impl ProjectVariables {
   /// Returns a [`ProjectError::ProfileNotFound`] if the row is out of bound
   /// # Events
   /// Emits a [`ProjectVariablesEvent::ProfilesChanged`] if the profile
-  pub fn duplicate_profile(&mut self, index: usize, cx: &mut Context<Self>) -> Result<()> {
+  pub fn duplicate_profile(&mut self, index: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
     let Some(profile) = self.profiles.get(index) else {
       warn!("Failed to duplicate profile at index: {}", index);
       return Err(ProjectError::ProfileNotFound);
     };
     let mut duplicated_profile = profile.clone();
     duplicated_profile.id = Uuid::new_v4();
-    duplicated_profile.name = next_available_name(&profile.name, &mut self.profiles.iter().map(|p| &p.name));
+    duplicated_profile.name = next_available_name(&profile.name, self.profiles.iter().map(|p| p.name.clone()));
 
     let index = index + 1;
     if index >= self.profiles.len() {
@@ -150,7 +148,7 @@ impl ProjectVariables {
   /// Returns a copy of the new profiles list
   ///
   /// Returns a [`ProjectError::ProfileNotFound`] if both indexes are identical, or if either one of them is out of bound
-  pub fn move_profile(&mut self, from_ix: usize, to_ix: usize, cx: &mut Context<Self>) -> Result<()> {
+  pub fn move_profile(&mut self, from_ix: usize, to_ix: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
     if from_ix == to_ix {
       return Ok(());
     }
@@ -182,7 +180,7 @@ impl ProjectVariables {
   /// Returns a copy of the new profiles list if it was modified, else *None*
   ///
   /// Returns a [`ProjectError::ProfileNotFound`] if the profile could not be found by its id
-  pub fn update_profile(&mut self, updated_profile: &ProfileInfo, cx: &mut Context<Self>) -> Result<()> {
+  pub fn update_profile(&mut self, updated_profile: &ProfileInfo, cx: &mut Context<Self>) -> ProjectResult<()> {
     let Some(profile) = self.profiles.iter_mut().find(|p| p.id == updated_profile.id) else {
       warn!("Attempt to edit non existing profile with id: {}", updated_profile.id);
       return Err(ProjectError::ProfileNotFound);
@@ -198,7 +196,7 @@ impl ProjectVariables {
 
   ///// VARIABLES
   pub fn add_variable(&mut self, index: Option<usize>, name: &str, cx: &mut Context<Self>) {
-    let name = next_available_name(name, &mut self.references.iter().map(|p| &p.name));
+    let name = next_available_name(name, self.references.iter().map(|p| p.name.clone()));
     let new_var = VariableReference {
       id: Uuid::new_v4(),
       name: SharedString::new(name),
@@ -224,7 +222,7 @@ impl ProjectVariables {
   /// Returns a [`ProjectError::VariableNotFound`] if the index is out of bound
   /// # Events
   /// Emits a [`ProjectVariablesEvent::VariablesChanged`] if the profile was deleted
-  pub fn delete_variable(&mut self, index: usize, cx: &mut Context<Self>) -> Result<()> {
+  pub fn delete_variable(&mut self, index: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
     if index > self.references.len() - 1 {
       warn!(
         "Failed to delete variable at row: {} (max: {})",
@@ -245,14 +243,14 @@ impl ProjectVariables {
   /// Returns a [`ProjectError::VariableNotFound`] if the row is out of bound
   /// # Events
   /// Emits a [`ProjectVariablesEvent::VariablesChanged`] if the profile
-  pub fn duplicate_variable(&mut self, index: usize, cx: &mut Context<Self>) -> Result<()> {
+  pub fn duplicate_variable(&mut self, index: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
     let Some(var) = self.references.get(index) else {
       warn!("Failed to duplicate variable at index: {}", index);
       return Err(ProjectError::VariableNotFound);
     };
     let mut duplicated_var = var.clone();
     duplicated_var.id = Uuid::new_v4();
-    duplicated_var.name = next_available_name(&var.name, &mut self.references.iter().map(|p| &p.name));
+    duplicated_var.name = next_available_name(&var.name, self.references.iter().map(|p| p.name.clone()));
 
     let index = index + 1;
     if index >= self.references.len() {
@@ -275,7 +273,7 @@ impl ProjectVariables {
     profile_id: Option<Uuid>,
     updated_variable: &VariableReference,
     cx: &mut Context<Self>,
-  ) -> Result<()> {
+  ) -> ProjectResult<()> {
     let Some(var) = self.references.iter_mut().find(|p| p.id == updated_variable.id) else {
       warn!("Attempt to edit non existing variable with id: {}", updated_variable.id);
       return Err(ProjectError::VariableNotFound);
@@ -305,7 +303,7 @@ impl ProjectVariables {
     Ok(())
   }
 
-  pub fn move_variable(&mut self, from_ix: usize, to_ix: usize, cx: &mut Context<Self>) -> Result<()> {
+  pub fn move_variable(&mut self, from_ix: usize, to_ix: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
     if from_ix == to_ix {
       return Ok(());
     }

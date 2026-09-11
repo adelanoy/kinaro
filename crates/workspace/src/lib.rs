@@ -1,4 +1,4 @@
-use crate::error::{ProjectError, WorkspaceError};
+use crate::error::{ProjectError, WorkspaceError, WorkspaceResult};
 use gpui_kit::{App, Entity, EventEmitter, SharedString, Subscription};
 use gpui_kit::{AppContext, Context};
 use ki_settings::GlobalSettings;
@@ -23,8 +23,6 @@ pub use test::test_suite::TestSuite;
 
 const WORKSPACES_FILENAME: &str = "workspace.json";
 
-/// Result alias for Workspace
-pub type Result<T> = std::result::Result<T, WorkspaceError>;
 
 /// Serialized version of a workspace
 #[derive(Serialize, Deserialize, Default)]
@@ -212,7 +210,7 @@ impl Workspace {
   /// Emits a [`WorkspaceEvent::ActiveProjectChanged`] when the project is set as active
   /// # Returns
   /// If the project failed to load, returns a [`WorkspaceError::Project`]
-  pub fn open_project(&mut self, path: PathBuf, cx: &mut Context<Self>) -> Result<()> {
+  pub fn open_project(&mut self, path: PathBuf, cx: &mut Context<Self>) -> WorkspaceResult<()> {
     if !self.workspace_projects.contains_key(&path) {
       let metadata = FileProjectMetadata {
         path: path.clone(),
@@ -240,7 +238,7 @@ impl Workspace {
   ///
   /// # Events
   /// Emits a [`WorkspaceEvent::ProjectsChanged`] if the project is successfully removed from the workspace
-  pub fn reload_project(&mut self, project_path: PathBuf, cx: &mut Context<Self>) -> Result<bool> {
+  pub fn reload_project(&mut self, project_path: PathBuf, cx: &mut Context<Self>) -> WorkspaceResult<bool> {
     let updated_wp;
     {
       let Some(project) = self.workspace_projects.get_mut(&project_path) else {
@@ -260,7 +258,7 @@ impl Workspace {
     }
 
     if let Some(updated_wp) = updated_wp {
-      let result: Result<bool> = match &updated_wp.data {
+      let result: WorkspaceResult<bool> = match &updated_wp.data {
         WorkspaceProjectData::Error(err, _) => {
           error!("Error loading project: {}", err);
           Err(err.clone().into())
@@ -354,7 +352,7 @@ impl Workspace {
   /// If the path is unknown, returns a wrapped [`ProjectError::UnknownProject`]
   ///
   /// If the path references a project that failed to load, returns a [`WorkspaceError::ProjectNotLoaded`]
-  pub fn switch_project(&mut self, project_path: PathBuf, cx: &mut Context<Self>) -> Result<()> {
+  pub fn switch_project(&mut self, project_path: PathBuf, cx: &mut Context<Self>) -> WorkspaceResult<()> {
     let Some(project) = self.workspace_projects.get(&project_path) else {
       return Err(ProjectError::UnknownProject(project_path).into());
     };

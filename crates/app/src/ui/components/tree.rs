@@ -1,5 +1,5 @@
 use crate::actions::{Enter, Escape, MoveDown, MoveLeft, MoveRight, MoveUp};
-use ki_workspace::test::TestNodeKind;
+use ki_workspace::test::TestInfoId;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::scroll::ScrollableElement;
@@ -14,8 +14,7 @@ pub const TREE_CONTEXT: &str = "Tree";
 
 #[derive(Debug, Clone)]
 pub struct ProjectTreeNode {
-  pub path: Vec<Uuid>,
-  pub kind: TestNodeKind,
+  pub info_id: TestInfoId,
   pub label: SharedString,
   pub disabled: bool,
   pub parent_disabled: bool,
@@ -26,15 +25,15 @@ pub struct ProjectTreeNode {
 
 impl ProjectTreeNode {
   pub fn icon(&self) -> Option<Icon> {
-    match self.kind {
-      TestNodeKind::Suite => Some(Icon::new(IconAsset::TestSuite)),
-      TestNodeKind::Case => Some(Icon::new(IconAsset::TestCase)),
-      TestNodeKind::Step | TestNodeKind::AnonymousStep => Some(Icon::new(IconAsset::TestStep)),
+    match self.info_id {
+      TestInfoId::Suite(_) => Some(Icon::new(IconAsset::TestSuite)),
+      TestInfoId::Case(_, _) => Some(Icon::new(IconAsset::TestCase)),
+      TestInfoId::Step(_, _, _) | TestInfoId::CaseStep(_, _) => Some(Icon::new(IconAsset::TestStep)),
     }
   }
 
   pub fn id(&self) -> Uuid {
-    self.path[self.path.len() - 1]
+    self.info_id.id()
   }
 }
 

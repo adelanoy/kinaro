@@ -1,5 +1,5 @@
 use crate::endpoint::WorkspaceEndpoint;
-use crate::error::ProjectError;
+use crate::error::{ProjectError, ProjectResult};
 use crate::test::{TestsContainer, TestsContainerEvent};
 use crate::variable::{ProjectVariables, ProjectVariablesEvent};
 use crate::{FileProjectMetadata, Workspace};
@@ -9,12 +9,8 @@ use ki_project::ProjectFile;
 use log::error;
 use std::path::PathBuf;
 use uuid::Uuid;
-use crate::ProjectEvent::TreeNodesChanged;
 
 pub const PROJECT_FILE_EXT: &str = "kpr";
-
-/// Result alias for Workspace
-pub type Result<T> = std::result::Result<T, ProjectError>;
 
 ///// WORKSPACE PROJECT EVENTS /////
 #[derive(Debug, PartialEq, Eq)]
@@ -78,7 +74,7 @@ impl Project {
   pub(super) fn load(
     metadata: &FileProjectMetadata,
     cx: &mut Context<Workspace>,
-  ) -> Result<Entity<Self>> {
+  ) -> ProjectResult<Entity<Self>> {
     let path = &metadata.path;
     if !path.exists() || path.extension() != Some(PROJECT_FILE_EXT.as_ref()) {
       error!("Invalid project at: {}", path.to_string_lossy());

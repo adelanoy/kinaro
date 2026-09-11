@@ -8,7 +8,7 @@ pub use {
     error::ProjectFileError,
     ki_project::ProjectFile,
     test::{
-    FileTestInfo, FileTestsContainer, test_case::FileTestCase, test_step::FileTestStep,
+    FileTestInfo, FileTestsContainer, test_case::FileTestCase, test_step::FileTestStep, test_case::FileTestCaseType,
     test_suite::FileTestSuite,
   },
     variable::{FileProfile, FileProjectVariables, FileVariable, FileVariableKind},
