@@ -47,9 +47,7 @@ impl TestInfo {
 }
 
 pub enum TestsContainerEvent {
-  Removed(Uuid),
-  Added(Uuid),
-  Modified(Uuid),
+  Modified,
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
@@ -79,7 +77,7 @@ impl TestsContainer {
       return;
     };
     info.disabled = !info.disabled;
-    cx.emit(TestsContainerEvent::Modified(info.id));
+    cx.emit(TestsContainerEvent::Modified);
   }
 
   pub fn rename_at(
@@ -98,7 +96,7 @@ impl TestsContainer {
 
     if test_info.name != name {
       test_info.name = name;
-      cx.emit(TestsContainerEvent::Modified(test_info.id));
+      cx.emit(TestsContainerEvent::Modified);
     }
 
     Ok(())

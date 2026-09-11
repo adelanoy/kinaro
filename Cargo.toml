@@ -24,7 +24,7 @@ ki_assets = { path = "crates/assets" }
 ki_log = { path = "crates/log" }
 ki_utils = {path = "crates/utils"}
 
-gpui-kit = { version = "0.6.0", default-features = false, features = ["component"] }
+gpui-kit = { version = "0.6", default-features = false, features = ["component"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["serde", "v4"] }
@@ -32,4 +32,13 @@ chrono = { version = "*", features = ["serde"] }
 thiserror = "2"
 anyhow = "1"
 log = "0.4"
-dirs = "5.0.1"
+dirs = "5.0"
+
+[profile.dev.package]
+gpui-pre = { opt-level = 3 }
+gpui-component = { opt-level = 3 }
+gpui-kit = { opt-level = 3 }
+gpui-kit-assets = { opt-level = 3 }
+gpui-pre-macros = { opt-level = 3 }
+gpui-pre-platform = { opt-level = 3 }
+rustybuzz = { opt-level = 3 }

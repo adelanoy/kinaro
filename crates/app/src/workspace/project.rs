@@ -10,6 +10,7 @@ use log::error;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use uuid::Uuid;
+use crate::workspace::ProjectEvent::TreeNodesChanged;
 
 pub const PROJECT_FILE_EXT: &str = "kpr";
 
@@ -215,15 +216,16 @@ impl Project {
   fn on_tests_event(
     &mut self,
     _tests: Entity<TestsContainer>,
-    e: &TestsContainerEvent,
+    _e: &TestsContainerEvent,
     cx: &mut Context<Self>,
   ) {
+    cx.emit(TreeNodesChanged);
     // Check if the currently active profile has been deleted
-    if let TestsContainerEvent::Removed(id) = e {
+    /*if let TestsContainerEvent::Removed(id) = e {
       self.opened_tree_nodes.remove(id);
     }
     cx.emit(ProjectEvent::TreeNodesChanged);
-    self.save(cx);
+    self.save(cx);*/
   }
 }
 
