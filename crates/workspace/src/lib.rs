@@ -99,10 +99,8 @@ impl Workspace {
       .into_iter()
       .map(|metadata| match Project::load(&metadata, cx) {
         Ok(project) => {
-          // Refresh the metadata now that the project is loaded, in case they were change externally
-          let path = project.read(cx).path.clone();
           let _sub = cx.subscribe(&project, Self::on_project_event);
-          (path.clone(), WorkspaceProject::project(project, _sub, cx))
+          (metadata.path.clone(), WorkspaceProject::project(project, _sub, cx))
         }
         Err(err) => (metadata.path.clone(), WorkspaceProject::error(err, metadata)),
       })
@@ -264,7 +262,7 @@ impl Workspace {
     if let Some(updated_wp) = updated_wp {
       let result: Result<bool> = match &updated_wp.data {
         WorkspaceProjectData::Error(err, _) => {
-          println!("err: {}", err);
+          error!("Error loading project: {}", err);
           Err(err.clone().into())
         }
         WorkspaceProjectData::Loaded { .. } => Ok(true),
@@ -378,16 +376,9 @@ impl Workspace {
       active_project: self.active_project.clone(),
       projects: self
         .workspace_projects
-        .iter()
-        .map(|(path, workspace_project)| match &workspace_project.data {
-          WorkspaceProjectData::Loaded { project, .. } => {
-            let project = project.read(cx);
-            FileProjectMetadata {
-              path: path.clone(),
-              active_profile: project.active_profile(),
-              opened_tree_nodes: project.opened_tree_nodes().clone(),
-            }
-          }
+        .values()
+        .map(|workspace_project| match &workspace_project.data {
+          WorkspaceProjectData::Loaded { project, .. } => project.read_with(cx, |project, cx| project.metadata(cx)),
           WorkspaceProjectData::Error(_, metadata) => metadata.clone(),
         })
         .collect(),
@@ -395,8 +386,11 @@ impl Workspace {
   }
 
   /// Project event's handler, mostly used to serialize to file project's settings
-  fn on_project_event(&mut self, _project: Entity<Project>, _event: &ProjectEvent, cx: &mut Context<Self>) {
-    self.save(cx);
+  fn on_project_event(&mut self, _project: Entity<Project>, event: &ProjectEvent, cx: &mut Context<Self>) {
+    match event {
+      ProjectEvent::ActiveProfile(_) | ProjectEvent::TestTreeNodes => self.save(cx),
+      _ => {}
+    }
   }
 }
 

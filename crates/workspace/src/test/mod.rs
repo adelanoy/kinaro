@@ -1,10 +1,10 @@
-use crate::TestSuite;
-use crate::error::ProjectError::TestNotFound;
-use crate::project::Result;
+use std::collections::HashSet;
 use gpui_kit::{Context, EventEmitter, SharedString};
 use ki_project::{FileTestInfo, FileTestsContainer};
 use log::warn;
 use uuid::Uuid;
+use crate::{FileProjectMetadata, TestSuite};
+use crate::error::{ProjectResult, ProjectError::TestNotFound};
 
 pub mod test_case;
 pub mod test_step;
@@ -47,19 +47,37 @@ impl TestInfo {
 }
 
 pub enum TestsContainerEvent {
-  Modified,
+  TestsModified,
+  TreeNodesChanged,
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct TestsContainer {
   pub suites: Vec<TestSuite>,
+  opened_tree_nodes: HashSet<Uuid>,
 }
 
 impl TestsContainer {
-  pub fn from_file(file_container: FileTestsContainer) -> Self {
+  pub(super) fn from_file(file_container: FileTestsContainer, metadata: &FileProjectMetadata) -> Self {
     Self {
       suites: TestSuite::from_file(file_container.suites),
+      opened_tree_nodes: metadata.opened_tree_nodes.clone(),
     }
+  }
+
+  #[inline]
+  pub fn opened_tree_nodes(&self) -> &HashSet<Uuid> {
+    &self.opened_tree_nodes
+  }
+
+  pub fn expand_tree_node(&mut self, id: Uuid, cx: &mut Context<Self>) {
+    self.opened_tree_nodes.insert(id);
+    cx.emit(TestsContainerEvent::TreeNodesChanged);
+  }
+
+  pub fn collapse_tree_node(&mut self, id: &Uuid, cx: &mut Context<Self>) {
+    self.opened_tree_nodes.remove(id);
+    cx.emit(TestsContainerEvent::TreeNodesChanged);
   }
 
   pub fn to_file(&self) -> FileTestsContainer {
@@ -68,7 +86,7 @@ impl TestsContainer {
     }
   }
 
-  pub fn switch_active_status(&mut self, path: &[Uuid], cx: &mut Context<Self>) {
+  pub fn switch_node_enable_status(&mut self, path: &[Uuid], cx: &mut Context<Self>) {
     if path.is_empty() {
       return;
     }
@@ -77,7 +95,7 @@ impl TestsContainer {
       return;
     };
     info.disabled = !info.disabled;
-    cx.emit(TestsContainerEvent::Modified);
+    cx.emit(TestsContainerEvent::TestsModified);
   }
 
   pub fn rename_at(
@@ -85,7 +103,7 @@ impl TestsContainer {
     path: &[Uuid],
     name: SharedString,
     cx: &mut Context<Self>,
-  ) -> Result<()> {
+  ) -> ProjectResult<()> {
     if path.is_empty() {
       return Ok(());
     }
@@ -96,10 +114,14 @@ impl TestsContainer {
 
     if test_info.name != name {
       test_info.name = name;
-      cx.emit(TestsContainerEvent::Modified);
+      cx.emit(TestsContainerEvent::TestsModified);
     }
 
     Ok(())
+  }
+
+  pub fn duplicate_suite(&mut self, id: &Uuid) {
+
   }
 
   #[allow(unused)]

@@ -35,7 +35,7 @@ impl ProjectConfigurator {
 
     let _project_event_sub =
       cx.subscribe_in(&project, window, move |this, _, event, window, cx| {
-        if let ProjectEvent::ActiveProfileChanged(id) = event {
+        if let ProjectEvent::ActiveProfile(id) = event {
           this.update_selected_profile_select_state(id, window, cx)
         }
       });
