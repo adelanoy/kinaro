@@ -1,9 +1,8 @@
 use crate::actions::{
   AddTestCase, AddTestStep, AddTestSuite, Duplicate, PROJECT_TREE_CONTEXT_KEY, RemoveNode, Rename, SwitchNodeActiveStatus,
 };
-use crate::ui::components::tree::{ProjectTreeNode, Tree, TreeDelegate, TreeEvent, TreeState};
+use crate::ui::components::tree::{Tree, TreeDelegate, TreeEvent, TreeState, ProjectTreeNode};
 use crate::ui::side_bar::project_configuration::ProjectConfigurationTab;
-use ki_workspace::test::{TestsContainer,TestNodeKind};
 use gpui_kit::component::{
   ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt,
   button::{Button, ButtonVariants},
@@ -15,7 +14,6 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
-use ki_workspace::{Project, TestCase, TestStep, TestSuite};
 use log::warn;
 use std::collections::HashSet;
 use uuid::Uuid;

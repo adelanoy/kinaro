@@ -9,6 +9,7 @@ use ki_project::ProjectFile;
 use log::error;
 use std::path::PathBuf;
 use uuid::Uuid;
+use crate::ProjectEvent::TreeNodesChanged;
 
 pub const PROJECT_FILE_EXT: &str = "kpr";
 
