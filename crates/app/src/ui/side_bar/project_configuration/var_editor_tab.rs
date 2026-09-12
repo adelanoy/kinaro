@@ -1,7 +1,5 @@
 use crate::actions::{Delete, Duplicate, Escape};
-use crate::ui::views::side_bar::project_configuration::ProjectConfigurationTab;
-use crate::workspace::Project;
-use crate::workspace::variable::{ProfileInfo, ProjectVariables, VariableReference};
+use crate::ui::side_bar::project_configuration::ProjectConfigurationTab;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::label::Label;
@@ -13,8 +11,9 @@ use gpui_kit::component::{ActiveTheme, Disableable, Icon, IconName, IndexPath, S
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
-use ki_project::VariableKind;
 use ki_utils::ui::{CellState, MovingLabel};
+use ki_workspace::Project;
+use ki_workspace::variable::{ProfileInfo, ProjectVariables, VariableKind, VariableReference};
 use log::warn;
 use uuid::Uuid;
 
@@ -463,14 +462,16 @@ impl Render for VariableEditor {
                   .small()
                   .on_click({
                     let table_state = table_state.clone();
-                    move |value, _, cx| table_state.update(cx, |state, cx| {
-                      let delegate = state.delegate_mut();
-                      if *value {
-                        delegate.viewing_profile = delegate.profile_select_state.read(cx).selected_value().copied();
-                      } else {
-                        delegate.viewing_profile = None;
-                      }
-                    })
+                    move |value, _, cx| {
+                      table_state.update(cx, |state, cx| {
+                        let delegate = state.delegate_mut();
+                        if *value {
+                          delegate.viewing_profile = delegate.profile_select_state.read(cx).selected_value().copied();
+                        } else {
+                          delegate.viewing_profile = None;
+                        }
+                      })
+                    }
                   }),
               )
               .when(switch_on.is_some(), |this| {

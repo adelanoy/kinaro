@@ -2,9 +2,8 @@
 
 pub(crate) mod actions;
 pub(crate) mod ui;
-pub(crate) mod workspace;
 
-use crate::ui::views::WorkspaceView;
+use crate::ui::WorkspaceView;
 use gpui_kit::component::Root;
 use gpui_kit::{
   App, AppContext, Size, TitlebarOptions, WindowDecorations, WindowOptions, point, px,

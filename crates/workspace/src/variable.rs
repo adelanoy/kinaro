@@ -1,14 +1,64 @@
-use crate::workspace::error::ProjectError;
-use crate::workspace::project;
+use crate::error::ProjectError;
+use crate::project;
 use gpui_kit::component::select::SelectItem;
 use gpui_kit::{Context, EventEmitter, SharedString};
-use ki_project::{FileProfile, FileProjectVariables, FileVariable, VariableKind};
+use ki_project::{FileProfile, FileProjectVariables, FileVariable, FileVariableKind};
 use ki_utils::ui::next_available_name;
 use log::warn;
 use project::Result;
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use uuid::Uuid;
+
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+pub enum VariableKind {
+  Text,
+  PasswordClear,
+  PasswordEncrypt,
+}
+
+impl From<FileVariableKind> for VariableKind {
+  fn from(value: FileVariableKind) -> Self {
+    match value {
+      FileVariableKind::Text => VariableKind::Text,
+      FileVariableKind::PasswordClear => VariableKind::PasswordClear,
+      FileVariableKind::PasswordEncrypt => VariableKind::PasswordEncrypt,
+    }
+  }
+}
+
+impl From<VariableKind> for FileVariableKind {
+  fn from(value: VariableKind) -> Self {
+    match value {
+      VariableKind::Text => FileVariableKind::Text,
+      VariableKind::PasswordClear => FileVariableKind::PasswordClear,
+      VariableKind::PasswordEncrypt => FileVariableKind::PasswordEncrypt,
+    }
+  }
+}
+
+impl Display for VariableKind {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    match self {
+      VariableKind::Text => f.write_str("Plain"),
+      VariableKind::PasswordClear => f.write_str("Password (Clear)"),
+      VariableKind::PasswordEncrypt => f.write_str("Password (Encrypted)"),
+    }
+  }
+}
+
+impl SelectItem for VariableKind {
+  type Value = VariableKind;
+
+  fn title(&self) -> SharedString {
+    SharedString::new(format!("{self}"))
+  }
+
+  fn value(&self) -> &Self::Value {
+    self
+  }
+}
 
 ///// PROJECT VARIABLES EVENTS /////
 pub enum ProjectVariablesEvent {
@@ -311,7 +361,7 @@ impl VariableReference {
       id: file_vars.id,
       name: SharedString::new(&file_vars.name),
       description: SharedString::new(&file_vars.description),
-      kind: file_vars.kind,
+      kind: file_vars.kind.into(),
       value: SharedString::new(&file_vars.value),
       overrides: file_vars
         .overrides
@@ -327,7 +377,7 @@ impl VariableReference {
       id: self.id,
       name: self.name.to_string(),
       description: self.description.to_string(),
-      kind: self.kind,
+      kind: self.kind.into(),
       value: self.value.to_string(),
       overrides: self
         .overrides

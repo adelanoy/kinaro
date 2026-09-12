@@ -4,14 +4,14 @@ mod test;
 mod variable;
 
 pub use {
-  endpoint::{FileEndpoint, FileRestParameter, HttpMethod},
-  error::ProjectFileError,
-  ki_project::ProjectFile,
-  test::{
+    endpoint::{FileEndpoint, FileRestParameter, HttpMethod},
+    error::ProjectFileError,
+    ki_project::ProjectFile,
+    test::{
     FileTestInfo, FileTestsContainer, test_case::FileTestCase, test_step::FileTestStep,
     test_suite::FileTestSuite,
   },
-  variable::{FileProfile, FileProjectVariables, FileVariable, VariableKind},
+    variable::{FileProfile, FileProjectVariables, FileVariable, FileVariableKind},
 };
 
 mod ki_project {

@@ -1,7 +1,7 @@
-use crate::ui::views::side_bar::project_configuration::profile_editor_tab::ProfileEditor;
-use crate::ui::views::side_bar::project_configuration::project_tree_tab::ProjectTree;
-use crate::ui::views::side_bar::project_configuration::var_editor_tab::VariableEditor;
-use crate::workspace::Project;
+use crate::ui::side_bar::project_configuration::profile_editor_tab::ProfileEditor;
+use crate::ui::side_bar::project_configuration::project_tree_tab::ProjectTree;
+use crate::ui::side_bar::project_configuration::var_editor_tab::VariableEditor;
+use ki_workspace::Project;
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{Icon, Sizable, v_flex};
 use gpui_kit::{

@@ -1,4 +1,4 @@
-use crate::workspace::test::{TestInfo, test_case::TestCase};
+use crate::test::{TestInfo, test_case::TestCase};
 use ki_project::FileTestSuite;
 use std::fmt::Debug;
 use uuid::Uuid;

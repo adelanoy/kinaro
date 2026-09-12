@@ -1,7 +1,7 @@
 use crate::actions::{Delete, Duplicate, Escape};
-use crate::ui::views::side_bar::project_configuration::ProjectConfigurationTab;
-use crate::workspace::Project;
-use crate::workspace::variable::{ProfileInfo, ProjectVariables};
+use crate::ui::side_bar::project_configuration::ProjectConfigurationTab;
+use ki_workspace::Project;
+use ki_workspace::variable::{ProfileInfo, ProjectVariables};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::label::Label;

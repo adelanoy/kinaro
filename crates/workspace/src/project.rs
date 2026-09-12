@@ -1,8 +1,8 @@
-use crate::workspace::endpoint::WorkspaceEndpoint;
-use crate::workspace::error::ProjectError;
-use crate::workspace::test::{TestsContainer, TestsContainerEvent};
-use crate::workspace::variable::{ProjectVariables, ProjectVariablesEvent};
-use crate::workspace::{FileProjectMetadata, Workspace};
+use crate::endpoint::WorkspaceEndpoint;
+use crate::error::ProjectError;
+use crate::test::{TestsContainer, TestsContainerEvent};
+use crate::variable::{ProjectVariables, ProjectVariablesEvent};
+use crate::{FileProjectMetadata, Workspace};
 use chrono::{DateTime, Local};
 use gpui_kit::{AppContext, Context, Entity, EventEmitter, SharedString, Subscription};
 use ki_project::ProjectFile;
@@ -10,7 +10,7 @@ use log::error;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use uuid::Uuid;
-use crate::workspace::ProjectEvent::TreeNodesChanged;
+use crate::ProjectEvent::TreeNodesChanged;
 
 pub const PROJECT_FILE_EXT: &str = "kpr";
 
