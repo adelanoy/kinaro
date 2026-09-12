@@ -1,6 +1,6 @@
-use crate::workspace::TestSuite;
-use crate::workspace::error::ProjectError::TestNotFound;
-use crate::workspace::project::Result;
+use crate::TestSuite;
+use crate::error::ProjectError::TestNotFound;
+use crate::project::Result;
 use gpui_kit::{Context, EventEmitter, SharedString};
 use ki_project::{FileTestInfo, FileTestsContainer};
 use log::warn;

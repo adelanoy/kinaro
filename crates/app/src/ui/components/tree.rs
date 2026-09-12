@@ -1,5 +1,5 @@
 use crate::actions::{Enter, Escape, MoveDown, MoveLeft, MoveRight, MoveUp};
-use crate::workspace::test::TestNodeKind;
+use ki_workspace::test::TestNodeKind;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::scroll::ScrollableElement;

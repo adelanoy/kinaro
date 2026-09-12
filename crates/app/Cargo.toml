@@ -8,14 +8,11 @@ edition = "2024"
 ki_assets.workspace = true
 ki_log.workspace = true
 ki_settings.workspace = true
-ki_project.workspace = true
 ki_utils.workspace = true
+ki_workspace.workspace = true
 
 gpui-kit.workspace = true
 log.workspace = true
 dirs.workspace = true
 uuid.workspace = true
 serde_json.workspace = true
-serde.workspace = true
-chrono.workspace = true
-thiserror.workspace = true

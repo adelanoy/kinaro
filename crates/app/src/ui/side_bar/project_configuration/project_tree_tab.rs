@@ -2,8 +2,7 @@ use crate::actions::{
   AddTestCase, AddTestStep, AddTestSuite, Duplicate, PROJECT_TREE_CONTEXT_KEY, RemoveNode, Rename, SwitchNodeActiveStatus,
 };
 use crate::ui::components::tree::{KiTree, KiTreeDelegate, KiTreeEvent, KiTreeState, ProjectTreeEntry};
-use crate::ui::views::side_bar::project_configuration::ProjectConfigurationTab;
-use crate::workspace::{Project, TestCase, TestNodeKind, TestStep, TestSuite};
+use crate::ui::side_bar::project_configuration::ProjectConfigurationTab;
 use gpui_kit::component::{
   ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt,
   button::{Button, ButtonVariants},
@@ -15,6 +14,8 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
+use ki_workspace::test::TestNodeKind;
+use ki_workspace::{Project, TestCase, TestStep, TestSuite};
 use log::warn;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -212,7 +213,12 @@ fn get_ts_entries(suites: &[TestSuite], opened_nodes: &HashSet<Uuid>) -> Vec<Pro
   entries
 }
 
-fn get_tc_entries(cases: &[TestCase], parent_id: Uuid, parent_disabled: bool, opened_nodes: &HashSet<Uuid>) -> Vec<ProjectTreeEntry> {
+fn get_tc_entries(
+  cases: &[TestCase],
+  parent_id: Uuid,
+  parent_disabled: bool,
+  opened_nodes: &HashSet<Uuid>,
+) -> Vec<ProjectTreeEntry> {
   let mut entries = Vec::new();
   for case in cases.iter() {
     let is_empty = case.steps.is_empty();
@@ -308,7 +314,13 @@ impl KiTreeDelegate for ProjectTreeDelegate {
     self.tree_entries.get(ix).unwrap()
   }
 
-  fn entry_render(&self, ix: usize, selected: bool, _window: &mut Window, cx: &mut Context<KiTreeState<Self>>) -> impl IntoElement {
+  fn entry_render(
+    &self,
+    ix: usize,
+    selected: bool,
+    _window: &mut Window,
+    cx: &mut Context<KiTreeState<Self>>,
+  ) -> impl IntoElement {
     let entry = &self.tree_entries[ix];
     let icon = entry.icon();
     let is_edited = selected && self._rename_input_sub.is_some();

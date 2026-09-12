@@ -1,6 +1,6 @@
-use crate::ui::views::side_bar::project_configuration::ProjectConfigurationTabs;
-use crate::workspace::variable::{ProfileInfo, ProjectVariablesEvent};
-use crate::workspace::{Project, ProjectEvent};
+use crate::ui::side_bar::project_configuration::ProjectConfigurationTabs;
+use ki_workspace::variable::{ProfileInfo, ProjectVariablesEvent};
+use ki_workspace::{Project, ProjectEvent};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::{ActiveTheme, IndexPath, Sizable, h_flex, v_flex};

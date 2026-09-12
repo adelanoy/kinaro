@@ -1,4 +1,4 @@
-use crate::workspace::test::TestInfo;
+use crate::test::TestInfo;
 use ki_project::FileTestStep;
 
 #[derive(Clone, Debug, Eq)]

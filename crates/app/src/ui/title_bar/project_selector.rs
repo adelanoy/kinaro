@@ -1,5 +1,5 @@
 use crate::actions::{CreateProject, OpenProject};
-use crate::workspace::{Project, Workspace, WorkspaceEvent, WorkspaceProjectInfo};
+use ki_workspace::{Project, Workspace, WorkspaceEvent, WorkspaceProjectInfo};
 use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants};
 use gpui_kit::component::dialog::{DialogAction, DialogClose, DialogFooter};
 use gpui_kit::component::input::{Input, InputState};

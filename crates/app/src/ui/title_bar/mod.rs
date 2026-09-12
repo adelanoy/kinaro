@@ -1,7 +1,7 @@
 pub mod project_selector;
 
-use crate::ui::views::title_bar::project_selector::ProjectSelector;
-use crate::workspace::Workspace;
+use crate::ui::title_bar::project_selector::ProjectSelector;
+use ki_workspace::Workspace;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme, Icon, IconName, Sizable, Theme, ThemeMode, TitleBar};
 use gpui_kit::*;

@@ -3674,14 +3674,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "kinaro"
+name = "ki_workspace"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "dirs",
  "gpui-kit",
- "ki_assets",
- "ki_log",
  "ki_project",
  "ki_settings",
  "ki_utils",
@@ -3689,6 +3686,22 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
+name = "kinaro"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "gpui-kit",
+ "ki_assets",
+ "ki_log",
+ "ki_settings",
+ "ki_utils",
+ "ki_workspace",
+ "log",
+ "serde_json",
  "uuid",
 ]
 
