@@ -15,7 +15,7 @@ pub mod test_suite;
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TestInfoId {
   Suite(Uuid),
-  Case(Uuid, Uuid),
+  CaseMulti(Uuid, Uuid),
   CaseStep(Uuid, Uuid),
   Step(Uuid, Uuid, Uuid),
 }
@@ -24,7 +24,7 @@ impl TestInfoId {
   pub fn id(&self) -> Uuid {
     match *self {
       TestInfoId::Suite(id) => id,
-      TestInfoId::Case(_, id) | TestInfoId::CaseStep(_, id) => id,
+      TestInfoId::CaseMulti(_, id) | TestInfoId::CaseStep(_, id) => id,
       TestInfoId::Step(_, _, id) => id,
     }
   }
@@ -32,7 +32,7 @@ impl TestInfoId {
   pub fn suite_id(&self) -> Uuid {
     match *self {
       TestInfoId::Suite(id) => id,
-      TestInfoId::Case(id, _) | TestInfoId::CaseStep(id, _) => id,
+      TestInfoId::CaseMulti(id, _) | TestInfoId::CaseStep(id, _) => id,
       TestInfoId::Step(id, _, _) => id,
     }
   }
@@ -40,7 +40,7 @@ impl TestInfoId {
   pub fn case_id(&self) -> Option<Uuid> {
     match *self {
       TestInfoId::Suite(_) => None,
-      TestInfoId::Case(_, id) | TestInfoId::CaseStep(_, id) => Some(id),
+      TestInfoId::CaseMulti(_, id) | TestInfoId::CaseStep(_, id) => Some(id),
       TestInfoId::Step(_, id, _) => Some(id),
     }
   }
@@ -48,7 +48,7 @@ impl TestInfoId {
   pub fn step_id(&self) -> Option<Uuid> {
     match *self {
       TestInfoId::Suite(_) => None,
-      TestInfoId::Case(_, _) | TestInfoId::CaseStep(_, _) => None,
+      TestInfoId::CaseMulti(_, _) | TestInfoId::CaseStep(_, _) => None,
       TestInfoId::Step(_, _, id) => Some(id),
     }
   }
@@ -57,24 +57,24 @@ impl TestInfoId {
     match self {
       TestInfoId::Suite(_) => match other {
         TestInfoId::Suite(_) => self == other,
-        TestInfoId::Case(suite_id, _) | TestInfoId::CaseStep(suite_id, _) => self.suite_id() == *suite_id,
+        TestInfoId::CaseMulti(suite_id, _) | TestInfoId::CaseStep(suite_id, _) => self.suite_id() == *suite_id,
         TestInfoId::Step(suite_id, _, _) => self.suite_id() == *suite_id,
       },
-      TestInfoId::Case(_, _) => match other {
+      TestInfoId::CaseMulti(_, _) => match other {
         TestInfoId::Suite(_) => false,
-        TestInfoId::Case(_, _) => self == other,
+        TestInfoId::CaseMulti(_, _) => self == other,
         TestInfoId::CaseStep(_, _) => false,
         TestInfoId::Step(suite_id, case_id, _) => self.suite_id() == *suite_id && self.case_id() == Some(*case_id),
       },
       TestInfoId::CaseStep(_, _) => match other {
         TestInfoId::Suite(_) => false,
-        TestInfoId::Case(_, _) => false,
+        TestInfoId::CaseMulti(_, _) => false,
         TestInfoId::CaseStep(_, _) => self == other,
         TestInfoId::Step(_, _, _) => false,
       },
       TestInfoId::Step(_, _, _) => match other {
         TestInfoId::Suite(_) => false,
-        TestInfoId::Case(_, _) | TestInfoId::CaseStep(_, _) => false,
+        TestInfoId::CaseMulti(_, _) | TestInfoId::CaseStep(_, _) => false,
         TestInfoId::Step(_, _, _) => self == other,
       },
     }
@@ -85,7 +85,7 @@ impl Display for TestInfoId {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     match self {
       TestInfoId::Suite(suite_id) => f.write_fmt(format_args!("Suite:{}", suite_id)),
-      TestInfoId::Case(suite_id, case_id) | TestInfoId::CaseStep(suite_id, case_id) => {
+      TestInfoId::CaseMulti(suite_id, case_id) | TestInfoId::CaseStep(suite_id, case_id) => {
         f.write_fmt(format_args!("Suite:{}/Case:{}", suite_id, case_id))
       }
       TestInfoId::Step(suite_id, case_id, step_id) => {
@@ -123,7 +123,7 @@ impl TestInfo {
 
   pub(crate) fn new_case(file_test_info: FileTestInfo, suite_id: Uuid) -> Self {
     Self {
-      info_id: TestInfoId::Case(suite_id, file_test_info.id),
+      info_id: TestInfoId::CaseMulti(suite_id, file_test_info.id),
       name: file_test_info.name.into(),
       description: file_test_info.description.map(|s| s.into()),
       disabled: file_test_info.disabled,
@@ -151,7 +151,7 @@ impl TestInfo {
   pub(crate) fn duplicate(&self, name: SharedString) -> Self {
     let info_id = match self.info_id {
       TestInfoId::Suite(_) => TestInfoId::Suite(Uuid::new_v4()),
-      TestInfoId::Case(suite_id, _) => TestInfoId::Case(suite_id, Uuid::new_v4()),
+      TestInfoId::CaseMulti(suite_id, _) => TestInfoId::CaseMulti(suite_id, Uuid::new_v4()),
       TestInfoId::CaseStep(suite_id, _) => TestInfoId::CaseStep(suite_id, Uuid::new_v4()),
       TestInfoId::Step(suite_id, case_id, _) => TestInfoId::Step(suite_id, case_id, Uuid::new_v4()),
     };
@@ -185,21 +185,16 @@ pub struct TestsContainer {
 }
 
 impl TestsContainer {
-  pub(super) fn from_file(file_container: FileTestsContainer, metadata: &FileProjectMetadata) -> Self {
-    Self {
-      suites: file_container.suites.into_iter().map(TestSuite::from_file).collect(),
-      opened_tree_nodes: metadata.opened_tree_nodes.clone(),
-    }
-  }
+  pub fn add_test_step(&mut self, info_id: &TestInfoId, cx: &mut Context<Self>) -> ProjectResult<()> {
+    let suite_id = info_id.suite_id();
+    let Some(suite) = self.suites.iter_mut().find(|suite| suite.info.id() == suite_id) else {
+      warn!("TestsContainer:add_test_step: unknow path: {}", info_id);
+      return Err(TestNotFound);
+    };
+    suite.add_test_step(info_id)?;
 
-  #[inline]
-  pub fn opened_tree_nodes(&self) -> &HashSet<Uuid> {
-    &self.opened_tree_nodes
-  }
-
-  pub fn expand_tree_node(&mut self, id: Uuid, cx: &mut Context<Self>) {
-    self.opened_tree_nodes.insert(id);
-    cx.emit(TestsContainerEvent::TreeNodesChanged);
+    cx.emit(TestsContainerEvent::TestsModified);
+    Ok(())
   }
 
   pub fn collapse_tree_node(&mut self, id: &Uuid, cx: &mut Context<Self>) {
@@ -207,37 +202,8 @@ impl TestsContainer {
     cx.emit(TestsContainerEvent::TreeNodesChanged);
   }
 
-  pub fn to_file(&self) -> FileTestsContainer {
-    FileTestsContainer {
-      suites: self.suites.iter().map(|suite| suite.get_file()).collect(),
-    }
-  }
-
-  pub fn switch_node_enable_status(&mut self, info_id: &TestInfoId, cx: &mut Context<Self>) {
-    let Some(info) = self.info_mut_from_path(info_id) else {
-      warn!("TestsContainer:switch_active_status: unknow path: {}", info_id);
-      return;
-    };
-    info.disabled = !info.disabled;
-    cx.emit(TestsContainerEvent::TestsModified);
-  }
-
-  pub fn rename_at(&mut self, info_id: &TestInfoId, name: SharedString, cx: &mut Context<Self>) -> ProjectResult<()> {
-    let Some(test_info) = self.info_mut_from_path(info_id) else {
-      warn!("TestsContainer:rename_at: unknow path: {}", info_id);
-      return Err(TestNotFound);
-    };
-
-    if test_info.name != name {
-      test_info.name = name;
-      cx.emit(TestsContainerEvent::TestsModified);
-    }
-
-    Ok(())
-  }
-
   pub fn duplicate_test(&mut self, info_id: &TestInfoId, cx: &mut Context<Self>) -> ProjectResult<()> {
-    let Some(ix) = self.suites.iter().position(|suite| suite.info.info_id.is_parent(info_id)) else {
+    let Some(ix) = self.suites.iter().position(|suite| suite.info.id() == info_id.suite_id()) else {
       warn!("TestsContainer:duplicate_test: unknow path: {}", info_id);
       return Err(TestNotFound);
     };
@@ -260,6 +226,18 @@ impl TestsContainer {
     Ok(())
   }
 
+  pub fn expand_tree_node(&mut self, id: Uuid, cx: &mut Context<Self>) {
+    self.opened_tree_nodes.insert(id);
+    cx.emit(TestsContainerEvent::TreeNodesChanged);
+  }
+
+  pub(super) fn from_file(file_container: FileTestsContainer, metadata: &FileProjectMetadata) -> Self {
+    Self {
+      suites: file_container.suites.into_iter().map(TestSuite::from_file).collect(),
+      opened_tree_nodes: metadata.opened_tree_nodes.clone(),
+    }
+  }
+
   #[allow(unused)]
   pub fn info_from_path(&self, info_id: &TestInfoId) -> Option<&TestInfo> {
     let suite = self.suites.iter().find(|suite| suite.info.info_id == *info_id)?;
@@ -274,6 +252,40 @@ impl TestsContainer {
     match info_id {
       TestInfoId::Suite(_) => Some(&mut suite.info),
       _ => suite.info_mut_from_path(info_id),
+    }
+  }
+
+  #[inline]
+  pub fn opened_tree_nodes(&self) -> &HashSet<Uuid> {
+    &self.opened_tree_nodes
+  }
+
+  pub fn rename_at(&mut self, info_id: &TestInfoId, name: SharedString, cx: &mut Context<Self>) -> ProjectResult<()> {
+    let Some(test_info) = self.info_mut_from_path(info_id) else {
+      warn!("TestsContainer:rename_at: unknow path: {}", info_id);
+      return Err(TestNotFound);
+    };
+
+    if test_info.name != name {
+      test_info.name = name;
+      cx.emit(TestsContainerEvent::TestsModified);
+    }
+
+    Ok(())
+  }
+
+  pub fn switch_node_enable_status(&mut self, info_id: &TestInfoId, cx: &mut Context<Self>) {
+    let Some(info) = self.info_mut_from_path(info_id) else {
+      warn!("TestsContainer:switch_active_status: unknow path: {}", info_id);
+      return;
+    };
+    info.disabled = !info.disabled;
+    cx.emit(TestsContainerEvent::TestsModified);
+  }
+
+  pub fn to_file(&self) -> FileTestsContainer {
+    FileTestsContainer {
+      suites: self.suites.iter().map(|suite| suite.get_file()).collect(),
     }
   }
 
@@ -463,7 +475,7 @@ mod tests {
     // id
     let info_id = TestInfoId::Suite(id);
     assert_eq!(info_id.id(), id);
-    let info_id = TestInfoId::Case(Uuid::new_v4(), id);
+    let info_id = TestInfoId::CaseMulti(Uuid::new_v4(), id);
     assert_eq!(info_id.id(), id);
     let info_id = TestInfoId::CaseStep(Uuid::new_v4(), id);
     assert_eq!(info_id.id(), id);
@@ -477,7 +489,7 @@ mod tests {
     // test_suite id
     let info_id = TestInfoId::Suite(id);
     assert_eq!(info_id.suite_id(), id);
-    let info_id = TestInfoId::Case(id, Uuid::new_v4());
+    let info_id = TestInfoId::CaseMulti(id, Uuid::new_v4());
     assert_eq!(info_id.suite_id(), id);
     let info_id = TestInfoId::CaseStep(id, Uuid::new_v4());
     assert_eq!(info_id.suite_id(), id);
@@ -491,7 +503,7 @@ mod tests {
     // test_suite id
     let info_id = TestInfoId::Suite(id);
     assert_eq!(info_id.case_id(), None);
-    let info_id = TestInfoId::Case(Uuid::new_v4(), id);
+    let info_id = TestInfoId::CaseMulti(Uuid::new_v4(), id);
     assert_eq!(info_id.case_id(), Some(id));
     let info_id = TestInfoId::CaseStep(Uuid::new_v4(), id);
     assert_eq!(info_id.case_id(), Some(id));
@@ -505,7 +517,7 @@ mod tests {
     // test_suite id
     let info_id = TestInfoId::Suite(id);
     assert_eq!(info_id.step_id(), None);
-    let info_id = TestInfoId::Case(Uuid::new_v4(), id);
+    let info_id = TestInfoId::CaseMulti(Uuid::new_v4(), id);
     assert_eq!(info_id.step_id(), None);
     let info_id = TestInfoId::CaseStep(Uuid::new_v4(), id);
     assert_eq!(info_id.step_id(), None);
@@ -521,12 +533,12 @@ mod tests {
     let info_id = TestInfoId::Suite(suite_id);
     // Assert parent
     assert!(info_id.is_parent(&info_id));
-    assert!(info_id.is_parent(&TestInfoId::Case(suite_id, case_id)));
+    assert!(info_id.is_parent(&TestInfoId::CaseMulti(suite_id, case_id)));
     assert!(info_id.is_parent(&TestInfoId::CaseStep(suite_id, case_id)));
     assert!(info_id.is_parent(&TestInfoId::Step(suite_id, case_id, step_id)));
     // Assert not parent
     assert!(!info_id.is_parent(&TestInfoId::Suite(Uuid::new_v4())));
-    assert!(!info_id.is_parent(&TestInfoId::Case(Uuid::new_v4(), case_id)));
+    assert!(!info_id.is_parent(&TestInfoId::CaseMulti(Uuid::new_v4(), case_id)));
     assert!(!info_id.is_parent(&TestInfoId::CaseStep(Uuid::new_v4(), case_id)));
     assert!(!info_id.is_parent(&TestInfoId::Step(Uuid::new_v4(), case_id, step_id)));
   }
@@ -536,14 +548,14 @@ mod tests {
     let suite_id = Uuid::new_v4();
     let case_id = Uuid::new_v4();
     let step_id = Uuid::new_v4();
-    let info_id = TestInfoId::Case(suite_id, case_id);
+    let info_id = TestInfoId::CaseMulti(suite_id, case_id);
     // Assert parent
-    assert!(info_id.is_parent(&TestInfoId::Case(suite_id, case_id)));
+    assert!(info_id.is_parent(&TestInfoId::CaseMulti(suite_id, case_id)));
     assert!(info_id.is_parent(&TestInfoId::Step(suite_id, case_id, step_id)));
     // Assert not parent
     assert!(!info_id.is_parent(&TestInfoId::Suite(suite_id)));
-    assert!(!info_id.is_parent(&TestInfoId::Case(suite_id, Uuid::new_v4())));
-    assert!(!info_id.is_parent(&TestInfoId::Case(Uuid::new_v4(), case_id)));
+    assert!(!info_id.is_parent(&TestInfoId::CaseMulti(suite_id, Uuid::new_v4())));
+    assert!(!info_id.is_parent(&TestInfoId::CaseMulti(Uuid::new_v4(), case_id)));
     assert!(!info_id.is_parent(&TestInfoId::Step(Uuid::new_v4(), case_id, step_id)));
   }
 
@@ -557,7 +569,7 @@ mod tests {
     assert!(info_id.is_parent(&TestInfoId::CaseStep(suite_id, case_id)));
     // Assert not parent
     assert!(!info_id.is_parent(&TestInfoId::Suite(suite_id)));
-    assert!(!info_id.is_parent(&TestInfoId::Case(suite_id, case_id)));
+    assert!(!info_id.is_parent(&TestInfoId::CaseMulti(suite_id, case_id)));
     assert!(!info_id.is_parent(&TestInfoId::Step(suite_id, case_id, step_id)));
   }
 
@@ -571,7 +583,7 @@ mod tests {
     assert!(info_id.is_parent(&TestInfoId::Step(suite_id, case_id, step_id)));
     // Assert not parent
     assert!(!info_id.is_parent(&TestInfoId::Suite(suite_id)));
-    assert!(!info_id.is_parent(&TestInfoId::Case(suite_id, Uuid::new_v4())));
+    assert!(!info_id.is_parent(&TestInfoId::CaseMulti(suite_id, Uuid::new_v4())));
     assert!(!info_id.is_parent(&TestInfoId::Step(suite_id, case_id, Uuid::new_v4())));
     assert!(!info_id.is_parent(&TestInfoId::Step(suite_id, Uuid::new_v4(), step_id)));
   }
@@ -589,7 +601,7 @@ mod tests {
       disabled: false,
     };
     assert_eq!(suite_id, info.id());
-    info.info_id = TestInfoId::Case(suite_id, case_id);
+    info.info_id = TestInfoId::CaseMulti(suite_id, case_id);
     assert_eq!(case_id, info.id());
     info.info_id = TestInfoId::CaseStep(suite_id, case_id);
     assert_eq!(case_id, info.id());
@@ -631,14 +643,14 @@ mod tests {
 
     let info = TestInfo::new_case(file_info, suite_id);
     match info.info_id() {
-      TestInfoId::Case(suite, case) if suite == suite_id && case == case_id => {}
+      TestInfoId::CaseMulti(suite, case) if suite == suite_id && case == case_id => {}
       _ => panic!("TestInfo::new_suite failed with non-matching ids"),
     }
     assert_eq!(case_id, info.id());
     assert_eq!(format!("{}", case_id), info.name.to_string());
     assert_eq!(format!("{}", case_id), info.description.map(|s| s.to_string()).unwrap());
     assert!(info.disabled);
-    assert!(matches!(info.info_id, TestInfoId::Case(_, _)));
+    assert!(matches!(info.info_id, TestInfoId::CaseMulti(_, _)));
   }
 
   #[test]
@@ -710,14 +722,14 @@ mod tests {
     let suite_id = Uuid::new_v4();
     let case_id = Uuid::new_v4();
     let info = TestInfo {
-      info_id: TestInfoId::Case(suite_id, case_id),
+      info_id: TestInfoId::CaseMulti(suite_id, case_id),
       name: SharedString::new("Case"),
       description: Some(SharedString::new("description")),
       disabled: true,
     };
     let new_name = SharedString::new("Case duplicate");
     let duplicate = info.duplicate(new_name.clone());
-    assert!(matches!(duplicate.info_id, TestInfoId::Case(suite, case) if suite == suite_id && case != case_id));
+    assert!(matches!(duplicate.info_id, TestInfoId::CaseMulti(suite, case) if suite == suite_id && case != case_id));
     assert_eq!(duplicate.name, new_name);
     assert_eq!(duplicate.description, info.description);
     assert_eq!(duplicate.disabled, info.disabled);

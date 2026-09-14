@@ -75,6 +75,16 @@ impl ProjectTree {
       tree.delegate_mut().duplicate_node(ix, window, cx);
     });
   }
+
+  fn on_add_test_step(&mut self, _: &AddTestStep, window: &mut Window, cx: &mut Context<Self>) {
+    self.tree_state.update(cx, |tree, cx| {
+      let Some(ix) = tree.selected_index() else {
+        warn!("ProjectTree:on_add_step: no tree_state selected_ix");
+        return;
+      };
+      tree.delegate_mut().add_test_step(ix, window, cx);
+    });
+  }
 }
 
 impl ProjectConfigurationTab for ProjectTree {
@@ -208,6 +218,18 @@ impl ProjectTreeDelegate {
       self.update_tests_nodes(cx);
     }
   }
+
+  fn add_test_step(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    let Some(info_id) = self.tree_nodes.get(ix).map(|node| &node.info_id) else {
+      warn!("ProjectTreeDelegate:add_test_step: unknown item ix: {}", ix);
+      return;
+    };
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.add_test_step(info_id, cx)) {
+      window.push_notification(err, cx);
+    } else {
+      self.update_tests_nodes(cx);
+    }
+  }
 }
 
 fn get_ts_entries(suites: &[TestSuite], opened_nodes: &HashSet<Uuid>) -> Vec<ProjectTreeNode> {
@@ -248,7 +270,7 @@ fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &Hash
       expanded: false,
     };
     match case.case_type() {
-      TestCaseType::Case { steps } => {
+      TestCaseType::CaseMulti { steps } => {
         let is_empty = steps.is_empty();
         let is_open = opened_nodes.contains(&info_id.id());
         case_tree_node.leaf = is_empty;
@@ -284,12 +306,12 @@ fn build_context_menu(disabled: bool, kind: TestInfoId) -> Box<ContextMenuBuilde
       .submenu_with_icon(Some(IconName::Plus.into()), "New", window, cx, move |submenu, _, _| {
         let mut submenu = submenu;
         if matches!(kind, TestInfoId::Suite(_)) {
-          submenu = submenu.menu("Test Suite", Box::new(AddTestSuite));
+          submenu = submenu.menu_with_icon("Test Suite", IconAsset::TestSuite, Box::new(AddTestSuite));
         }
-        if matches!(kind, TestInfoId::Suite(_)) || matches!(kind, TestInfoId::Case(_, _)) {
-          submenu = submenu.menu("Test Case", Box::new(AddTestCase));
+        if matches!(kind, TestInfoId::Suite(_)) || matches!(kind, TestInfoId::CaseMulti(_, _)) {
+          submenu = submenu.menu_with_icon("Test Case", IconAsset::TestCase, Box::new(AddTestCase));
         }
-        submenu.menu("Test Step", Box::new(AddTestStep))
+        submenu.menu_with_icon("Test Step", IconAsset::TestStep, Box::new(AddTestStep))
       })
       .separator()
       .menu_with_icon("Duplicate", IconName::Copy, Box::new(Duplicate))
@@ -353,6 +375,7 @@ impl Render for ProjectTree {
       .on_action(cx.listener(Self::on_switch_node_enable_status))
       .on_action(cx.listener(Self::on_rename_node))
       .on_action(cx.listener(Self::on_duplicate_node))
+      .on_action(cx.listener(Self::on_add_test_step))
       .size_full()
       .gap_y_2()
       .p_1()
