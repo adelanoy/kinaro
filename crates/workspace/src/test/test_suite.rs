@@ -1,54 +1,82 @@
-use crate::test::{TestInfo, test_case::TestCase};
+use crate::error::{ProjectError::TestNotFound, ProjectResult};
+use crate::test::{TestInfo, TestInfoId, test_case::TestCase};
+use gpui_kit::SharedString;
 use ki_project::FileTestSuite;
+use log::error;
 use std::fmt::Debug;
-use uuid::Uuid;
 
-#[derive(Clone, Debug, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestSuite {
   pub info: TestInfo,
   pub cases: Vec<TestCase>,
 }
 
 impl TestSuite {
-  pub fn from_file(file_test_suites: Vec<FileTestSuite>) -> Vec<TestSuite> {
-    file_test_suites
-      .into_iter()
-      .map(|file_test_suite| Self {
-        info: TestInfo::from_file(file_test_suite.info),
-        cases: TestCase::from_file(file_test_suite.cases),
-      })
-      .collect()
+  pub fn from_file(file_test_suite: FileTestSuite) -> TestSuite {
+    let id = file_test_suite.info.id;
+    Self {
+      info: TestInfo::new_suite(file_test_suite.info),
+      cases: file_test_suite
+        .cases
+        .into_iter()
+        .map(|case| TestCase::from_file(case, id))
+        .collect(),
+    }
   }
 
   pub fn get_file(&self) -> FileTestSuite {
     FileTestSuite {
-      info: self.info.get_file(),
+      info: self.info.to_file(),
       cases: self.cases.iter().map(|case| case.get_file()).collect(),
     }
   }
 
   #[allow(unused)]
-  pub fn info_from_path(&self, path: &[Uuid]) -> Option<&TestInfo> {
-    let case = self.cases.iter().find(|case| case.info.id == path[0])?;
-    if path.len() == 1 {
-      Some(&case.info)
-    } else {
-      case.info_from_path(&path[1])
+  pub fn info_from_path(&self, info_id: &TestInfoId) -> Option<&TestInfo> {
+    let case = self.cases.iter().find(|case| case.info.info_id == *info_id)?;
+    match info_id {
+      TestInfoId::Suite(_) => None,
+      TestInfoId::Case(_, _) | TestInfoId::CaseStep(_, _) => Some(&case.info),
+      TestInfoId::Step(_, _, _) => case.info_from_path(info_id),
     }
   }
 
-  pub fn info_mut_from_path(&mut self, path: &[Uuid]) -> Option<&mut TestInfo> {
-    let case = self.cases.iter_mut().find(|case| case.info.id == path[0])?;
-    if path.len() == 1 {
-      Some(&mut case.info)
-    } else {
-      case.info_mut_from_path(&path[1])
+  pub fn info_mut_from_path(&mut self, info_id: &TestInfoId) -> Option<&mut TestInfo> {
+    let case = self.cases.iter_mut().find(|case| case.info.info_id == *info_id)?;
+    match info_id {
+      TestInfoId::Suite(_) => None,
+      TestInfoId::Case(_, _) | TestInfoId::CaseStep(_, _) => Some(&mut case.info),
+      TestInfoId::Step(_, _, _) => case.info_mut_from_path(info_id),
     }
   }
-}
 
-impl PartialEq for TestSuite {
-  fn eq(&self, other: &Self) -> bool {
-    self.info.name == other.info.name && self.cases == other.cases
+  pub(crate) fn duplicate(&self, name: SharedString) -> Self {
+    Self {
+      info: self.info.duplicate(name),
+      cases: self.cases.iter().map(|tc| tc.duplicate(tc.info.name.clone())).collect(),
+    }
+  }
+
+  pub(crate) fn duplicate_child(&mut self, info_id: &TestInfoId) -> ProjectResult<()> {
+    let Some(ix) = self.cases.iter().position(|case| case.info.info_id.is_parent(info_id)) else {
+      error!("TestSuite:duplicate_child: unknow path: {}", info_id);
+      return Err(TestNotFound);
+    };
+
+    if matches!(info_id, TestInfoId::Case(_, _)) || self.cases[ix].is_step() {
+      let name = ki_utils::next_available_name(
+        &self.cases[ix].info.name,
+        self.cases.iter().map(|case| case.info.name.clone()),
+      );
+      let duplicate = self.cases[ix].duplicate(name);
+      if ix == self.cases.len() - 1 {
+        self.cases.push(duplicate);
+      } else {
+        self.cases.insert(ix + 1, duplicate);
+      }
+      Ok(())
+    } else {
+      self.cases[ix].duplicate_child(info_id)
+    }
   }
 }

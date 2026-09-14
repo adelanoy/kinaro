@@ -1,4 +1,4 @@
-use crate::error::{ProjectError, WorkspaceError};
+use crate::error::{ProjectError, WorkspaceError, WorkspaceResult};
 use gpui_kit::{App, Entity, EventEmitter, SharedString, Subscription};
 use gpui_kit::{AppContext, Context};
 use ki_settings::GlobalSettings;
@@ -23,8 +23,6 @@ pub use test::test_suite::TestSuite;
 
 const WORKSPACES_FILENAME: &str = "workspace.json";
 
-/// Result alias for Workspace
-pub type Result<T> = std::result::Result<T, WorkspaceError>;
 
 /// Serialized version of a workspace
 #[derive(Serialize, Deserialize, Default)]
@@ -99,10 +97,8 @@ impl Workspace {
       .into_iter()
       .map(|metadata| match Project::load(&metadata, cx) {
         Ok(project) => {
-          // Refresh the metadata now that the project is loaded, in case they were change externally
-          let path = project.read(cx).path.clone();
           let _sub = cx.subscribe(&project, Self::on_project_event);
-          (path.clone(), WorkspaceProject::project(project, _sub, cx))
+          (metadata.path.clone(), WorkspaceProject::project(project, _sub, cx))
         }
         Err(err) => (metadata.path.clone(), WorkspaceProject::error(err, metadata)),
       })
@@ -214,7 +210,7 @@ impl Workspace {
   /// Emits a [`WorkspaceEvent::ActiveProjectChanged`] when the project is set as active
   /// # Returns
   /// If the project failed to load, returns a [`WorkspaceError::Project`]
-  pub fn open_project(&mut self, path: PathBuf, cx: &mut Context<Self>) -> Result<()> {
+  pub fn open_project(&mut self, path: PathBuf, cx: &mut Context<Self>) -> WorkspaceResult<()> {
     if !self.workspace_projects.contains_key(&path) {
       let metadata = FileProjectMetadata {
         path: path.clone(),
@@ -242,7 +238,7 @@ impl Workspace {
   ///
   /// # Events
   /// Emits a [`WorkspaceEvent::ProjectsChanged`] if the project is successfully removed from the workspace
-  pub fn reload_project(&mut self, project_path: PathBuf, cx: &mut Context<Self>) -> Result<bool> {
+  pub fn reload_project(&mut self, project_path: PathBuf, cx: &mut Context<Self>) -> WorkspaceResult<bool> {
     let updated_wp;
     {
       let Some(project) = self.workspace_projects.get_mut(&project_path) else {
@@ -262,9 +258,9 @@ impl Workspace {
     }
 
     if let Some(updated_wp) = updated_wp {
-      let result: Result<bool> = match &updated_wp.data {
+      let result: WorkspaceResult<bool> = match &updated_wp.data {
         WorkspaceProjectData::Error(err, _) => {
-          println!("err: {}", err);
+          error!("Error loading project: {}", err);
           Err(err.clone().into())
         }
         WorkspaceProjectData::Loaded { .. } => Ok(true),
@@ -356,7 +352,7 @@ impl Workspace {
   /// If the path is unknown, returns a wrapped [`ProjectError::UnknownProject`]
   ///
   /// If the path references a project that failed to load, returns a [`WorkspaceError::ProjectNotLoaded`]
-  pub fn switch_project(&mut self, project_path: PathBuf, cx: &mut Context<Self>) -> Result<()> {
+  pub fn switch_project(&mut self, project_path: PathBuf, cx: &mut Context<Self>) -> WorkspaceResult<()> {
     let Some(project) = self.workspace_projects.get(&project_path) else {
       return Err(ProjectError::UnknownProject(project_path).into());
     };
@@ -378,16 +374,9 @@ impl Workspace {
       active_project: self.active_project.clone(),
       projects: self
         .workspace_projects
-        .iter()
-        .map(|(path, workspace_project)| match &workspace_project.data {
-          WorkspaceProjectData::Loaded { project, .. } => {
-            let project = project.read(cx);
-            FileProjectMetadata {
-              path: path.clone(),
-              active_profile: project.active_profile(),
-              opened_tree_nodes: project.opened_tree_nodes().clone(),
-            }
-          }
+        .values()
+        .map(|workspace_project| match &workspace_project.data {
+          WorkspaceProjectData::Loaded { project, .. } => project.read_with(cx, |project, cx| project.metadata(cx)),
           WorkspaceProjectData::Error(_, metadata) => metadata.clone(),
         })
         .collect(),
@@ -395,8 +384,11 @@ impl Workspace {
   }
 
   /// Project event's handler, mostly used to serialize to file project's settings
-  fn on_project_event(&mut self, _project: Entity<Project>, _event: &ProjectEvent, cx: &mut Context<Self>) {
-    self.save(cx);
+  fn on_project_event(&mut self, _project: Entity<Project>, event: &ProjectEvent, cx: &mut Context<Self>) {
+    match event {
+      ProjectEvent::ActiveProfile(_) | ProjectEvent::TestTreeNodes => self.save(cx),
+      _ => {}
+    }
   }
 }
 

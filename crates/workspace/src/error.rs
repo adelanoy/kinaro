@@ -2,6 +2,10 @@ use gpui_kit::component::notification::Notification;
 use ki_project::ProjectFileError;
 use std::path::PathBuf;
 
+
+/// Result alias for Workspace
+pub type WorkspaceResult<T> = Result<T, WorkspaceError>;
+
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
   /// An operation tried to access a project that failed to load
@@ -37,9 +41,12 @@ impl From<WorkspaceError> for Notification {
   }
 }
 
+/// Result alias for Project
+pub type ProjectResult<T> = Result<T, ProjectError>;
+
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ProjectError {
-  /// General Io workspace error
+  /// Io error
   #[error("ProjectError::Io (err: {})", .0)]
   Io(String),
   /// A write serialization has failed
@@ -57,6 +64,9 @@ pub enum ProjectError {
   /// The project has invalid name
   #[error("ProjectError::InvalidName (name: {})", .0)]
   InvalidName(String),
+  /// An operation was attempted on a missing test
+  #[error("ProjectError::OperationNotAllowed")]
+  OperationNotAllowed,
   /// An operation was attempted on a missing profile
   #[error("ProjectError::ProfileNotFound")]
   ProfileNotFound,
@@ -101,6 +111,9 @@ impl From<ProjectError> for Notification {
       }
       ProjectError::InvalidName(name) => {
         Notification::error(format!("Invalid name for project: {}", name))
+      }
+      ProjectError::OperationNotAllowed => {
+        Notification::error("A non-allowed operation was invoked, see logs for details")
       }
       ProjectError::ProfileNotFound => Notification::warning("Unknown profile"),
       ProjectError::VariableNotFound => Notification::warning("Unknown variable"),

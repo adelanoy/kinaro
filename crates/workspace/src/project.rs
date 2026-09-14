@@ -1,27 +1,26 @@
 use crate::endpoint::WorkspaceEndpoint;
-use crate::error::ProjectError;
+use crate::error::{ProjectError, ProjectResult};
 use crate::test::{TestsContainer, TestsContainerEvent};
 use crate::variable::{ProjectVariables, ProjectVariablesEvent};
 use crate::{FileProjectMetadata, Workspace};
 use chrono::{DateTime, Local};
-use gpui_kit::{AppContext, Context, Entity, EventEmitter, SharedString, Subscription};
+use gpui_kit::{App, AppContext, Context, Entity, EventEmitter, SharedString, Subscription};
 use ki_project::ProjectFile;
 use log::error;
-use std::collections::HashSet;
 use std::path::PathBuf;
 use uuid::Uuid;
-use crate::ProjectEvent::TreeNodesChanged;
 
 pub const PROJECT_FILE_EXT: &str = "kpr";
 
-/// Result alias for Workspace
-pub type Result<T> = std::result::Result<T, ProjectError>;
-
 ///// WORKSPACE PROJECT EVENTS /////
+#[derive(Debug, PartialEq, Eq)]
 pub enum ProjectEvent {
   /// Emitted when the active profile has been modified
-  ActiveProfileChanged(Option<Uuid>),
-  TreeNodesChanged,
+  ActiveProfile(Option<Uuid>),
+  /// Emitted when the test tree content has changed
+  TestTree,
+  /// Emitted when the test tree nodes have changed
+  TestTreeNodes,
 }
 
 #[derive(Debug)]
@@ -33,11 +32,10 @@ pub struct Project {
   pub endpoints: Vec<WorkspaceEndpoint>,
   pub tests: Entity<TestsContainer>,
   // unserialized data
-  pub(super) path: PathBuf,
+  path: PathBuf,
   _variables_event_sub: Subscription,
   _tests_event_sub: Subscription,
   active_profile: Option<Uuid>,
-  opened_tree_nodes: HashSet<Uuid>,
 }
 
 impl Project {
@@ -48,7 +46,7 @@ impl Project {
 
   /// Change the currently active profile
   /// # Events
-  /// Emits a [`ProjectEvent::ActiveProfileChanged`] if active profile was successfully changed
+  /// Emits a [`ProjectEvent::ActiveProfile`] if active profile was successfully changed
   pub fn switch_profile(&mut self, profile_id: Option<Uuid>, cx: &mut Context<Self>) {
     if profile_id == self.active_profile {
       return;
@@ -56,7 +54,7 @@ impl Project {
     match profile_id {
       None => {
         self.active_profile = None;
-        cx.emit(ProjectEvent::ActiveProfileChanged(None));
+        cx.emit(ProjectEvent::TestTreeNodes);
       }
       Some(profile_id) => {
         if self
@@ -67,31 +65,16 @@ impl Project {
           .any(|p| p.id == profile_id)
         {
           self.active_profile = Some(profile_id);
-          cx.emit(ProjectEvent::ActiveProfileChanged(self.active_profile));
+          cx.emit(ProjectEvent::ActiveProfile(self.active_profile));
         }
       }
     }
   }
 
-  #[inline]
-  pub fn opened_tree_nodes(&self) -> &HashSet<Uuid> {
-    &self.opened_tree_nodes
-  }
-
-  pub fn expand_tree_node(&mut self, id: Uuid, cx: &mut Context<Self>) {
-    self.opened_tree_nodes.insert(id);
-    cx.emit(ProjectEvent::TreeNodesChanged);
-  }
-
-  pub fn collapse_tree_node(&mut self, id: &Uuid, cx: &mut Context<Self>) {
-    self.opened_tree_nodes.remove(id);
-    cx.emit(ProjectEvent::TreeNodesChanged);
-  }
-
   pub(super) fn load(
     metadata: &FileProjectMetadata,
     cx: &mut Context<Workspace>,
-  ) -> Result<Entity<Self>> {
+  ) -> ProjectResult<Entity<Self>> {
     let path = &metadata.path;
     if !path.exists() || path.extension() != Some(PROJECT_FILE_EXT.as_ref()) {
       error!("Invalid project at: {}", path.to_string_lossy());
@@ -111,7 +94,7 @@ impl Project {
       let variables = cx.new(|_| ProjectVariables::from_file(file_project.variables));
       let _variables_event_sub = cx.subscribe(&variables, Self::on_profiles_variables_event);
       let endpoints = WorkspaceEndpoint::from_file(&file_project.endpoints);
-      let tests = cx.new(|_| TestsContainer::from_file(file_project.tests));
+      let tests = cx.new(|_| TestsContainer::from_file(file_project.tests, metadata));
       let _tests_event_sub = cx.subscribe(&tests, Self::on_tests_event);
       let active_profile = metadata
         .active_profile
@@ -126,7 +109,6 @@ impl Project {
         _variables_event_sub,
         _tests_event_sub,
         active_profile,
-        opened_tree_nodes: metadata.opened_tree_nodes.clone(),
         path: path.to_owned(),
       }
     });
@@ -150,7 +132,6 @@ impl Project {
       _tests_event_sub,
       tests,
       active_profile: None,
-      opened_tree_nodes: HashSet::new(),
     };
     this.save(cx);
     this
@@ -172,6 +153,14 @@ impl Project {
       }
     })
       .detach();
+  }
+
+  pub(super) fn metadata(&self, cx: &App) -> FileProjectMetadata {
+    FileProjectMetadata {
+      path: self.path.clone(),
+      active_profile: self.active_profile,
+      opened_tree_nodes: self.tests.read(cx).opened_tree_nodes().clone(),
+    }
   }
 
   fn to_file(&self, cx: &Context<Self>) -> ProjectFile {
@@ -207,7 +196,7 @@ impl Project {
       .any(|p| p.id == active_profile)
     {
       self.active_profile = None;
-      cx.emit(ProjectEvent::ActiveProfileChanged(self.active_profile));
+      cx.emit(ProjectEvent::ActiveProfile(self.active_profile));
     }
 
     self.save(cx);
@@ -216,16 +205,16 @@ impl Project {
   fn on_tests_event(
     &mut self,
     _tests: Entity<TestsContainer>,
-    _e: &TestsContainerEvent,
+    event: &TestsContainerEvent,
     cx: &mut Context<Self>,
   ) {
-    cx.emit(TreeNodesChanged);
-    // Check if the currently active profile has been deleted
-    /*if let TestsContainerEvent::Removed(id) = e {
-      self.opened_tree_nodes.remove(id);
+    match event {
+      TestsContainerEvent::TestsModified => {
+        self.save(cx);
+        cx.emit(ProjectEvent::TestTree);
+      }
+      TestsContainerEvent::TreeNodesChanged => cx.emit(ProjectEvent::TestTreeNodes),
     }
-    cx.emit(ProjectEvent::TreeNodesChanged);
-    self.save(cx);*/
   }
 }
 
