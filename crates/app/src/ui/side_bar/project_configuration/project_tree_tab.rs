@@ -76,6 +76,16 @@ impl ProjectTree {
     });
   }
 
+  fn on_add_test_case(&mut self, _: &AddTestCase, window: &mut Window, cx: &mut Context<Self>) {
+    self.tree_state.update(cx, |tree, cx| {
+      let Some(ix) = tree.selected_index() else {
+        warn!("ProjectTree:on_add_step: no tree_state selected_ix");
+        return;
+      };
+      tree.delegate_mut().add_test_case(ix, window, cx);
+    });
+  }
+
   fn on_add_test_step(&mut self, _: &AddTestStep, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
       let Some(ix) = tree.selected_index() else {
@@ -85,6 +95,7 @@ impl ProjectTree {
       tree.delegate_mut().add_test_step(ix, window, cx);
     });
   }
+
 }
 
 impl ProjectConfigurationTab for ProjectTree {
@@ -213,6 +224,18 @@ impl ProjectTreeDelegate {
       return;
     };
     if let Err(err) = self.tests.update(cx, |tests, cx| tests.duplicate_test(info_id, cx)) {
+      window.push_notification(err, cx);
+    } else {
+      self.update_tests_nodes(cx);
+    }
+  }
+
+  fn add_test_case(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    let Some(info_id) = self.tree_nodes.get(ix).map(|node| &node.info_id) else {
+      warn!("ProjectTreeDelegate:add_test_case: unknown item ix: {}", ix);
+      return;
+    };
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.add_test_case(info_id, cx)) {
       window.push_notification(err, cx);
     } else {
       self.update_tests_nodes(cx);
@@ -375,6 +398,7 @@ impl Render for ProjectTree {
       .on_action(cx.listener(Self::on_switch_node_enable_status))
       .on_action(cx.listener(Self::on_rename_node))
       .on_action(cx.listener(Self::on_duplicate_node))
+      .on_action(cx.listener(Self::on_add_test_case))
       .on_action(cx.listener(Self::on_add_test_step))
       .size_full()
       .gap_y_2()
