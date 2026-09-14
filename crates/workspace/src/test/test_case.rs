@@ -19,26 +19,20 @@ pub struct TestCase {
 }
 
 impl TestCase {
-  pub fn add_test_step(&mut self, info_id: &TestInfoId) -> ProjectResult<()> {
-    match info_id {
-      TestInfoId::Suite(_) | TestInfoId::CaseStep(_, _) => {
+  pub fn add_test_step(&mut self, suite_id: Uuid) -> ProjectResult<()> {
+    match &mut self.case_type {
+      TestCaseType::CaseMulti { steps } => {
+        let name = ki_utils::next_available_name("new Test", steps.iter().map(|step| step.info.name.clone()));
+        steps.push(TestStep::new(suite_id, self.info.id(), name));
+        Ok(())
+      }
+      TestCaseType::CaseStep { .. } => {
         error!(
-          "TestCase:add_test_step: cannot add a step on a case step. path: {}",
+          "TestCase:add_test_step: cannot add a step on step case at: {}",
           self.info.info_id
         );
         Err(ProjectError::OperationNotAllowed)
       }
-      TestInfoId::CaseMulti(suite_id, _) | TestInfoId::Step(suite_id, _, _) => match &mut self.case_type {
-        TestCaseType::CaseMulti { steps } => {
-          let name = ki_utils::next_available_name("new Test", steps.iter().map(|step| step.info.name.clone()));
-          steps.push(TestStep::new(*suite_id, self.info.id(), name));
-          Ok(())
-        }
-        TestCaseType::CaseStep { .. } => {
-          error!("TestCase:add_test_step: cannot add a step on a step case. path: {}", info_id);
-          Err(ProjectError::OperationNotAllowed)
-        }
-      },
     }
   }
 
@@ -143,6 +137,18 @@ impl TestCase {
   #[inline]
   pub fn is_step(&self) -> bool {
     matches!(self.case_type, TestCaseType::CaseStep { .. })
+  }
+
+  pub fn new(suite_id: Uuid, name: SharedString) -> Self {
+    Self {
+      info: TestInfo {
+        info_id: TestInfoId::CaseMulti(suite_id, Uuid::new_v4()),
+        name,
+        description: None,
+        disabled: false,
+      },
+      case_type: TestCaseType::CaseMulti { steps: vec![] },
+    }
   }
 
   pub fn new_case_step(suite_id: Uuid, name: SharedString) -> Self {

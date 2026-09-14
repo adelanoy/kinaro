@@ -12,6 +12,12 @@ pub struct TestSuite {
 }
 
 impl TestSuite {
+  pub fn add_test_case(&mut self) -> ProjectResult<()> {
+    let name = ki_utils::next_available_name("new Case", self.cases.iter().map(|case| case.info.name.clone()));
+    self.cases.push(TestCase::new(self.info.id(), name));
+    Ok(())
+  }
+
   pub fn add_test_step(&mut self, info_id: &TestInfoId) -> ProjectResult<()> {
     match info_id {
       TestInfoId::Suite(_) | TestInfoId::CaseStep(_, _) => {
@@ -24,7 +30,7 @@ impl TestSuite {
           warn!("TestSuite:add_test_step: unknow path: {}", info_id);
           return Err(TestNotFound);
         };
-        case.add_test_step(info_id)
+        case.add_test_step(self.info.id())
       }
     }
   }

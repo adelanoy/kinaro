@@ -185,6 +185,18 @@ pub struct TestsContainer {
 }
 
 impl TestsContainer {
+  pub fn add_test_case(&mut self, info_id: &TestInfoId, cx: &mut Context<Self>) -> ProjectResult<()> {
+    let suite_id = info_id.suite_id();
+    let Some(suite) = self.suites.iter_mut().find(|suite| suite.info.id() == suite_id) else {
+      warn!("TestsContainer:add_test_case: unknow path: {}", info_id);
+      return Err(TestNotFound);
+    };
+    suite.add_test_case()?;
+
+    cx.emit(TestsContainerEvent::TestsModified);
+    Ok(())
+  }
+  
   pub fn add_test_step(&mut self, info_id: &TestInfoId, cx: &mut Context<Self>) -> ProjectResult<()> {
     let suite_id = info_id.suite_id();
     let Some(suite) = self.suites.iter_mut().find(|suite| suite.info.id() == suite_id) else {
