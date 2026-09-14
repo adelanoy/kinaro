@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "type")]
 pub enum FileTestCaseType {
-  Case { steps: Vec<FileTestStep> },
+  CaseMulti { steps: Vec<FileTestStep> },
   CaseStep {data: String },
 }
 

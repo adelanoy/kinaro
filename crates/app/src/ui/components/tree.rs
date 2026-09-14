@@ -27,7 +27,7 @@ impl ProjectTreeNode {
   pub fn icon(&self) -> Option<Icon> {
     match self.info_id {
       TestInfoId::Suite(_) => Some(Icon::new(IconAsset::TestSuite)),
-      TestInfoId::Case(_, _) => Some(Icon::new(IconAsset::TestCase)),
+      TestInfoId::CaseMulti(_, _) => Some(Icon::new(IconAsset::TestCase)),
       TestInfoId::Step(_, _, _) | TestInfoId::CaseStep(_, _) => Some(Icon::new(IconAsset::TestStep)),
     }
   }
