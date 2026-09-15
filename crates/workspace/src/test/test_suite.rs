@@ -1,4 +1,4 @@
-use crate::error::{ProjectError::TestNotFound, ProjectResult};
+use crate::error::{ProjectError, ProjectResult};
 use crate::test::{TestInfo, TestInfoId, test_case::TestCase};
 use gpui_kit::SharedString;
 use ki_project::FileTestSuite;
@@ -26,32 +26,66 @@ pub struct TestSuite {
 }
 
 impl TestSuite {
+  /// Adds a new case relative to `info_id`: right after the case whose id
+  /// matches (or that is its parent), or appended at the end when nothing
+  /// matches.
   pub fn add_test_case(&mut self, info_id: &TestInfoId)  {
     let position = self.cases.iter().position(|case| case.info.info_id.is_parent(info_id));
     let name = ki_utils::next_available_name("new Case", self.cases.iter().map(|case| case.info.name.clone()));
     match position {
-      Some(ix) => self.cases.insert(ix + 1, TestCase::new(self.info.id(), name)),
-      None => self.cases.push(TestCase::new(self.info.id(), name)),
+      Some(ix) => self.cases.insert(ix + 1, TestCase::new_multi(self.info.id(), name)),
+      None => self.cases.push(TestCase::new_multi(self.info.id(), name)),
     }
   }
 
+  /// Adds a new step relative to `info_id`. When `info_id` addresses the
+  /// suite itself or a `CaseStep`, a new case step is appended to the suite;
+  /// otherwise the step is delegated to the owning `CaseMulti`.
+  ///
+  /// # Errors
+  /// [`ProjectError::TestNotFound`] if `info_id` addresses a
+  /// case or step whose owning case cannot be found by id in this suite.
   pub fn add_test_step(&mut self, info_id: &TestInfoId) -> ProjectResult<()> {
     match info_id {
       TestInfoId::Suite(_) | TestInfoId::CaseStep(_, _) => {
         let name = ki_utils::next_available_name("New Step", self.cases.iter().map(|case| case.info.name.clone()));
-        self.cases.push(TestCase::new_case_step(self.info.id(), name));
+        self.cases.push(TestCase::new_step(self.info.id(), name));
         Ok(())
       }
       TestInfoId::CaseMulti(_, case_id) | TestInfoId::Step(_, case_id, _) => {
         let Some(case) = self.cases.iter_mut().find(|case| case.info.id() == *case_id) else {
-          warn!("TestSuite:add_test_step: unknow path: {}", info_id);
-          return Err(TestNotFound);
+          error!("TestSuite:add_test_step: unknow path: {}", info_id);
+          return Err(ProjectError::TestNotFound);
         };
         case.add_test_step(info_id)
       }
     }
   }
 
+  /// Deletes the node addressed by `info_id` from this suite: the whole case
+  /// when `info_id` addresses a case, or a single step delegated to its
+  /// owning case otherwise.
+  ///
+  /// # Errors
+  /// [`ProjectError::TestNotFound`] if no case in this suite is
+  /// (or owns) the node addressed by `info_id`.
+  pub(crate) fn delete_test(&mut self, info_id: &TestInfoId) -> ProjectResult<()> {
+    let Some(ix) = self.cases.iter().position(|case| case.info.info_id.is_parent(info_id)) else {
+      warn!("TestSuite:delete_test: unknow path: {}", info_id);
+      return Err(ProjectError::TestNotFound);
+    };
+
+    if info_id.is_case() {
+      self.cases.remove(ix);
+      Ok(())
+    } else {
+      self.cases[ix].delete_test(info_id)
+    }
+  }
+
+  /// Duplicates this suite with a new random id and the given name. All
+  /// cases (and their children) are also duplicated with new ids, but keep
+  /// their original names.
   pub(crate) fn duplicate(&self, name: SharedString) -> Self {
     Self {
       info: self.info.duplicate(name),
@@ -59,10 +93,17 @@ impl TestSuite {
     }
   }
 
+  /// Duplicates the case (or, for a step within a `CaseMulti`, delegates to
+  /// that case) addressed by `info_id`, inserting the copy right after it
+  /// with a name made unique against its siblings.
+  ///
+  /// # Errors
+  /// [`ProjectError::TestNotFound`] if no case in this suite is
+  /// (or owns) the node addressed by `info_id`.
   pub(crate) fn duplicate_child(&mut self, info_id: &TestInfoId) -> ProjectResult<()> {
     let Some(ix) = self.cases.iter().position(|case| case.info.info_id.is_parent(info_id)) else {
       error!("TestSuite:duplicate_child: unknow path: {}", info_id);
-      return Err(TestNotFound);
+      return Err(ProjectError::TestNotFound);
     };
 
     if matches!(info_id, TestInfoId::CaseMulti(_, _)) || self.cases[ix].is_step() {
@@ -82,6 +123,8 @@ impl TestSuite {
     }
   }
 
+  /// Builds a suite from its on-disk representation, reading ids from the
+  /// file rather than generating new ones.
   pub(crate) fn from_file(file_test_suite: FileTestSuite) -> TestSuite {
     let id = file_test_suite.info.id;
     Self {
@@ -94,6 +137,7 @@ impl TestSuite {
     }
   }
 
+  /// Produces the serializable, on-disk representation of this suite.
   pub(crate) fn get_file(&self) -> FileTestSuite {
     FileTestSuite {
       info: self.info.to_file(),
@@ -101,6 +145,9 @@ impl TestSuite {
     }
   }
 
+  /// Looks up the [`TestInfo`] of the case or step addressed by `info_id`.
+  /// Always `None` when `info_id` addresses the suite itself, since the
+  /// suite's own info isn't reachable through this lookup.
   #[allow(unused)]
   pub fn info_from_path(&self, info_id: &TestInfoId) -> Option<&TestInfo> {
     let case = self.cases.iter().find(|case| case.info.info_id.is_parent(info_id))?;
@@ -111,6 +158,7 @@ impl TestSuite {
     }
   }
 
+  /// Mutable counterpart to [`TestSuite::info_from_path`].
   pub fn info_mut_from_path(&mut self, info_id: &TestInfoId) -> Option<&mut TestInfo> {
     let case = self.cases.iter_mut().find(|case| case.info.info_id.is_parent(info_id))?;
     match info_id {
@@ -120,6 +168,7 @@ impl TestSuite {
     }
   }
 
+  /// Creates a new, empty suite with a freshly generated id.
   pub fn new(name: SharedString) -> Self {
     Self {
       info: TestInfo {
@@ -135,6 +184,7 @@ impl TestSuite {
 
 #[cfg(test)]
 mod tests {
+  use crate::error::ProjectError;
   use crate::test::TestInfoId;
   use crate::test::test_suite::TestSuite;
   use gpui_kit::SharedString;
@@ -522,5 +572,64 @@ mod tests {
       case_names(&f.suite),
       vec!["multi case", "case step", "new Case", "new Case_1"]
     );
+  }
+
+  #[test]
+  fn delete_test_removes_case_multi() {
+    let mut f = fixture();
+    f.suite
+      .delete_test(&TestInfoId::CaseMulti(f.suite_id, f.multi_id))
+      .expect("delete_test should succeed");
+    assert_eq!(case_names(&f.suite), vec!["case step"]);
+  }
+
+  #[test]
+  fn delete_test_removes_case_step() {
+    let mut f = fixture();
+    f.suite
+      .delete_test(&TestInfoId::CaseStep(f.suite_id, f.case_step_id))
+      .expect("delete_test should succeed");
+    assert_eq!(case_names(&f.suite), vec!["multi case"]);
+  }
+
+  #[test]
+  fn delete_test_removes_step_within_case_multi() {
+    let mut f = fixture();
+    f.suite
+      .delete_test(&TestInfoId::Step(f.suite_id, f.multi_id, f.step_a_id))
+      .expect("delete_test should succeed");
+    // The case itself is untouched; only the step below it is removed.
+    assert_eq!(case_names(&f.suite), vec!["multi case", "case step"]);
+    assert!(
+      f.suite
+        .info_from_path(&TestInfoId::Step(f.suite_id, f.multi_id, f.step_a_id))
+        .is_none()
+    );
+    let sibling = f
+      .suite
+      .info_from_path(&TestInfoId::Step(f.suite_id, f.multi_id, f.step_b_id))
+      .expect("remaining step should still be reachable");
+    assert_eq!(sibling.name, SharedString::new("step b"));
+  }
+
+  #[test]
+  fn delete_test_unknown_case_is_not_found() {
+    let mut f = fixture();
+    let err = f
+      .suite
+      .delete_test(&TestInfoId::CaseMulti(f.suite_id, Uuid::new_v4()))
+      .expect_err("an unknown case id should fail");
+    assert!(matches!(err, ProjectError::TestNotFound));
+    assert_eq!(case_names(&f.suite), vec!["multi case", "case step"]);
+  }
+
+  #[test]
+  fn delete_test_unknown_step_is_not_found() {
+    let mut f = fixture();
+    let err = f
+      .suite
+      .delete_test(&TestInfoId::Step(f.suite_id, f.multi_id, Uuid::new_v4()))
+      .expect_err("an unknown step id should fail");
+    assert!(matches!(err, ProjectError::TestNotFound));
   }
 }

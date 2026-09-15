@@ -29,12 +29,9 @@ impl TestInfoId {
     }
   }
 
-  pub fn suite_id(&self) -> Uuid {
-    match *self {
-      TestInfoId::Suite(id) => id,
-      TestInfoId::CaseMulti(id, _) | TestInfoId::CaseStep(id, _) => id,
-      TestInfoId::Step(id, _, _) => id,
-    }
+  #[inline]
+  pub fn is_case(&self) -> bool {
+    matches!(self, TestInfoId::CaseMulti(_, _) | TestInfoId::CaseStep(_, _))
   }
 
   pub fn case_id(&self) -> Option<Uuid> {
@@ -45,11 +42,29 @@ impl TestInfoId {
     }
   }
 
+  #[inline]
+  pub fn is_step(&self) -> bool {
+    matches!(self, TestInfoId::Step(_, _, _))
+  }
+
   pub fn step_id(&self) -> Option<Uuid> {
     match *self {
       TestInfoId::Suite(_) => None,
       TestInfoId::CaseMulti(_, _) | TestInfoId::CaseStep(_, _) => None,
       TestInfoId::Step(_, _, id) => Some(id),
+    }
+  }
+
+  #[inline]
+  pub fn is_suite(&self) -> bool {
+    matches!(self, TestInfoId::Suite(_))
+  }
+
+  pub fn suite_id(&self) -> Uuid {
+    match *self {
+      TestInfoId::Suite(id) => id,
+      TestInfoId::CaseMulti(id, _) | TestInfoId::CaseStep(id, _) => id,
+      TestInfoId::Step(id, _, _) => id,
     }
   }
 
@@ -167,7 +182,11 @@ impl TestInfo {
     FileTestInfo {
       id: self.id(),
       name: self.name.to_string(),
-      description: self.description.as_ref().map(|s| ki_utils::to_multiline(s)).unwrap_or_default(),
+      description: self
+        .description
+        .as_ref()
+        .map(|s| ki_utils::to_multiline(s))
+        .unwrap_or_default(),
       disabled: self.disabled,
     }
   }
@@ -231,8 +250,23 @@ impl TestsContainer {
     cx.emit(TestsContainerEvent::TreeNodesChanged);
   }
 
+  pub fn delete_test(&mut self, info_id: &TestInfoId, cx: &mut Context<Self>) -> ProjectResult<()> {
+    let Some(ix) = self.suites.iter().position(|suite| suite.info.info_id.is_parent(info_id)) else {
+      warn!("TestsContainer:delete_test: unknow path: {}", info_id);
+      return Err(TestNotFound);
+    };
+
+    if info_id.is_suite() {
+      self.suites.remove(ix);
+    } else {
+      self.suites[ix].delete_test(info_id)?;
+    };
+      cx.emit(TestsContainerEvent::TestsModified);
+    Ok(())
+  }
+
   pub fn duplicate_test(&mut self, info_id: &TestInfoId, cx: &mut Context<Self>) -> ProjectResult<()> {
-    let Some(ix) = self.suites.iter().position(|suite| suite.info.id() == info_id.suite_id()) else {
+    let Some(ix) = self.suites.iter().position(|suite| suite.info.info_id.is_parent(info_id)) else {
       warn!("TestsContainer:duplicate_test: unknow path: {}", info_id);
       return Err(TestNotFound);
     };
