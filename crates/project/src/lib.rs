@@ -59,8 +59,8 @@ mod ki_project {
       check_project_path(path, true)
         .and_then(|()| fs::read(path).map_err(ProjectFileError::Io))
         .and_then(|file| {
-          serde_yaml::from_slice::<ProjectFile>(&file)
-            .map_err(|err| ProjectFileError::ReadYaml(err.to_string()))
+          serde_json::from_slice::<ProjectFile>(&file)
+            .map_err(|err| ProjectFileError::Read(err.to_string()))
         })
     }
 
@@ -73,8 +73,8 @@ mod ki_project {
       fs::File::create(path)
         .map_err(ProjectFileError::from)
         .and_then(|file| {
-          serde_yaml::to_writer(file, &self)
-            .map_err(|err| ProjectFileError::WriteYaml(err.to_string()))
+          serde_json::to_writer_pretty(file, &self)
+            .map_err(|err| ProjectFileError::Write(err.to_string()))
         })
     }
   }

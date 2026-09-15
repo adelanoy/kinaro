@@ -1,0 +1,195 @@
+{
+  "name": "example_project",
+  "version": 1,
+  "created": "2026-09-15T15:43:12",
+  "modified": "2026-09-15T16:02:13",
+  "variables": {
+    "variables": [
+      {
+        "id": "9737139f-3a7d-4285-b047-3da1bcdb7447",
+        "name": "host",
+        "description": "Hostname of the API server",
+        "kind": "Text",
+        "value": "localhost",
+        "overrides": {
+          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "localhost",
+          "b929fd98-c721-44bf-9e0a-0860c732a2db": "test.example.com",
+          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "api.example.com"
+        }
+      },
+      {
+        "id": "0507f899-d607-4c6b-8858-1187ce4ed1eb",
+        "name": "port",
+        "description": "Port the API server listens on",
+        "kind": "Text",
+        "value": "8080",
+        "overrides": {
+          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "8081",
+          "b929fd98-c721-44bf-9e0a-0860c732a2db": "8443",
+          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "443"
+        }
+      },
+      {
+        "id": "eec3c70b-e3b8-436b-9417-6e132e4c81f8",
+        "name": "username",
+        "description": "Username used to authenticate against the API",
+        "kind": "Text",
+        "value": "admin",
+        "overrides": {
+          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "admin",
+          "b929fd98-c721-44bf-9e0a-0860c732a2db": "svc-test",
+          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "svc-prod"
+        }
+      },
+      {
+        "id": "c371b6ef-86c4-4bff-8441-79f697975360",
+        "name": "password",
+        "description": "Password used to authenticate against the API",
+        "kind": "PasswordClear",
+        "value": "",
+        "overrides": {
+          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "dev-secret",
+          "b929fd98-c721-44bf-9e0a-0860c732a2db": "test-secret",
+          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "prod-secret"
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "id": "c4aa980a-39fe-449f-bf0d-6e0807375f09",
+        "name": "dev",
+        "description": "Variables for the local development environment"
+      },
+      {
+        "id": "b929fd98-c721-44bf-9e0a-0860c732a2db",
+        "name": "test",
+        "description": "Variables for the shared test/staging environment"
+      },
+      {
+        "id": "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2",
+        "name": "prod",
+        "description": "Variables for the live production environment"
+      }
+    ]
+  },
+  "endpoints": [],
+  "tests": {
+    "suites": [
+      {
+        "id": "44add332-f444-4a5b-a031-d61871f83f91",
+        "name": "User API",
+        "description": [
+          "Covers the example CRUD API's user endpoints."
+        ],
+        "cases": [
+          {
+            "id": "7d73b612-c8d6-489b-8402-787079ca5b5d",
+            "name": "Create user",
+            "caseType": {
+              "type": "CaseMulti",
+              "steps": [
+                {
+                  "id": "500f6b3f-2bf5-4e34-ae1f-c75d4276cd28",
+                  "name": "Send POST request",
+                  "data": ""
+                },
+                {
+                  "id": "4b4b57bf-bf53-4265-887b-d5b6f8004000",
+                  "name": "Assert 201 Created",
+                  "data": ""
+                }
+              ]
+            }
+          },
+          {
+            "id": "8ac1bc38-e62b-4325-8e20-8000803af746",
+            "name": "Get user by id",
+            "caseType": {
+              "type": "CaseMulti",
+              "steps": [
+                {
+                  "id": "81bca7f4-b16d-4e02-a2c0-8eb14bb753e3",
+                  "name": "Send GET request",
+                  "data": ""
+                },
+                {
+                  "id": "57eb013a-d352-4c2f-bb40-58c52313eec1",
+                  "name": "Assert response body",
+                  "data": ""
+                }
+              ]
+            }
+          },
+          {
+            "id": "e71aa081-8a9e-497a-9ac5-459e34c95a07",
+            "name": "Health check",
+            "caseType": {
+              "type": "CaseStep",
+              "data": ""
+            }
+          }
+        ]
+      },
+      {
+        "id": "304c4ab9-5a8b-4d6a-a849-cbd1b7a90d67",
+        "name": "Authentication",
+        "description": [
+          "Covers login, logout, and token handling."
+        ],
+        "cases": [
+          {
+            "id": "4a57cc66-a41e-4a50-a5df-3791da3c5fe3",
+            "name": "Login",
+            "caseType": {
+              "type": "CaseMulti",
+              "steps": [
+                {
+                  "id": "c29a91a4-434a-43b8-9504-db1b2635c19d",
+                  "name": "Send login request",
+                  "data": ""
+                },
+                {
+                  "id": "0fae84ea-e4bb-4f2b-9bae-9048336b8858",
+                  "name": "Assert 200 OK",
+                  "data": ""
+                },
+                {
+                  "id": "93cb61d7-b26a-4ae9-b38d-4b3513a82fbc",
+                  "name": "Extract auth token",
+                  "data": ""
+                }
+              ]
+            }
+          },
+          {
+            "id": "d44a8936-39e8-438b-acf9-c24b1f3d2ced",
+            "name": "Token refresh",
+            "caseType": {
+              "type": "CaseStep",
+              "data": ""
+            }
+          },
+          {
+            "id": "4562fd21-29a4-4528-9bac-ed7380d3ccf4",
+            "name": "Logout",
+            "caseType": {
+              "type": "CaseMulti",
+              "steps": [
+                {
+                  "id": "dec98db3-ebaa-4a8e-9f4d-cfe2bcfedceb",
+                  "name": "Send logout request",
+                  "data": ""
+                },
+                {
+                  "id": "8da247f6-b29f-47a2-b79f-e47c1e6730bf",
+                  "name": "Assert session invalidated",
+                  "data": ""
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

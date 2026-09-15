@@ -66,7 +66,7 @@ mod tests {
       info: FileTestInfo {
         id,
         name: name.to_string(),
-        description: Some("a description".to_string()),
+        description: vec!["a description".to_string(), "with two lines".to_string()],
         disabled: true,
       },
       data: data.to_string(),
@@ -92,7 +92,7 @@ mod tests {
   fn from_file_builds_step_with_expected_info() {
     let f = fixture();
     assert_eq!(f.step.info.name, SharedString::new("step a"));
-    assert_eq!(f.step.info.description, Some(SharedString::new("a description")));
+    assert_eq!(f.step.info.description, Some(SharedString::new("a description\nwith two lines")));
     assert!(f.step.info.disabled);
     assert_eq!(f.step.data, "step data");
     assert!(

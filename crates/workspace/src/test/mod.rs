@@ -116,7 +116,7 @@ impl TestInfo {
     Self {
       info_id: TestInfoId::Suite(file_test_info.id),
       name: file_test_info.name.into(),
-      description: file_test_info.description.map(|s| s.into()),
+      description: ki_utils::from_multiline(&file_test_info.description).map(|s| s.into()),
       disabled: file_test_info.disabled,
     }
   }
@@ -125,7 +125,7 @@ impl TestInfo {
     Self {
       info_id: TestInfoId::CaseMulti(suite_id, file_test_info.id),
       name: file_test_info.name.into(),
-      description: file_test_info.description.map(|s| s.into()),
+      description: ki_utils::from_multiline(&file_test_info.description).map(|s| s.into()),
       disabled: file_test_info.disabled,
     }
   }
@@ -134,7 +134,7 @@ impl TestInfo {
     Self {
       info_id: TestInfoId::CaseStep(suite_id, file_test_info.id),
       name: file_test_info.name.into(),
-      description: file_test_info.description.map(|s| s.into()),
+      description: ki_utils::from_multiline(&file_test_info.description).map(|s| s.into()),
       disabled: file_test_info.disabled,
     }
   }
@@ -143,7 +143,7 @@ impl TestInfo {
     Self {
       info_id: TestInfoId::Step(suite_id, case_id, file_test_info.id),
       name: file_test_info.name.into(),
-      description: file_test_info.description.map(|s| s.into()),
+      description: ki_utils::from_multiline(&file_test_info.description).map(|s| s.into()),
       disabled: file_test_info.disabled,
     }
   }
@@ -167,7 +167,7 @@ impl TestInfo {
     FileTestInfo {
       id: self.id(),
       name: self.name.to_string(),
-      description: self.description.as_ref().map(|s| s.to_string()),
+      description: self.description.as_ref().map(|s| ki_utils::to_multiline(s)).unwrap_or_default(),
       disabled: self.disabled,
     }
   }
@@ -644,7 +644,7 @@ mod tests {
     let file_info = FileTestInfo {
       id: suite_id,
       name: suite_id.to_string(),
-      description: Some(suite_id.to_string()),
+      description: vec![suite_id.to_string()],
       disabled: true,
     };
 
@@ -666,7 +666,7 @@ mod tests {
     let file_info = FileTestInfo {
       id: case_id,
       name: case_id.to_string(),
-      description: Some(case_id.to_string()),
+      description: vec![case_id.to_string()],
       disabled: true,
     };
 
@@ -689,7 +689,7 @@ mod tests {
     let file_info = FileTestInfo {
       id: case_id,
       name: case_id.to_string(),
-      description: Some(case_id.to_string()),
+      description: vec![case_id.to_string()],
       disabled: true,
     };
 
@@ -713,7 +713,7 @@ mod tests {
     let file_info = FileTestInfo {
       id: step_id,
       name: step_id.to_string(),
-      description: Some(step_id.to_string()),
+      description: vec![step_id.to_string()],
       disabled: true,
     };
 

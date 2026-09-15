@@ -10,8 +10,10 @@ pub mod test_suite;
 pub struct FileTestInfo {
   pub id: Uuid,
   pub name: String,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub description: Option<String>,
+  /// One entry per line, so version control diffs only the lines that
+  /// actually changed instead of one escaped multiline string.
+  #[serde(default, skip_serializing_if = "Vec::is_empty")]
+  pub description: Vec<String>,
   #[serde(default, skip_serializing_if = "std::ops::Not::not")]
   pub disabled: bool,
 }
