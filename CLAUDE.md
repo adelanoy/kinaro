@@ -68,3 +68,6 @@ The `crates/app` side mirrors this with `TestInfoId`-driven `ProjectTreeDelegate
 - Cross-entity reactions use `EventEmitter<SomeEvent>` + `cx.emit(...)` on the producer and `cx.subscribe(&entity, Self::on_event)` on the consumer (see `Workspace` ↔ `Project` ↔ `TestsContainer`/`ProjectVariables` for the chain of subscriptions that ends in persisting to disk).
 - UI actions are declared with the `actions!([...])` macro and bound to keys in `actions::init` (`crates/app/src/actions.rs`); a context key (e.g. `PROJECT_TREE_CONTEXT_KEY`) scopes a binding to a specific focused view.
 - The project tree view implements the app-local `TreeDelegate` trait (`crates/app/src/ui/components/tree.rs`) to drive a generic `TreeState<D>` list component.
+
+## Project conventions
+- Function documentation should include an Error section whenever it returns a Result, or a derived type (ProjectResult, WorkspaceResult...)

@@ -1,6 +1,4 @@
-use crate::actions::{
-  AddTestCase, AddTestStep, AddTestSuite, Duplicate, PROJECT_TREE_CONTEXT_KEY, RemoveNode, Rename, SwitchNodeActiveStatus,
-};
+use crate::actions::{AddTestCase, AddTestStep, AddTestSuite, Delete, Duplicate, RemoveNode, Rename, SwitchNodeActiveStatus, PROJECT_TREE_CONTEXT_KEY};
 use crate::ui::components::tree::{ProjectTreeNode, Tree, TreeDelegate, TreeEvent, TreeState};
 use crate::ui::side_bar::project_configuration::ProjectConfigurationTab;
 use gpui_kit::component::tooltip::Tooltip;
@@ -63,6 +61,16 @@ impl ProjectTree {
         return;
       };
       tree.delegate_mut().setup_rename_node(ix, window, cx);
+    });
+  }
+
+  fn on_delete_node(&mut self, _: &Delete, window: &mut Window, cx: &mut Context<Self>) {
+    self.tree_state.update(cx, |tree, cx| {
+      let Some(ix) = tree.selected_index() else {
+        warn!("ProjectTree:on_delete_node: no tree_state selected_ix");
+        return;
+      };
+      tree.delegate_mut().delete_node(ix, window, cx);
     });
   }
 
@@ -179,6 +187,18 @@ impl ProjectTreeDelegate {
     };
     self.tests.update(cx, |tests, cx| tests.add_test_suite(info_id, cx));
     self.update_tests_nodes(cx);
+  }
+
+  fn delete_node(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    let Some(info_id) = self.tree_nodes.get(ix).map(|node| &node.info_id) else {
+      warn!("ProjectTreeDelegate:delete_node: unknown item ix: {}", ix);
+      return;
+    };
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.delete_test(info_id, cx)) {
+      window.push_notification(err, cx);
+    } else {
+      self.update_tests_nodes(cx);
+    }
   }
 
   fn duplicate_node(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
@@ -428,6 +448,7 @@ impl Render for ProjectTree {
       .on_action(cx.listener(Self::on_remove_node))
       .on_action(cx.listener(Self::on_switch_node_enable_status))
       .on_action(cx.listener(Self::on_rename_node))
+      .on_action(cx.listener(Self::on_delete_node))
       .on_action(cx.listener(Self::on_duplicate_node))
       .on_action(cx.listener(Self::on_add_test_suite))
       .on_action(cx.listener(Self::on_add_test_case))

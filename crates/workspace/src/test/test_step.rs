@@ -3,6 +3,8 @@ use gpui_kit::SharedString;
 use ki_project::FileTestStep;
 use uuid::Uuid;
 
+/// A single test step: either one of a [`TestCase`](crate::test::test_case::TestCase)'s
+/// own steps, or a case step promoted directly to case level.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestStep {
   pub info: TestInfo,
@@ -10,6 +12,8 @@ pub struct TestStep {
 }
 
 impl TestStep {
+  /// Duplicates this step with a new random id, keeping the same suite/case,
+  /// description, disabled flag and data.
   pub(super) fn duplicate(&self, name: SharedString) -> Self {
     Self {
       info: self.info.duplicate(name),
@@ -17,19 +21,23 @@ impl TestStep {
     }
   }
   
+  /// Builds a step from its on-disk representation
   pub fn from_file(file_test_step: FileTestStep, suite_id: Uuid, case_id: Uuid) -> TestStep {
     Self {
         info: TestInfo::new_step(file_test_step.info, suite_id, case_id),
         data: file_test_step.data.clone(),
       }
   }
+
+  /// Produces the serializable, on-disk representation of this step.
   pub fn get_file(&self) -> FileTestStep {
     FileTestStep {
       info: self.info.to_file(),
       data: self.data.clone(),
     }
   }
-  
+
+  /// Creates a new, empty step with a freshly generated id.
   pub fn new(suite_id: Uuid, case_id: Uuid, name: SharedString) -> Self {
     Self {
       info: TestInfo {

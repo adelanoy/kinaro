@@ -1,4 +1,3 @@
-use crate::error::ProjectError::TestNotFound;
 use crate::error::{ProjectError, ProjectResult};
 use crate::test::{TestInfo, TestInfoId, test_step::TestStep};
 use gpui_kit::SharedString;
@@ -6,19 +5,38 @@ use ki_project::{FileTestCase, FileTestCaseType};
 use log::error;
 use uuid::Uuid;
 
+/// The two shapes a [`TestCase`] can take.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TestCaseType {
+  /// A case that owns its own list of steps.
   CaseMulti { steps: Vec<TestStep> },
+  /// A case level step, so that it can be positioned directly under a suite
   CaseStep { data: String },
 }
 
+/// A test case: either a [`TestCaseType::CaseMulti`] holding its own steps,
+/// or a [`TestCaseType::CaseStep`] (a case level step).
+///
+/// Cases are created with [`TestCase::new_multi`] / [`TestCase::new_step`], or
+/// loaded from their on-disk representation with [`TestCase::from_file`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestCase {
+  /// Metadata for the case itself (id, name, description, disabled flag).
+  ///
+  /// `info.info_id` is a [`TestInfoId::CaseMulti`] or [`TestInfoId::CaseStep`]
+  /// depending on `case_type`.
   pub info: TestInfo,
   case_type: TestCaseType,
 }
 
 impl TestCase {
+  /// Adds a new step relative to `info_id`: right after the step whose id
+  /// matches, or appended at the end when nothing matches. Only valid on a
+  /// [`TestCaseType::CaseMulti`].
+  ///
+  /// # Errors
+  /// Returns [`ProjectError::OperationNotAllowed`] when called on a
+  /// [`TestCaseType::CaseStep`], since a case step cannot have children.
   pub fn add_test_step(&mut self, info_id: &TestInfoId) -> ProjectResult<()> {
     match &mut self.case_type {
       TestCaseType::CaseMulti { steps } => {
@@ -40,13 +58,43 @@ impl TestCase {
     }
   }
 
+  /// Returns the [`TestCaseType`] variant backing this case.
   #[inline]
   pub fn case_type(&self) -> &TestCaseType {
     &self.case_type
   }
 
-  /// Duplicates this TestCase with a new random ID and the given name. All children are also duplicated with a new ID, but keep their
-  /// original name, whether this is a regular or a step case
+  /// Deletes the step addressed by `info_id` from this case. Only valid on a
+  /// [`TestCaseType::CaseMulti`]; a [`TestCaseType::CaseStep`] has no
+  /// children to delete.
+  ///
+  /// # Errors
+  /// - [`ProjectError::TestNotFound`] if no step matches `info_id`.
+  /// - [`ProjectError::OperationNotAllowed`] when called on a
+  ///   [`TestCaseType::CaseStep`].
+  pub(crate) fn delete_test(&mut self, info_id: &TestInfoId) -> ProjectResult<()> {
+    match &mut self.case_type {
+      TestCaseType::CaseMulti { steps } => {
+        let Some(ix) = steps.iter().position(|step| step.info.info_id.is_parent(info_id)) else {
+          error!("TestCase:delete_test: unknow path: {}", info_id);
+          return Err(ProjectError::TestNotFound);
+        };
+        steps.remove(ix);
+        Ok(())
+      }
+      TestCaseType::CaseStep { .. } => {
+        error!(
+          "TestCase:delete_test: cannot delete a step on step case at: {}",
+          self.info.info_id
+        );
+        Err(ProjectError::OperationNotAllowed)
+      }
+    }
+  }
+
+  /// Duplicates this case with a new random id and the given name. All
+  /// children in a `CaseMulti` are also duplicated with a new id,
+  /// but keep their original name.
   pub(super) fn duplicate(&self, name: SharedString) -> Self {
     Self {
       info: self.info.duplicate(name),
@@ -59,16 +107,19 @@ impl TestCase {
     }
   }
 
-  /// Duplicates this TestCase's children steps.
+  /// Duplicates the step addressed by `info_id`, inserting the copy right
+  /// after it with a name made unique against its siblings.
   ///
-  /// # Result
-  /// This cannot be called on a Step Case and will return a
+  /// # Errors
+  /// - [`ProjectError::TestNotFound`] if no step matches `info_id`.
+  /// - [`ProjectError::OperationNotAllowed`] when called on a
+  ///   [`TestCaseType::CaseStep`], since it has no children.
   pub(crate) fn duplicate_child(&mut self, info_id: &TestInfoId) -> ProjectResult<()> {
     match &mut self.case_type {
       TestCaseType::CaseMulti { steps } => {
         let Some(ix) = steps.iter().position(|step| step.info.info_id == *info_id) else {
           error!("TestCase:duplicate_child: unknow path: {}", info_id);
-          return Err(TestNotFound);
+          return Err(ProjectError::TestNotFound);
         };
         let name = ki_utils::next_available_name(&steps[ix].info.name, steps.iter().map(|case| case.info.name.clone()));
         let duplicate = steps[ix].duplicate(name);
@@ -85,6 +136,7 @@ impl TestCase {
     }
   }
 
+  /// Builds a case from its on-disk representation.
   pub(crate) fn from_file(file_test_case: FileTestCase, suite_id: Uuid) -> Self {
     let id = file_test_case.info.id;
     match file_test_case.case_type {
@@ -104,6 +156,7 @@ impl TestCase {
     }
   }
 
+  /// Produces the serializable, on-disk representation of this case.
   pub(crate) fn get_file(&self) -> FileTestCase {
     FileTestCase {
       info: self.info.to_file(),
@@ -116,6 +169,8 @@ impl TestCase {
     }
   }
 
+  /// Looks up the [`TestInfo`] of the step addressed by `info_id`. Always
+  /// `None` on a [`TestCaseType::CaseStep`], since it has no children.
   #[allow(unused)]
   pub fn info_from_path(&self, info_id: &TestInfoId) -> Option<&TestInfo> {
     match &self.case_type {
@@ -124,6 +179,7 @@ impl TestCase {
     }
   }
 
+  /// Mutable counterpart to [`TestCase::info_from_path`].
   pub fn info_mut_from_path(&mut self, info_id: &TestInfoId) -> Option<&mut TestInfo> {
     match &mut self.case_type {
       TestCaseType::CaseMulti { steps } => steps
@@ -134,12 +190,15 @@ impl TestCase {
     }
   }
 
+  /// Returns `true` if this case is a [`TestCaseType::CaseStep`].
   #[inline]
   pub fn is_step(&self) -> bool {
     matches!(self.case_type, TestCaseType::CaseStep { .. })
   }
 
-  pub fn new(suite_id: Uuid, name: SharedString) -> Self {
+  /// Creates a new, empty [`TestCaseType::CaseMulti`] with a freshly
+  /// generated id.
+  pub fn new_multi(suite_id: Uuid, name: SharedString) -> Self {
     Self {
       info: TestInfo {
         info_id: TestInfoId::CaseMulti(suite_id, Uuid::new_v4()),
@@ -151,7 +210,9 @@ impl TestCase {
     }
   }
 
-  pub fn new_case_step(suite_id: Uuid, name: SharedString) -> Self {
+  /// Creates a new [`TestCaseType::CaseStep`] with empty data and a freshly
+  /// generated id.
+  pub fn new_step(suite_id: Uuid, name: SharedString) -> Self {
     Self {
       info: TestInfo {
         info_id: TestInfoId::CaseStep(suite_id, Uuid::new_v4()),
@@ -260,7 +321,7 @@ mod tests {
   #[test]
   fn add_test_step_on_empty_case_multi() {
     let suite_id = Uuid::new_v4();
-    let mut case = TestCase::new(suite_id, SharedString::new("case"));
+    let mut case = TestCase::new_multi(suite_id, SharedString::new("case"));
     let case_id = case.info.id();
     case
       .add_test_step(&TestInfoId::CaseMulti(suite_id, case_id))
@@ -467,7 +528,7 @@ mod tests {
   #[test]
   fn new_creates_empty_case_multi() {
     let suite_id = Uuid::new_v4();
-    let case = TestCase::new(suite_id, SharedString::new("new case"));
+    let case = TestCase::new_multi(suite_id, SharedString::new("new case"));
     assert_eq!(case.info.name, SharedString::new("new case"));
     assert!(matches!(case.info.info_id(), TestInfoId::CaseMulti(suite, _) if suite == suite_id));
     assert!(matches!(case.case_type(), TestCaseType::CaseMulti { steps } if steps.is_empty()));
@@ -477,7 +538,7 @@ mod tests {
   #[test]
   fn new_case_step_creates_empty_data() {
     let suite_id = Uuid::new_v4();
-    let case = TestCase::new_case_step(suite_id, SharedString::new("new case step"));
+    let case = TestCase::new_step(suite_id, SharedString::new("new case step"));
     assert_eq!(case.info.name, SharedString::new("new case step"));
     assert!(matches!(case.info.info_id(), TestInfoId::CaseStep(suite, _) if suite == suite_id));
     assert!(matches!(case.case_type(), TestCaseType::CaseStep { data } if data.is_empty()));
