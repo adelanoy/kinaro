@@ -187,7 +187,7 @@ mod tests {
     FileTestInfo {
       id,
       name: name.to_string(),
-      description: None,
+      description: vec![],
       disabled: false,
     }
   }

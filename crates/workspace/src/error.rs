@@ -83,8 +83,8 @@ impl From<ProjectFileError> for ProjectError {
     match value {
       ProjectFileError::Io(err) => ProjectError::Io(err.to_string()),
       ProjectFileError::InvalidName(name) => ProjectError::InvalidName(name),
-      ProjectFileError::WriteYaml(err) => ProjectError::Write(err),
-      ProjectFileError::ReadYaml(err) => ProjectError::Read(err),
+      ProjectFileError::Write(err) => ProjectError::Write(err),
+      ProjectFileError::Read(err) => ProjectError::Read(err),
       ProjectFileError::BadLocation(path) => ProjectError::BadLocation(path),
     }
   }
