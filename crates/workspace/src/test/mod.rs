@@ -191,12 +191,12 @@ impl TestsContainer {
       warn!("TestsContainer:add_test_case: unknow path: {}", info_id);
       return Err(TestNotFound);
     };
-    suite.add_test_case()?;
+    suite.add_test_case(info_id);
 
     cx.emit(TestsContainerEvent::TestsModified);
     Ok(())
   }
-  
+
   pub fn add_test_step(&mut self, info_id: &TestInfoId, cx: &mut Context<Self>) -> ProjectResult<()> {
     let suite_id = info_id.suite_id();
     let Some(suite) = self.suites.iter_mut().find(|suite| suite.info.id() == suite_id) else {
@@ -207,6 +207,23 @@ impl TestsContainer {
 
     cx.emit(TestsContainerEvent::TestsModified);
     Ok(())
+  }
+
+  pub fn add_test_suite(&mut self, info_id: Option<&TestInfoId>, cx: &mut Context<Self>) {
+    let position = match info_id {
+      None => None,
+      Some(info_id) => {
+        let suite_id = info_id.suite_id();
+        self.suites.iter().position(|suite| suite.info.id() == suite_id)
+      }
+    };
+
+    let name = ki_utils::next_available_name("New Suite", self.suites.iter().map(|suite| suite.info.name.clone()));
+    match position {
+      Some(ix) => self.suites.insert(ix + 1, TestSuite::new(name)),
+      None => self.suites.push(TestSuite::new(name)),
+    }
+    cx.emit(TestsContainerEvent::TestsModified);
   }
 
   pub fn collapse_tree_node(&mut self, id: &Uuid, cx: &mut Context<Self>) {
