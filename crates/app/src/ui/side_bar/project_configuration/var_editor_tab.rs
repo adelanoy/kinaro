@@ -40,19 +40,19 @@ impl VariableEditor {
     });
   }
 
-  fn on_delete_row_action(&mut self, _action: &Delete, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_delete_action(&mut self, _action: &Delete, window: &mut Window, cx: &mut Context<Self>) {
     self.table_state.update(cx, |this, cx| {
-      this.delegate_mut().delete_variable(window, cx);
+      this.delegate_mut().show_delete_variable_confirm_dialog(window, cx);
     });
   }
 
-  fn on_duplicate_row_action(&mut self, _action: &Duplicate, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_duplicate_action(&mut self, _action: &Duplicate, window: &mut Window, cx: &mut Context<Self>) {
     self.table_state.update(cx, |table_state, cx| {
       table_state.delegate_mut().duplicate_variable(window, cx);
     });
   }
 
-  fn on_clear_selection(&mut self, _action: &Escape, _window: &mut Window, cx: &mut Context<Self>) {
+  fn on_escape_action(&mut self, _action: &Escape, _window: &mut Window, cx: &mut Context<Self>) {
     self.table_state.update(cx, |table_state, cx| table_state.clear_selection(cx));
   }
 }
@@ -163,13 +163,40 @@ impl VariableDataTableDelegate {
       .update(cx, |this, cx| this.add_variable(current_row, name, cx));
   }
 
-  fn delete_variable(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+  fn show_delete_variable_confirm_dialog(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
     let row_ix = match self.cell_state {
       CellState::CellSelected(row_ix) => row_ix,
       _ => {
+        warn!("VariableDataTableDelegate:show_delete_profile_confirm_dialog: no cell selected");
         return;
       }
     };
+    let Some(name) = self.project_vars.read(cx).profiles.get(row_ix).map(|p| p.name.clone()) else {
+      warn!("VariableDataTableDelegate:show_delete_profile_confirm_dialog: invalid selection");
+      return;
+    };
+
+    let this = cx.entity();
+    window.open_alert_dialog(cx, {
+      move |dialog, _, _| {
+        dialog
+          .title("Delete variable")
+          .description(format!("You are about to delete the variable '{}', continue?", name))
+          .show_cancel(true)
+          .on_ok({
+            let this = this.clone();
+            move |_, window, cx| {
+              this.update(cx, |this, cx| {
+                this.delegate_mut().delete_variable(row_ix, window, cx);
+              });
+              true
+            }
+          })
+      }
+    });
+  }
+
+  fn delete_variable(&mut self, row_ix: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
     if let Err(err) = self.project_vars.update(cx, |this, cx| this.delete_variable(row_ix, cx)) {
       window.push_notification(err, cx);
     }
@@ -442,9 +469,9 @@ impl Render for VariableEditor {
 
     v_flex()
       .track_focus(&table_state.focus_handle(cx))
-      .on_action(cx.listener(Self::on_delete_row_action))
-      .on_action(cx.listener(Self::on_duplicate_row_action))
-      .on_action(cx.listener(Self::on_clear_selection))
+      .on_action(cx.listener(Self::on_delete_action))
+      .on_action(cx.listener(Self::on_duplicate_action))
+      .on_action(cx.listener(Self::on_escape_action))
       .p_1()
       .size_full()
       .gap_y_2()

@@ -14,7 +14,6 @@ actions!([
     AddTestSuite,
     AddTestCase,
     AddTestStep,
-    RemoveNode,
     SwitchNodeActiveStatus
 ]);
 
