@@ -1,4 +1,4 @@
-use crate::actions::{AddTestCase, AddTestStep, AddTestSuite, Delete, Duplicate, RemoveNode, Rename, SwitchNodeActiveStatus, PROJECT_TREE_CONTEXT_KEY};
+use crate::actions::{AddTestCase, AddTestStep, AddTestSuite, Delete, Duplicate, Escape, Rename, SwitchNodeActiveStatus, PROJECT_TREE_CONTEXT_KEY};
 use crate::ui::components::tree::{ProjectTreeNode, Tree, TreeDelegate, TreeEvent, TreeState};
 use crate::ui::side_bar::project_configuration::ProjectConfigurationTab;
 use gpui_kit::component::tooltip::Tooltip;
@@ -42,9 +42,7 @@ impl ProjectTree {
     });
   }
 
-  fn on_remove_node(&mut self, _action: &RemoveNode, _window: &mut Window, _cx: &mut Context<Self>) {}
-
-  fn on_switch_node_enable_status(&mut self, _action: &SwitchNodeActiveStatus, _window: &mut Window, cx: &mut Context<Self>) {
+  fn on_switch_node_active_status_action(&mut self, _action: &SwitchNodeActiveStatus, _window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
       let Some(ix) = tree.selected_index() else {
         warn!("ProjectTree:on_switch_node_enable_status: no tree_state selected_ix");
@@ -54,7 +52,7 @@ impl ProjectTree {
     })
   }
 
-  fn on_rename_node(&mut self, _: &Rename, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_rename_action(&mut self, _: &Rename, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
       let Some(ix) = tree.selected_index() else {
         warn!("ProjectTree:on_rename_node: no tree_state selected_ix");
@@ -64,17 +62,17 @@ impl ProjectTree {
     });
   }
 
-  fn on_delete_node(&mut self, _: &Delete, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_delete_action(&mut self, _: &Delete, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
       let Some(ix) = tree.selected_index() else {
         warn!("ProjectTree:on_delete_node: no tree_state selected_ix");
         return;
       };
-      tree.delegate_mut().delete_node(ix, window, cx);
+      tree.delegate_mut().show_delete_confirm_dialog(ix, window, cx);
     });
   }
 
-  fn on_duplicate_node(&mut self, _: &Duplicate, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_duplicate_action(&mut self, _: &Duplicate, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
       let Some(ix) = tree.selected_index() else {
         warn!("ProjectTree:on_duplicate_node: no tree_state selected_ix");
@@ -84,14 +82,14 @@ impl ProjectTree {
     });
   }
 
-  fn on_add_test_suite(&mut self, _: &AddTestSuite, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_add_test_suite_action(&mut self, _: &AddTestSuite, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
       let ix = tree.selected_index();
       tree.delegate_mut().add_test_suite(ix, window, cx);
     });
   }
 
-  fn on_add_test_case(&mut self, _: &AddTestCase, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_add_test_case_action(&mut self, _: &AddTestCase, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
       let Some(ix) = tree.selected_index() else {
         warn!("ProjectTree:on_add_test_case: no tree_state selected_ix");
@@ -101,7 +99,7 @@ impl ProjectTree {
     });
   }
 
-  fn on_add_test_step(&mut self, _: &AddTestStep, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_add_test_step_action(&mut self, _: &AddTestStep, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
       let Some(ix) = tree.selected_index() else {
         warn!("ProjectTree:on_add_step: no tree_state selected_ix");
@@ -109,6 +107,10 @@ impl ProjectTree {
       };
       tree.delegate_mut().add_test_step(ix, window, cx);
     });
+  }
+
+  fn on_escape_action(&mut self, _action: &Escape, _window: &mut Window, cx: &mut Context<Self>) {
+    self.tree_state.update(cx, |tree_state, cx| tree_state.clear_selection(cx));
   }
 }
 
@@ -189,12 +191,37 @@ impl ProjectTreeDelegate {
     self.update_tests_nodes(cx);
   }
 
-  fn delete_node(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let Some(info_id) = self.tree_nodes.get(ix).map(|node| &node.info_id) else {
+  fn show_delete_confirm_dialog(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    let Some(node) = self.tree_nodes.get(ix) else {
       warn!("ProjectTreeDelegate:delete_node: unknown item ix: {}", ix);
       return;
     };
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.delete_test(info_id, cx)) {
+
+    let this = cx.entity();
+    window.open_alert_dialog(cx, {
+      let kind = node.kind();
+      let label = node.label.clone();
+      let info_id = node.info_id;
+      move |dialog, _, _| {
+        dialog
+          .title(format!("Delete {}", kind))
+          .description(format!("You are about to delete the {} '{}', continue?", kind, label))
+          .show_cancel(true)
+          .on_ok({
+            let this = this.clone();
+            move |_, window, cx| {
+              this.update(cx, |this, cx| {
+                this.delegate_mut().delete_node(info_id, window, cx);
+              });
+              true
+            }
+          })
+      }
+    });
+  }
+
+  fn delete_node(&mut self, info_id: TestInfoId, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.delete_test(&info_id, cx)) {
       window.push_notification(err, cx);
     } else {
       self.update_tests_nodes(cx);
@@ -392,7 +419,7 @@ fn build_context_menu(disabled: bool, kind: TestInfoId) -> Box<ContextMenuBuilde
       .menu_with_check("Enabled", !disabled, Box::new(SwitchNodeActiveStatus))
       .menu_with_icon("Rename", IconAsset::Rename, Box::new(Rename))
       .separator()
-      .menu_with_icon("Remove", IconName::Delete, Box::new(RemoveNode))
+      .menu_with_icon("Delete", IconName::Delete, Box::new(Delete))
   };
   Box::new(builder)
 }
@@ -445,14 +472,14 @@ impl Render for ProjectTree {
     v_flex()
       .id("project-tree")
       .key_context(PROJECT_TREE_CONTEXT_KEY)
-      .on_action(cx.listener(Self::on_remove_node))
-      .on_action(cx.listener(Self::on_switch_node_enable_status))
-      .on_action(cx.listener(Self::on_rename_node))
-      .on_action(cx.listener(Self::on_delete_node))
-      .on_action(cx.listener(Self::on_duplicate_node))
-      .on_action(cx.listener(Self::on_add_test_suite))
-      .on_action(cx.listener(Self::on_add_test_case))
-      .on_action(cx.listener(Self::on_add_test_step))
+      .on_action(cx.listener(Self::on_escape_action))
+      .on_action(cx.listener(Self::on_switch_node_active_status_action))
+      .on_action(cx.listener(Self::on_rename_action))
+      .on_action(cx.listener(Self::on_delete_action))
+      .on_action(cx.listener(Self::on_duplicate_action))
+      .on_action(cx.listener(Self::on_add_test_suite_action))
+      .on_action(cx.listener(Self::on_add_test_case_action))
+      .on_action(cx.listener(Self::on_add_test_step_action))
       .size_full()
       .gap_y_2()
       .p_1()

@@ -35,6 +35,15 @@ impl ProjectTreeNode {
   pub fn id(&self) -> Uuid {
     self.info_id.id()
   }
+  
+  /// Returns a label describing the type of node
+  pub fn kind(&self) -> SharedString {
+    match &self.info_id {
+      TestInfoId::Suite(_) => "Test Suite",
+      TestInfoId::CaseMulti(_, _) => "Test Case",
+      TestInfoId::CaseStep(_, _) | TestInfoId::Step(_, _, _) => "Test Step",
+    }.into()
+  }
 }
 
 pub trait TreeDelegate: Sized + 'static {

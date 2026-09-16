@@ -1,7 +1,5 @@
 use crate::actions::{Delete, Duplicate, Escape};
 use crate::ui::side_bar::project_configuration::ProjectConfigurationTab;
-use ki_workspace::Project;
-use ki_workspace::variable::{ProfileInfo, ProjectVariables};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::label::Label;
@@ -12,6 +10,9 @@ use gpui_kit::prelude::*;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
 use ki_utils::ui::{CellState, MovingLabel};
+use ki_workspace::Project;
+use ki_workspace::variable::{ProfileInfo, ProjectVariables};
+use log::warn;
 
 pub(super) struct ProfileEditor {
   focus_handle: FocusHandle,
@@ -38,19 +39,19 @@ impl ProfileEditor {
     });
   }
 
-  fn on_delete_row_action(&mut self, _action: &Delete, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_delete_action(&mut self, _action: &Delete, window: &mut Window, cx: &mut Context<Self>) {
     self.table_state.update(cx, |this, cx| {
-      this.delegate_mut().delete_profile(window, cx);
+      this.delegate_mut().show_delete_profile_confirm_dialog(window, cx);
     });
   }
 
-  fn on_duplicate_row_action(&mut self, _action: &Duplicate, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_duplicate_action(&mut self, _action: &Duplicate, window: &mut Window, cx: &mut Context<Self>) {
     self.table_state.update(cx, |table_state, cx| {
       table_state.delegate_mut().duplicate_profile(window, cx);
     });
   }
 
-  fn on_clear_selection(&mut self, _action: &Escape, _window: &mut Window, cx: &mut Context<Self>) {
+  fn on_escape_action(&mut self, _action: &Escape, _window: &mut Window, cx: &mut Context<Self>) {
     self.table_state.update(cx, |table_state, cx| table_state.clear_selection(cx));
   }
 }
@@ -236,13 +237,40 @@ impl ProfileDataTableDelegate {
       .update(cx, |this, cx| this.add_profile(current_row, name, cx));
   }
 
-  fn delete_profile(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+  fn show_delete_profile_confirm_dialog(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
     let row_ix = match self.cell_state {
       CellState::CellSelected(row_ix) => row_ix,
       _ => {
+        warn!("ProfileDataTableDelegate:show_delete_profile_confirm_dialog: no cell selected");
         return;
       }
     };
+    let Some(name) = self.project_vars.read(cx).profiles.get(row_ix).map(|p| p.name.clone()) else {
+      warn!("ProfileDataTableDelegate:show_delete_profile_confirm_dialog: invalid selection");
+      return;
+    };
+
+    let this = cx.entity();
+    window.open_alert_dialog(cx, {
+      move |dialog, _, _| {
+        dialog
+          .title("Delete profile")
+          .description(format!("You are about to delete the profile '{}', continue?", name))
+          .show_cancel(true)
+          .on_ok({
+            let this = this.clone();
+            move |_, window, cx| {
+              this.update(cx, |this, cx| {
+                this.delegate_mut().delete_profile(row_ix, window, cx);
+              });
+              true
+            }
+          })
+      }
+    });
+  }
+
+  fn delete_profile(&mut self, row_ix: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
     if let Err(err) = self.project_vars.update(cx, |this, cx| this.delete_profile(row_ix, cx)) {
       window.push_notification(err, cx);
     }
@@ -343,9 +371,9 @@ impl Render for ProfileEditor {
     });
     v_flex()
       .track_focus(&self.focus_handle)
-      .on_action(cx.listener(Self::on_delete_row_action))
-      .on_action(cx.listener(Self::on_duplicate_row_action))
-      .on_action(cx.listener(Self::on_clear_selection))
+      .on_action(cx.listener(Self::on_delete_action))
+      .on_action(cx.listener(Self::on_duplicate_action))
+      .on_action(cx.listener(Self::on_escape_action))
       .p_1()
       .size_full()
       .gap_y_2()
