@@ -1,5 +1,7 @@
-use crate::actions::{AddTestCase, AddTestStep, AddTestSuite, Delete, Duplicate, Escape, Rename, SwitchNodeActiveStatus, PROJECT_TREE_CONTEXT_KEY};
-use crate::ui::components::tree::{ProjectTreeNode, Tree, TreeDelegate, TreeEvent, TreeState};
+use crate::actions::{
+  AddTestCase, AddTestStep, AddTestSuite, Delete, Duplicate, Escape, PROJECT_TREE_CONTEXT_KEY, Rename, SwitchNodeActiveStatus,
+};
+use crate::ui::components::tree::{ProjectTreeNode, ProjectTreeNodeKind, Tree, TreeDelegate, TreeEvent, TreeState};
 use crate::ui::side_bar::project_configuration::ProjectConfigurationTab;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{
@@ -14,7 +16,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
 use ki_workspace::test::test_case::TestCaseType;
-use ki_workspace::test::{TestInfoId, TestsContainer};
+use ki_workspace::test::{TestPath, TestsContainer};
 use ki_workspace::{Project, TestCase, TestStep, TestSuite};
 use log::warn;
 use std::collections::HashSet;
@@ -42,7 +44,12 @@ impl ProjectTree {
     });
   }
 
-  fn on_switch_node_active_status_action(&mut self, _action: &SwitchNodeActiveStatus, _window: &mut Window, cx: &mut Context<Self>) {
+  fn on_switch_node_active_status_action(
+    &mut self,
+    _action: &SwitchNodeActiveStatus,
+    _window: &mut Window,
+    cx: &mut Context<Self>,
+  ) {
     self.tree_state.update(cx, |tree, cx| {
       let Some(ix) = tree.selected_index() else {
         warn!("ProjectTree:on_switch_node_enable_status: no tree_state selected_ix");
@@ -143,11 +150,11 @@ struct ProjectTreeDelegate {
 
 impl ProjectTreeDelegate {
   fn add_test_case(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let Some(info_id) = self.tree_nodes.get(ix).map(|node| &node.info_id) else {
+    let Some(path) = self.tree_nodes.get(ix).map(|node| &node.path) else {
       warn!("ProjectTreeDelegate:add_test_case: unknown item ix: {}", ix);
       return;
     };
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.add_test_case(info_id, cx)) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.add_test_case(path, cx)) {
       window.push_notification(err, cx);
     } else {
       self.update_tests_nodes(cx);
@@ -161,21 +168,21 @@ impl ProjectTreeDelegate {
         None => {
           warn!("ProjectTreeDelegate:add_test_from_index: unknown item ix: {}", ix);
         }
-        Some(tree_mode) => match tree_mode.info_id {
-          TestInfoId::Suite(_) => self.add_test_suite(Some(ix), window, cx),
-          TestInfoId::CaseMulti(_, _) => self.add_test_case(ix, window, cx),
-          TestInfoId::CaseStep(_, _) | TestInfoId::Step(_, _, _) => self.add_test_step(ix, window, cx),
+        Some(tree_mode) => match tree_mode.node_kind {
+          ProjectTreeNodeKind::Suite => self.add_test_suite(Some(ix), window, cx),
+          ProjectTreeNodeKind::Case => self.add_test_case(ix, window, cx),
+          ProjectTreeNodeKind::CaseStep | ProjectTreeNodeKind::Step => self.add_test_step(ix, window, cx),
         },
       },
     }
   }
 
   fn add_test_step(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let Some(info_id) = self.tree_nodes.get(ix).map(|node| &node.info_id) else {
+    let Some(path) = self.tree_nodes.get(ix).map(|node| &node.path) else {
       warn!("ProjectTreeDelegate:add_test_step: unknown item ix: {}", ix);
       return;
     };
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.add_test_step(info_id, cx)) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.add_test_step(path, cx)) {
       window.push_notification(err, cx);
     } else {
       self.update_tests_nodes(cx);
@@ -183,11 +190,11 @@ impl ProjectTreeDelegate {
   }
 
   fn add_test_suite(&mut self, ix: Option<usize>, _window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let info_id = match ix {
+    let path = match ix {
       None => None,
-      Some(ix) => self.tree_nodes.get(ix).map(|node| &node.info_id),
+      Some(ix) => self.tree_nodes.get(ix).map(|node| &node.path),
     };
-    self.tests.update(cx, |tests, cx| tests.add_test_suite(info_id, cx));
+    self.tests.update(cx, |tests, cx| tests.add_test_suite(path, cx));
     self.update_tests_nodes(cx);
   }
 
@@ -201,7 +208,7 @@ impl ProjectTreeDelegate {
     window.open_alert_dialog(cx, {
       let kind = node.kind();
       let label = node.label.clone();
-      let info_id = node.info_id;
+      let path = node.path;
       move |dialog, _, _| {
         dialog
           .title(format!("Delete {}", kind))
@@ -211,7 +218,7 @@ impl ProjectTreeDelegate {
             let this = this.clone();
             move |_, window, cx| {
               this.update(cx, |this, cx| {
-                this.delegate_mut().delete_node(info_id, window, cx);
+                this.delegate_mut().delete_node(path, window, cx);
               });
               true
             }
@@ -220,8 +227,8 @@ impl ProjectTreeDelegate {
     });
   }
 
-  fn delete_node(&mut self, info_id: TestInfoId, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.delete_test(&info_id, cx)) {
+  fn delete_node(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.delete_test(&path, cx)) {
       window.push_notification(err, cx);
     } else {
       self.update_tests_nodes(cx);
@@ -229,11 +236,11 @@ impl ProjectTreeDelegate {
   }
 
   fn duplicate_node(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let Some(info_id) = self.tree_nodes.get(ix).map(|node| &node.info_id) else {
+    let Some(path) = self.tree_nodes.get(ix).map(|node| &node.path) else {
       warn!("ProjectTreeDelegate:duplicate_node: unknown item ix: {}", ix);
       return;
     };
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.duplicate_test(info_id, cx)) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.duplicate_test(path, cx)) {
       window.push_notification(err, cx);
     } else {
       self.update_tests_nodes(cx);
@@ -289,22 +296,22 @@ impl ProjectTreeDelegate {
   }
 
   fn on_switch_node_enable_status(&mut self, ix: usize, cx: &mut Context<TreeState<Self>>) {
-    let Some(info_id) = self.tree_nodes.get(ix).map(|node| &node.info_id) else {
+    let Some(path) = self.tree_nodes.get(ix).map(|node| &node.path) else {
       warn!("ProjectTreeDelegate:on_switch_active_status: unknown item ix: {}", ix);
       return;
     };
     self.tests.update(cx, move |tests, cx| {
-      tests.switch_node_enable_status(info_id, cx);
+      tests.switch_node_enable_status(path, cx);
     });
     self.update_tests_nodes(cx);
   }
 
   fn rename_node(&mut self, ix: usize, name: SharedString, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let Some(info_id) = self.tree_nodes.get(ix).map(|node| &node.info_id) else {
+    let Some(path) = self.tree_nodes.get(ix).map(|node| &node.path) else {
       warn!("ProjectTreeDelegate:rename_node: unknown item ix: {}", ix);
       return;
     };
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.rename_at(info_id, name, cx)) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.rename_at(path, name, cx)) {
       window.push_notification(err, cx);
     } else {
       self.update_tests_nodes(cx);
@@ -336,12 +343,13 @@ fn get_ts_entries(suites: &[TestSuite], opened_nodes: &HashSet<Uuid>) -> Vec<Pro
   let mut entries = Vec::new();
   for suite in suites.iter() {
     let leaf = suite.cases.is_empty();
-    let info_id = suite.info.info_id();
-    let disabled = suite.info.disabled;
-    let expanded = opened_nodes.contains(&info_id.id());
+    let path = suite.meta.path();
+    let disabled = suite.meta.disabled;
+    let expanded = opened_nodes.contains(&path.id());
     entries.push(ProjectTreeNode {
-      info_id,
-      label: suite.info.name.clone(),
+      path,
+      node_kind: ProjectTreeNodeKind::Suite,
+      label: suite.meta.name.clone(),
       disabled,
       parent_disabled: false,
       depth: 0,
@@ -358,11 +366,12 @@ fn get_ts_entries(suites: &[TestSuite], opened_nodes: &HashSet<Uuid>) -> Vec<Pro
 fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &HashSet<Uuid>) -> Vec<ProjectTreeNode> {
   let mut entries = Vec::new();
   cases.iter().for_each(|case| {
-    let info_id = case.info.info_id();
-    let disabled = case.info.disabled;
+    let path = case.meta.path();
+    let disabled = case.meta.disabled;
     let mut case_tree_node = ProjectTreeNode {
-      info_id,
-      label: case.info.name.clone(),
+      path,
+      node_kind: ProjectTreeNodeKind::Case,
+      label: case.meta.name.clone(),
       disabled,
       parent_disabled,
       depth: 1,
@@ -372,7 +381,7 @@ fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &Hash
     match case.case_type() {
       TestCaseType::CaseMulti { steps } => {
         let is_empty = steps.is_empty();
-        let is_open = opened_nodes.contains(&info_id.id());
+        let is_open = opened_nodes.contains(&path.id());
         case_tree_node.leaf = is_empty;
         case_tree_node.expanded = is_open;
         entries.push(case_tree_node);
@@ -381,6 +390,7 @@ fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &Hash
         }
       }
       TestCaseType::CaseStep { .. } => {
+        case_tree_node.node_kind = ProjectTreeNodeKind::CaseStep;
         entries.push(case_tree_node);
       }
     }
@@ -390,9 +400,10 @@ fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &Hash
 
 fn get_step_node(step: &TestStep, parent_disabled: bool) -> ProjectTreeNode {
   ProjectTreeNode {
-    info_id: step.info.info_id(),
-    label: step.info.name.clone(),
-    disabled: step.info.disabled,
+    path: step.meta.path(),
+    node_kind: ProjectTreeNodeKind::Step,
+    label: step.meta.name.clone(),
+    disabled: step.meta.disabled,
     parent_disabled,
     depth: 2,
     leaf: true,
@@ -400,15 +411,15 @@ fn get_step_node(step: &TestStep, parent_disabled: bool) -> ProjectTreeNode {
   }
 }
 
-fn build_context_menu(disabled: bool, kind: TestInfoId) -> Box<ContextMenuBuilder> {
+fn build_context_menu(disabled: bool, kind: ProjectTreeNodeKind) -> Box<ContextMenuBuilder> {
   let builder = move |menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
     menu
       .submenu_with_icon(Some(IconName::Plus.into()), "New", window, cx, move |submenu, _, _| {
         let mut submenu = submenu;
-        if matches!(kind, TestInfoId::Suite(_)) {
+        if matches!(kind, ProjectTreeNodeKind::Suite) {
           submenu = submenu.menu_with_icon("Test Suite", IconAsset::TestSuite, Box::new(AddTestSuite));
         }
-        if matches!(kind, TestInfoId::Suite(_)) || matches!(kind, TestInfoId::CaseMulti(_, _)) {
+        if matches!(kind, ProjectTreeNodeKind::Suite | ProjectTreeNodeKind::Case) {
           submenu = submenu.menu_with_icon("Test Case", IconAsset::TestCase, Box::new(AddTestCase));
         }
         submenu.menu_with_icon("Test Step", IconAsset::TestStep, Box::new(AddTestStep))
@@ -435,7 +446,7 @@ impl TreeDelegate for ProjectTreeDelegate {
 
   fn node_render(&self, ix: usize, selected: bool, _window: &mut Window, cx: &mut Context<TreeState<Self>>) -> impl IntoElement {
     let node = &self.tree_nodes[ix];
-    let id = node.info_id.id();
+    let id = node.path.id();
     let icon = node.icon();
     let is_edited = selected && self._rename_input_sub.is_some();
     let left_padding = if icon.is_some() { px(0.) } else { px(14.) };
@@ -461,7 +472,7 @@ impl TreeDelegate for ProjectTreeDelegate {
             .when(node.disabled, |this| this.text_color(cx.theme().muted_foreground))
         },
       )
-      .context_menu(build_context_menu(node.disabled, node.info_id))
+      .context_menu(build_context_menu(node.disabled, node.node_kind))
   }
 }
 

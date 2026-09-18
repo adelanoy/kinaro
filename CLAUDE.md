@@ -54,13 +54,13 @@ Conversion is always explicit and one of three methods on the workspace type:
 This is the most elaborate part of the domain model (`crates/workspace/src/test/`):
 
 - `TestsContainer` owns `Vec<TestSuite>`; a `TestSuite` owns `Vec<TestCase>`; a `TestCase` is either `CaseMulti { steps: Vec<TestStep> }` (a case with its own steps) or `CaseStep { data }` (a single step promoted directly to case level, so it counts as a case in the suite's list without needing a wrapper). A `CaseStep { data }` is considered a step from the user point of view, but located in a suite.
-- Nodes are addressed by **`TestInfoId`**, an enum path (`Suite(suite_id)`, `CaseMulti(suite_id, case_id)`, `CaseStep(suite_id, case_id)`, `Step(suite_id, case_id, step_id)`) rather than by index — indices shift as the tree is edited, ids don't. Most container methods take a `&TestInfoId` to say "do this relative to the node at this path".
+- Nodes are addressed by **`TestPath`**, an enum path (`Suite(suite_id)`, `CaseMulti(suite_id, case_id)`, `CaseStep(suite_id, case_id)`, `Step(suite_id, case_id, step_id)`) rather than by index — indices shift as the tree is edited, ids don't. Most container methods take a `&TestInfoId` to say "do this relative to the node at this path".
 - `TestInfoId::is_parent(other)` checks ancestry (a suite is a parent of everything under it, a `CaseMulti` is a parent of its own steps, etc.) and is how "insert relative to whatever's selected in the UI tree" is implemented: e.g. `TestSuite::add_test_case` finds the case whose id `is_parent` of the given path and inserts right after it, falling back to appending at the end when nothing matches (root suite selected, or an unrelated path).
 - Renaming for uniqueness (new cases/steps, duplicates) goes through `ki_utils::next_available_name`, which appends `_1`, `_2`, ... only when the name is already taken.
 - `TestsContainer`/`TestSuite`'s mutating methods return `ProjectResult<()>` and emit `TestsContainerEvent` (`TestsModified` / `TreeNodesChanged`) on success; `Project` subscribes to these and triggers a save + re-emits its own `ProjectEvent`.
 - the `data` field in `CaseStep` and `TestStep` is a placeholder that will eventually host the actual step data, for now, it should be ignored
 
-The `crates/app` side mirrors this with `TestInfoId`-driven `ProjectTreeDelegate` methods (`crates/app/src/ui/side_bar/project_configuration/project_tree_tab.rs`) that resolve a selected tree row's index to its `TestInfoId` before calling into `ki_workspace`.
+The `crates/app` side mirrors this with `TestPath`-driven `ProjectTreeDelegate` methods (`crates/app/src/ui/side_bar/project_configuration/project_tree_tab.rs`) that resolve a selected tree row's index to its `TestPath` before calling into `ki_workspace`.
 
 ## GPUI/gpui-kit conventions
 

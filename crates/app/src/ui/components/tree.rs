@@ -1,5 +1,4 @@
 use crate::actions::{Enter, Escape, MoveDown, MoveLeft, MoveRight, MoveUp};
-use ki_workspace::test::TestInfoId;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::scroll::ScrollableElement;
@@ -7,14 +6,25 @@ use gpui_kit::component::{ActiveTheme, Icon, IconName, h_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
+use ki_workspace::test::TestPath;
 use std::ops::Range;
 use uuid::Uuid;
 
 pub const TREE_CONTEXT: &str = "Tree";
 
+/// The display-relevant shape of a [`ProjectTreeNode`]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectTreeNodeKind {
+  Suite,
+  Case,
+  CaseStep,
+  Step,
+}
+
 #[derive(Debug, Clone)]
 pub struct ProjectTreeNode {
-  pub info_id: TestInfoId,
+  pub path: TestPath,
+  pub node_kind: ProjectTreeNodeKind,
   pub label: SharedString,
   pub disabled: bool,
   pub parent_disabled: bool,
@@ -25,24 +35,25 @@ pub struct ProjectTreeNode {
 
 impl ProjectTreeNode {
   pub fn icon(&self) -> Option<Icon> {
-    match self.info_id {
-      TestInfoId::Suite(_) => Some(Icon::new(IconAsset::TestSuite)),
-      TestInfoId::CaseMulti(_, _) => Some(Icon::new(IconAsset::TestCase)),
-      TestInfoId::Step(_, _, _) | TestInfoId::CaseStep(_, _) => Some(Icon::new(IconAsset::TestStep)),
+    match self.node_kind {
+      ProjectTreeNodeKind::Suite => Some(Icon::new(IconAsset::TestSuite)),
+      ProjectTreeNodeKind::Case => Some(Icon::new(IconAsset::TestCase)),
+      ProjectTreeNodeKind::CaseStep | ProjectTreeNodeKind::Step => Some(Icon::new(IconAsset::TestStep)),
     }
   }
 
   pub fn id(&self) -> Uuid {
-    self.info_id.id()
+    self.path.id()
   }
-  
+
   /// Returns a label describing the type of node
   pub fn kind(&self) -> SharedString {
-    match &self.info_id {
-      TestInfoId::Suite(_) => "Test Suite",
-      TestInfoId::CaseMulti(_, _) => "Test Case",
-      TestInfoId::CaseStep(_, _) | TestInfoId::Step(_, _, _) => "Test Step",
-    }.into()
+    match self.node_kind {
+      ProjectTreeNodeKind::Suite => "Test Suite",
+      ProjectTreeNodeKind::Case => "Test Case",
+      ProjectTreeNodeKind::CaseStep | ProjectTreeNodeKind::Step => "Test Step",
+    }
+    .into()
   }
 }
 
@@ -229,9 +240,9 @@ impl<D: TreeDelegate> Render for TreeState<D> {
             .collect()
         }),
       )
-        .flex_grow_1()
-        .size_full()
-        .track_scroll(&self.scroll_handle),
+      .flex_grow_1()
+      .size_full()
+      .track_scroll(&self.scroll_handle),
     )
   }
 }
