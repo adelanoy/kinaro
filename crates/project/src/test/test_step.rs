@@ -1,9 +1,9 @@
-use crate::test::FileTestInfo;
+use crate::test::FileTestMetadata;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FileTestStep {
   #[serde(flatten)]
-  pub info: FileTestInfo,
+  pub info: FileTestMetadata,
   pub data: String,
 }

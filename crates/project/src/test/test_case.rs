@@ -1,4 +1,4 @@
-use crate::test::{FileTestInfo, test_step::FileTestStep};
+use crate::test::{FileTestMetadata, test_step::FileTestStep};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -12,6 +12,6 @@ pub enum FileTestCaseType {
 #[serde(rename_all = "camelCase")]
 pub struct FileTestCase {
   #[serde(flatten)]
-  pub info: FileTestInfo,
+  pub info: FileTestMetadata,
   pub case_type: FileTestCaseType,
 }

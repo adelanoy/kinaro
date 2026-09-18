@@ -7,7 +7,7 @@ pub mod test_step;
 pub mod test_suite;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct FileTestInfo {
+pub struct FileTestMetadata {
   pub id: Uuid,
   pub name: String,
   /// One entry per line, so version control diffs only the lines that

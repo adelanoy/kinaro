@@ -1,4 +1,4 @@
-use crate::test::{TestInfo, TestInfoId};
+use crate::test::{TestMetadata, TestPath};
 use gpui_kit::SharedString;
 use ki_project::FileTestStep;
 use uuid::Uuid;
@@ -7,7 +7,7 @@ use uuid::Uuid;
 /// own steps, or a case step promoted directly to case level.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestStep {
-  pub info: TestInfo,
+  pub meta: TestMetadata,
   pub data: String,
 }
 
@@ -16,7 +16,7 @@ impl TestStep {
   /// description, disabled flag and data.
   pub(super) fn duplicate(&self, name: SharedString) -> Self {
     Self {
-      info: self.info.duplicate(name),
+      meta: self.meta.duplicate(name),
       data: self.data.clone(),
     }
   }
@@ -24,7 +24,7 @@ impl TestStep {
   /// Builds a step from its on-disk representation
   pub fn from_file(file_test_step: FileTestStep, suite_id: Uuid, case_id: Uuid) -> TestStep {
     Self {
-        info: TestInfo::new_step(file_test_step.info, suite_id, case_id),
+        meta: TestMetadata::new_step(file_test_step.info, suite_id, case_id),
         data: file_test_step.data.clone(),
       }
   }
@@ -32,7 +32,7 @@ impl TestStep {
   /// Produces the serializable, on-disk representation of this step.
   pub fn get_file(&self) -> FileTestStep {
     FileTestStep {
-      info: self.info.to_file(),
+      info: self.meta.to_file(),
       data: self.data.clone(),
     }
   }
@@ -40,8 +40,8 @@ impl TestStep {
   /// Creates a new, empty step with a freshly generated id.
   pub fn new(suite_id: Uuid, case_id: Uuid, name: SharedString) -> Self {
     Self {
-      info: TestInfo {
-        info_id: TestInfoId::Step(suite_id, case_id, Uuid::new_v4()),
+      meta: TestMetadata {
+        path: TestPath::Step(suite_id, case_id, Uuid::new_v4()),
         name,
         description: None,
         disabled: false,
@@ -53,10 +53,10 @@ impl TestStep {
 
 #[cfg(test)]
 mod tests {
-  use crate::test::TestInfoId;
+  use crate::test::TestPath;
   use crate::test::test_step::TestStep;
   use gpui_kit::SharedString;
-  use ki_project::{FileTestInfo, FileTestStep};
+  use ki_project::{FileTestMetadata, FileTestStep};
   use uuid::Uuid;
 
   /// A step built through [`TestStep::from_file`] so that every id is known
@@ -71,7 +71,7 @@ mod tests {
 
   fn file_step(id: Uuid, name: &str, data: &str) -> FileTestStep {
     FileTestStep {
-      info: FileTestInfo {
+      info: FileTestMetadata {
         id,
         name: name.to_string(),
         description: vec!["a description".to_string(), "with two lines".to_string()],
@@ -99,12 +99,12 @@ mod tests {
   #[test]
   fn from_file_builds_step_with_expected_info() {
     let f = fixture();
-    assert_eq!(f.step.info.name, SharedString::new("step a"));
-    assert_eq!(f.step.info.description, Some(SharedString::new("a description\nwith two lines")));
-    assert!(f.step.info.disabled);
+    assert_eq!(f.step.meta.name, SharedString::new("step a"));
+    assert_eq!(f.step.meta.description, Some(SharedString::new("a description\nwith two lines")));
+    assert!(f.step.meta.disabled);
     assert_eq!(f.step.data, "step data");
     assert!(
-      matches!(f.step.info.info_id(), TestInfoId::Step(suite, case, step) if suite == f.suite_id && case == f.case_id && step == f.step_id)
+      matches!(f.step.meta.path(), TestPath::Step(suite, case, step) if suite == f.suite_id && case == f.case_id && step == f.step_id)
     );
   }
 
@@ -123,11 +123,11 @@ mod tests {
     let case_id = Uuid::new_v4();
     let step = TestStep::new(suite_id, case_id, SharedString::new("new step"));
 
-    assert_eq!(step.info.name, SharedString::new("new step"));
-    assert_eq!(step.info.description, None);
-    assert!(!step.info.disabled);
+    assert_eq!(step.meta.name, SharedString::new("new step"));
+    assert_eq!(step.meta.description, None);
+    assert!(!step.meta.disabled);
     assert_eq!(step.data, "");
-    assert!(matches!(step.info.info_id(), TestInfoId::Step(suite, case, _) if suite == suite_id && case == case_id));
+    assert!(matches!(step.meta.path(), TestPath::Step(suite, case, _) if suite == suite_id && case == case_id));
   }
 
   #[test]
@@ -136,7 +136,7 @@ mod tests {
     let dup = f.step.duplicate(SharedString::new("step a copy"));
 
     assert!(
-      matches!(dup.info.info_id(), TestInfoId::Step(suite, case, step) if suite == f.suite_id && case == f.case_id && step != f.step_id)
+      matches!(dup.meta.path(), TestPath::Step(suite, case, step) if suite == f.suite_id && case == f.case_id && step != f.step_id)
     );
   }
 
@@ -145,9 +145,9 @@ mod tests {
     let f = fixture();
     let dup = f.step.duplicate(SharedString::new("step a copy"));
 
-    assert_eq!(dup.info.name, SharedString::new("step a copy"));
-    assert_eq!(dup.info.description, f.step.info.description);
-    assert_eq!(dup.info.disabled, f.step.info.disabled);
+    assert_eq!(dup.meta.name, SharedString::new("step a copy"));
+    assert_eq!(dup.meta.description, f.step.meta.description);
+    assert_eq!(dup.meta.disabled, f.step.meta.disabled);
   }
 
   #[test]
@@ -168,14 +168,14 @@ mod tests {
   fn eq_is_false_when_only_the_name_differs() {
     let f = fixture();
     let mut same_id_other_name = f.step.clone();
-    same_id_other_name.info.name = SharedString::new("a totally different name");
+    same_id_other_name.meta.name = SharedString::new("a totally different name");
     assert_ne!(f.step, same_id_other_name);
   }
 
   #[test]
   fn eq_is_false_when_only_the_id_differs() {
     let f = fixture();
-    let other_id = TestStep::new(f.suite_id, f.case_id, f.step.info.name.clone());
+    let other_id = TestStep::new(f.suite_id, f.case_id, f.step.meta.name.clone());
     assert_ne!(f.step, other_id);
   }
 }

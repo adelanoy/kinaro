@@ -1,7 +1,7 @@
 use gpui_kit::component::notification::Notification;
 use ki_project::ProjectFileError;
 use std::path::PathBuf;
-
+use crate::test::TestPath;
 
 /// Result alias for Workspace
 pub type WorkspaceResult<T> = Result<T, WorkspaceError>;
@@ -74,8 +74,8 @@ pub enum ProjectError {
   #[error("ProjectError::VariableNotFound")]
   VariableNotFound,
   /// An operation was attempted on a missing test
-  #[error("ProjectError::TestNotFound")]
-  TestNotFound,
+  #[error("ProjectError::TestNotFound (path: {})", .0)]
+  TestNotFound(TestPath),
 }
 
 impl From<ProjectFileError> for ProjectError {
@@ -117,7 +117,7 @@ impl From<ProjectError> for Notification {
       }
       ProjectError::ProfileNotFound => Notification::warning("Unknown profile"),
       ProjectError::VariableNotFound => Notification::warning("Unknown variable"),
-      ProjectError::TestNotFound => Notification::warning("The test could not be found"),
+      ProjectError::TestNotFound(_) => Notification::warning("The test could not be found"),
     }
   }
 }
