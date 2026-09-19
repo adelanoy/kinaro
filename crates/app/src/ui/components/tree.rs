@@ -47,7 +47,7 @@ impl ProjectTreeNode {
   }
 
   /// Returns a label describing the type of node
-  pub fn kind(&self) -> SharedString {
+  pub fn label(&self) -> SharedString {
     match self.node_kind {
       ProjectTreeNodeKind::Suite => "Test Suite",
       ProjectTreeNodeKind::Case => "Test Case",

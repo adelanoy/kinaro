@@ -15,6 +15,7 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
+use ki_utils::ui::MovingLabel;
 use ki_workspace::test::test_case::TestCaseType;
 use ki_workspace::test::{TestPath, TestsContainer};
 use ki_workspace::{Project, TestCase, TestStep, TestSuite};
@@ -206,7 +207,7 @@ impl ProjectTreeDelegate {
 
     let this = cx.entity();
     window.open_alert_dialog(cx, {
-      let kind = node.kind();
+      let kind = node.label();
       let label = node.label.clone();
       let path = node.path;
       move |dialog, _, _| {
@@ -241,6 +242,14 @@ impl ProjectTreeDelegate {
       return;
     };
     if let Err(err) = self.tests.update(cx, |tests, cx| tests.duplicate_test(path, cx)) {
+      window.push_notification(err, cx);
+    } else {
+      self.update_tests_nodes(cx);
+    }
+  }
+
+  fn move_node(&mut self, from: TestPath, to: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.move_test(from, to, cx)) {
       window.push_notification(err, cx);
     } else {
       self.update_tests_nodes(cx);
@@ -472,6 +481,27 @@ impl TreeDelegate for ProjectTreeDelegate {
             .when(node.disabled, |this| this.text_color(cx.theme().muted_foreground))
         },
       )
+      .hover(|style| {
+        style
+          .bg(cx.theme().sidebar_accent.opacity(0.8))
+          .text_color(cx.theme().sidebar_accent_foreground)
+      })
+      .on_drag(
+        MovingLabel {
+          label: node.label.clone(),
+          data: node.path,
+        },
+        |drag: &MovingLabel<TestPath>, _, _, cx| {
+          cx.stop_propagation();
+          cx.new(|_| drag.clone())
+        },
+      )
+      .on_drop({
+        let to_path = node.path;
+        cx.listener(move |table, e: &MovingLabel<TestPath>, window, cx| {
+          table.delegate_mut().move_node(e.data, to_path, window, cx);
+        })
+      })
       .context_menu(build_context_menu(node.disabled, node.node_kind))
   }
 }

@@ -283,17 +283,9 @@ mod tests {
   fn info_from_path_case_multi_unknown() {
     let f = fixture();
     // Unknown case id, right suite.
-    assert!(
-      f.suite
-        .info_from_path(&TestPath::Case(f.suite_id, Uuid::new_v4()))
-        .is_none()
-    );
+    assert!(f.suite.info_from_path(&TestPath::Case(f.suite_id, Uuid::new_v4())).is_none());
     // Known case id, wrong suite.
-    assert!(
-      f.suite
-        .info_from_path(&TestPath::Case(Uuid::new_v4(), f.multi_id))
-        .is_none()
-    );
+    assert!(f.suite.info_from_path(&TestPath::Case(Uuid::new_v4(), f.multi_id)).is_none());
   }
 
   #[test]
@@ -312,11 +304,7 @@ mod tests {
   fn info_from_path_case_step_unknown() {
     let f = fixture();
     // Unknown case id, right suite.
-    assert!(
-      f.suite
-        .info_from_path(&TestPath::Case(f.suite_id, Uuid::new_v4()))
-        .is_none()
-    );
+    assert!(f.suite.info_from_path(&TestPath::Case(f.suite_id, Uuid::new_v4())).is_none());
     // Known case id, wrong suite.
     assert!(
       f.suite
