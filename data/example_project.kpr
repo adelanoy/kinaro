@@ -1,8 +1,8 @@
 {
   "name": "example_project",
   "version": 1,
-  "created": "2026-09-15T15:43:12",
-  "modified": "2026-09-15T16:02:13",
+  "created": "2026-09-14T23:43:12",
+  "modified": "2026-09-19T14:36:02",
   "variables": {
     "variables": [
       {
@@ -36,8 +36,8 @@
         "kind": "Text",
         "value": "admin",
         "overrides": {
-          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "admin",
           "b929fd98-c721-44bf-9e0a-0860c732a2db": "svc-test",
+          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "admin",
           "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "svc-prod"
         }
       },
@@ -49,8 +49,8 @@
         "value": "",
         "overrides": {
           "c4aa980a-39fe-449f-bf0d-6e0807375f09": "dev-secret",
-          "b929fd98-c721-44bf-9e0a-0860c732a2db": "test-secret",
-          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "prod-secret"
+          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "prod-secret",
+          "b929fd98-c721-44bf-9e0a-0860c732a2db": "test-secret"
         }
       }
     ],
@@ -186,6 +186,61 @@
                   "data": ""
                 }
               ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "200be186-6624-46a9-80d3-fb5fc4117c11",
+        "name": "Product Catalog",
+        "description": [
+          "Covers listing, searching, and retrieving products."
+        ],
+        "cases": [
+          {
+            "id": "463ec0e0-2257-4325-b84b-99985040ab1e",
+            "name": "List products",
+            "caseType": {
+              "type": "CaseMulti",
+              "steps": [
+                {
+                  "id": "64a4d27a-8999-491c-ac32-525172077647",
+                  "name": "Send GET request",
+                  "data": ""
+                },
+                {
+                  "id": "1181cb80-284c-41aa-a11d-58fc5d90adfe",
+                  "name": "Assert paginated response",
+                  "data": ""
+                }
+              ]
+            }
+          },
+          {
+            "id": "ef79ddfe-37fa-41da-bd0e-e4186fcf98e5",
+            "name": "Search products by name",
+            "caseType": {
+              "type": "CaseMulti",
+              "steps": [
+                {
+                  "id": "91793438-bda9-46a3-8478-41eeb3477fe4",
+                  "name": "Send GET request with query param",
+                  "data": ""
+                },
+                {
+                  "id": "2db94f60-f850-4fc0-8520-1c7269d3f621",
+                  "name": "Assert matching results",
+                  "data": ""
+                }
+              ]
+            }
+          },
+          {
+            "id": "547e58bd-1b2b-4ffb-b91b-5e8290c1d715",
+            "name": "Product count check",
+            "caseType": {
+              "type": "CaseStep",
+              "data": ""
             }
           }
         ]

@@ -70,4 +70,5 @@ The `crates/app` side mirrors this with `TestPath`-driven `ProjectTreeDelegate` 
 - The project tree view implements the app-local `TreeDelegate` trait (`crates/app/src/ui/components/tree.rs`) to drive a generic `TreeState<D>` list component.
 
 ## Project conventions
-- Function documentation should include an Error section whenever it returns a Result, or a derived type (ProjectResult, WorkspaceResult...)
+- Function documentation should include an Error section whenever it returns a Result, or a derived type (ProjectResult, WorkspaceResult...).
+- Documentation of functions/fields should avoid referencing more-private functions and fields

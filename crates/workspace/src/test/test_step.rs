@@ -20,13 +20,13 @@ impl TestStep {
       data: self.data.clone(),
     }
   }
-  
+
   /// Builds a step from its on-disk representation
   pub fn from_file(file_test_step: FileTestStep, suite_id: Uuid, case_id: Uuid) -> TestStep {
     Self {
-        meta: TestMetadata::new_step(file_test_step.info, suite_id, case_id),
-        data: file_test_step.data.clone(),
-      }
+      meta: TestMetadata::new_step(file_test_step.info, suite_id, case_id),
+      data: file_test_step.data.clone(),
+    }
   }
 
   /// Produces the serializable, on-disk representation of this step.
@@ -48,6 +48,16 @@ impl TestStep {
       },
       data: "".to_string(),
     }
+  }
+
+  /// Moves this step under a different suite/case, keeping its own id. A no-op
+  /// when `suite_id` and `case_id` are already their current suite/case.
+  pub(crate) fn reparent(mut self, suite_id: Uuid, case_id: Uuid) -> Self {
+    if suite_id != self.meta.path.suite_id() || Some(case_id) != self.meta.path.case_id() {
+      let id = self.meta.id();
+      self.meta.path = TestPath::Step(suite_id, case_id, id);
+    }
+    self
   }
 }
 
@@ -100,7 +110,10 @@ mod tests {
   fn from_file_builds_step_with_expected_info() {
     let f = fixture();
     assert_eq!(f.step.meta.name, SharedString::new("step a"));
-    assert_eq!(f.step.meta.description, Some(SharedString::new("a description\nwith two lines")));
+    assert_eq!(
+      f.step.meta.description,
+      Some(SharedString::new("a description\nwith two lines"))
+    );
     assert!(f.step.meta.disabled);
     assert_eq!(f.step.data, "step data");
     assert!(
@@ -177,5 +190,33 @@ mod tests {
     let f = fixture();
     let other_id = TestStep::new(f.suite_id, f.case_id, f.step.meta.name.clone());
     assert_ne!(f.step, other_id);
+  }
+
+  #[test]
+  fn reparent_updates_path_when_suite_or_case_differs() {
+    let f = fixture();
+    let new_suite = Uuid::new_v4();
+    let new_case = Uuid::new_v4();
+    let step = f.step.reparent(new_suite, new_case);
+    assert!(
+      matches!(step.meta.path(), TestPath::Step(suite, case, id) if suite == new_suite && case == new_case && id == f.step_id)
+    );
+  }
+
+  #[test]
+  fn reparent_updates_path_when_only_the_case_differs() {
+    let f = fixture();
+    let new_case = Uuid::new_v4();
+    let step = f.step.reparent(f.suite_id, new_case);
+    assert!(
+      matches!(step.meta.path(), TestPath::Step(suite, case, id) if suite == f.suite_id && case == new_case && id == f.step_id)
+    );
+  }
+
+  #[test]
+  fn reparent_is_a_no_op_for_the_same_suite_and_case() {
+    let f = fixture();
+    let step = f.step.clone().reparent(f.suite_id, f.case_id);
+    assert_eq!(step, f.step);
   }
 }

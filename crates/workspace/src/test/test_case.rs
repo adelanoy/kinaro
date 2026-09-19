@@ -61,6 +61,12 @@ impl TestCase {
     &self.case_type
   }
 
+  /// Returns the mutable [`TestCaseType`] variant backing this case.
+  #[inline]
+  pub fn case_type_mut(&mut self) -> &mut TestCaseType {
+    &mut self.case_type
+  }
+
   /// Deletes the step addressed by `path` from this case. Only valid on a
   /// [`TestCaseType::CaseMulti`]; a [`TestCaseType::CaseStep`] has no
   /// children to delete.
@@ -154,6 +160,19 @@ impl TestCase {
     }
   }
 
+  /// Promotes a step to a case-level [`TestCaseType::CaseStep`], keeping
+  /// the step's own id as the new case's id and reparenting it under
+  /// `suite_id`.
+  pub(crate) fn from_step(step: TestStep, suite_id: Uuid) -> Self {
+    let TestStep { mut meta, data } = step;
+    let id = meta.id();
+    meta.path = TestPath::Case(suite_id, id);
+    Self {
+      meta,
+      case_type: TestCaseType::CaseStep { data },
+    }
+  }
+
   /// Produces the serializable, on-disk representation of this case.
   pub(crate) fn get_file(&self) -> FileTestCase {
     FileTestCase {
@@ -221,6 +240,74 @@ impl TestCase {
       case_type: TestCaseType::CaseStep { data: "".to_string() },
     }
   }
+
+  /// Removes and returns the step matching `step_id` from this case's
+  /// steps, unmodified (its `meta.path` still addresses its old case).
+  /// Returns `None` when this is a [`TestCaseType::CaseStep`], or no step
+  /// matches.
+  pub(crate) fn remove_step(&mut self, step_id: Uuid) -> Option<TestStep> {
+    match &mut self.case_type {
+      TestCaseType::CaseMulti { steps } => {
+        let ix = steps.iter().position(|step| step.meta.id() == step_id)?;
+        Some(steps.remove(ix))
+      }
+      TestCaseType::CaseStep { .. } => None,
+    }
+  }
+
+  /// Moves this case under a different suite, keeping its own id. Also
+  /// reparents a [`TestCaseType::CaseMulti`]'s steps under the new suite
+  /// (same case id, their own step ids kept). A no-op when `suite_id` is
+  /// already its current suite.
+  pub(crate) fn reparent(mut self, suite_id: Uuid) -> Self {
+    if suite_id != self.meta.path.suite_id() {
+      let case_id = self.meta.id();
+      self.meta.path = TestPath::Case(suite_id, case_id);
+
+      if let TestCaseType::CaseMulti { steps } = &mut self.case_type {
+        steps.iter_mut().for_each(|step| {
+          step.meta.path = TestPath::Step(suite_id, case_id, step.meta.id());
+        });
+      }
+    }
+    self
+  }
+
+  /// Converts this case to the step(s) it is equivalent to, at its own
+  /// current suite/case location, without modifying this case. A
+  /// [`TestCaseType::CaseMulti`] yields its steps, keeping their own ids; a
+  /// [`TestCaseType::CaseStep`] yields a single step with a freshly
+  /// generated id, carrying this case's name, description, disabled flag
+  /// and data. To move the result elsewhere, reparent each returned
+  /// [`TestStep`] via [`TestStep::reparent`](crate::test::test_step::TestStep::reparent).
+  pub(crate) fn to_steps(&self) -> Vec<TestStep> {
+    let suite_id = self.meta.path.suite_id();
+    let case_id = self.meta.path.case_id().unwrap();
+    match &self.case_type {
+      TestCaseType::CaseMulti { steps } => steps
+        .clone()
+        .into_iter()
+        .map(|step| {
+          let TestStep { mut meta, data } = step;
+          let id = meta.id();
+          meta.path = TestPath::Step(suite_id, case_id, id);
+          TestStep { meta, data }
+        })
+        .collect(),
+      TestCaseType::CaseStep { data } => {
+        let meta = TestMetadata {
+          path: TestPath::Step(suite_id, case_id, Uuid::new_v4()),
+          name: self.meta.name.clone(),
+          description: self.meta.description.clone(),
+          disabled: self.meta.disabled,
+        };
+        vec![TestStep {
+          meta,
+          data: data.clone(),
+        }]
+      }
+    }
+  }
 }
 
 #[cfg(test)]
@@ -228,6 +315,7 @@ mod tests {
   use crate::error::ProjectError;
   use crate::test::TestPath;
   use crate::test::test_case::{TestCase, TestCaseType};
+  use crate::test::test_step::TestStep;
   use gpui_kit::SharedString;
   use ki_project::{FileTestCase, FileTestCaseType, FileTestMetadata, FileTestStep};
   use uuid::Uuid;
@@ -537,5 +625,103 @@ mod tests {
     assert!(matches!(case.meta.path(), TestPath::Case(suite, _) if suite == suite_id));
     assert!(matches!(case.case_type(), TestCaseType::CaseStep { data } if data.is_empty()));
     assert!(case.is_case_step());
+  }
+
+  #[test]
+  fn case_type_mut_allows_in_place_mutation() {
+    let mut f = fixture();
+    if let TestCaseType::CaseMulti { steps } = f.case.case_type_mut() {
+      steps.clear();
+    }
+    assert!(step_names(&f.case).is_empty());
+  }
+
+  #[test]
+  fn from_step_promotes_a_step_to_a_case_step_keeping_its_id() {
+    let suite_id = Uuid::new_v4();
+    let other_suite_id = Uuid::new_v4();
+    let step = TestStep::new(suite_id, Uuid::new_v4(), SharedString::new("a step"));
+    let step_id = step.meta.id();
+
+    let case = TestCase::from_step(step, other_suite_id);
+
+    assert!(case.is_case_step());
+    assert_eq!(case.meta.id(), step_id);
+    assert_eq!(case.meta.name, SharedString::new("a step"));
+    assert!(matches!(case.meta.path(), TestPath::Case(suite, id) if suite == other_suite_id && id == step_id));
+    assert!(matches!(case.case_type(), TestCaseType::CaseStep { data } if data.is_empty()));
+  }
+
+  #[test]
+  fn remove_step_removes_the_matching_step() {
+    let mut f = fixture();
+    let removed = f.case.remove_step(f.step_a_id).expect("step a should be removable");
+    assert_eq!(removed.meta.id(), f.step_a_id);
+    assert_eq!(step_names(&f.case), vec!["step b"]);
+  }
+
+  #[test]
+  fn remove_step_unknown_id_returns_none() {
+    let mut f = fixture();
+    assert!(f.case.remove_step(Uuid::new_v4()).is_none());
+    assert_eq!(step_names(&f.case), vec!["step a", "step b"]);
+  }
+
+  #[test]
+  fn remove_step_on_case_step_returns_none() {
+    let mut f = case_step_fixture();
+    assert!(f.case.remove_step(f.case_id).is_none());
+  }
+
+  #[test]
+  fn reparent_updates_path_and_cascades_to_case_multi_steps() {
+    let f = fixture();
+    let new_suite = Uuid::new_v4();
+    let case = f.case.reparent(new_suite);
+
+    assert!(matches!(case.meta.path(), TestPath::Case(suite, id) if suite == new_suite && id == f.case_id));
+    let TestCaseType::CaseMulti { steps } = case.case_type() else {
+      panic!("expected a CaseMulti");
+    };
+    assert!(
+      matches!(steps[0].meta.path(), TestPath::Step(suite, case, step) if suite == new_suite && case == f.case_id && step == f.step_a_id)
+    );
+    assert!(
+      matches!(steps[1].meta.path(), TestPath::Step(suite, case, step) if suite == new_suite && case == f.case_id && step == f.step_b_id)
+    );
+  }
+
+  #[test]
+  fn reparent_is_a_no_op_for_the_same_suite() {
+    let f = fixture();
+    let case = f.case.clone().reparent(f.suite_id);
+    assert_eq!(case, f.case);
+  }
+
+  #[test]
+  fn to_steps_on_case_multi_keeps_ids_and_own_location() {
+    let f = fixture();
+    let steps = f.case.to_steps();
+
+    assert_eq!(steps.len(), 2);
+    assert_eq!(steps[0].meta.id(), f.step_a_id);
+    assert_eq!(steps[1].meta.id(), f.step_b_id);
+    for step in &steps {
+      assert!(matches!(step.meta.path(), TestPath::Step(suite, case, _) if suite == f.suite_id && case == f.case_id));
+    }
+    // The source case is untouched.
+    assert_eq!(step_names(&f.case), vec!["step a", "step b"]);
+  }
+
+  #[test]
+  fn to_steps_on_case_step_creates_a_single_step_with_a_fresh_id() {
+    let f = case_step_fixture();
+    let steps = f.case.to_steps();
+
+    assert_eq!(steps.len(), 1);
+    assert_ne!(steps[0].meta.id(), f.case_id);
+    assert_eq!(steps[0].meta.name, SharedString::new("case step"));
+    assert_eq!(steps[0].data, "payload");
+    assert!(matches!(steps[0].meta.path(), TestPath::Step(suite, case, _) if suite == f.suite_id && case == f.case_id));
   }
 }
