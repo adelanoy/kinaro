@@ -29,13 +29,16 @@ impl TestSuite {
   /// Adds a new case relative to `path`: right after the case whose id
   /// matches (or that is its parent), or appended at the end when nothing
   /// matches.
-  pub fn add_test_case(&mut self, path: &TestPath) {
-    let position = self.cases.iter().position(|case| case.meta.path.is_parent(path));
+  pub fn add_test_case(&mut self, path: TestPath) -> TestPath {
+    let position = self.cases.iter().position(|case| case.meta.path.is_parent(&path));
     let name = ki_utils::next_available_name("new Case", self.cases.iter().map(|case| case.meta.name.clone()));
+    let new_case = TestCase::new_multi(self.meta.id(), name);
+    let path = new_case.meta.path;
     match position {
-      Some(ix) => self.cases.insert(ix + 1, TestCase::new_multi(self.meta.id(), name)),
-      None => self.cases.push(TestCase::new_multi(self.meta.id(), name)),
+      Some(ix) => self.cases.insert(ix + 1, new_case),
+      None => self.cases.push(new_case),
     }
+    path
   }
 
   /// Adds a new step relative to `path`. When `path` addresses the
@@ -46,23 +49,27 @@ impl TestSuite {
   /// # Errors
   /// [`ProjectError::TestNotFound`] if `path` addresses a
   /// case or step whose owning case cannot be found by id in this suite.
-  pub fn add_test_step(&mut self, path: &TestPath) -> ProjectResult<()> {
+  pub fn add_test_step(&mut self, path: TestPath) -> ProjectResult<TestPath> {
     if path.is_suite() {
       let name = ki_utils::next_available_name("New Step", self.cases.iter().map(|case| case.meta.name.clone()));
-      self.cases.push(TestCase::new_step(self.meta.id(), name));
-      return Ok(());
+      let new_case = TestCase::new_step(self.meta.id(), name);
+      let path = new_case.meta.path;
+      self.cases.push(new_case);
+      return Ok(path);
     }
 
     let case_id = path.case_id().expect("a non-Suite TestInfoId always has a case_id");
     let Some(ix) = self.cases.iter().position(|case| case.meta.id() == case_id) else {
       error!("TestSuite:add_test_step: unknow path: {}", path);
-      return Err(ProjectError::TestNotFound(*path));
+      return Err(ProjectError::TestNotFound(path));
     };
 
     if path.is_case() && self.cases[ix].is_case_step() {
       let name = ki_utils::next_available_name("New Step", self.cases.iter().map(|case| case.meta.name.clone()));
-      self.cases.push(TestCase::new_step(self.meta.id(), name));
-      Ok(())
+      let new_case = TestCase::new_step(self.meta.id(), name);
+      let path = new_case.meta.path;
+      self.cases.push(new_case);
+      Ok(path)
     } else {
       self.cases[ix].add_test_step(path)
     }
@@ -492,21 +499,21 @@ mod tests {
   #[test]
   fn add_test_case_suite_selected_appends_at_end() {
     let mut f = fixture();
-    f.suite.add_test_case(&TestPath::Suite(f.suite_id));
+    f.suite.add_test_case(TestPath::Suite(f.suite_id));
     assert_eq!(case_names(&f.suite), vec!["multi case", "case step", "new Case"]);
   }
 
   #[test]
   fn add_test_case_after_case_multi() {
     let mut f = fixture();
-    f.suite.add_test_case(&TestPath::Step(f.suite_id, f.multi_id, f.step_a_id));
+    f.suite.add_test_case(TestPath::Step(f.suite_id, f.multi_id, f.step_a_id));
     assert_eq!(case_names(&f.suite), vec!["multi case", "new Case", "case step"]);
   }
 
   #[test]
   fn add_test_case_after_case_step() {
     let mut f = fixture();
-    f.suite.add_test_case(&TestPath::Case(f.suite_id, f.case_step_id));
+    f.suite.add_test_case(TestPath::Case(f.suite_id, f.case_step_id));
     assert_eq!(case_names(&f.suite), vec!["multi case", "case step", "new Case"]);
   }
 
@@ -514,15 +521,15 @@ mod tests {
   fn add_test_case_unknown_path_appends_at_end() {
     let mut f = fixture();
     // A path for a different suite entirely: no case in this suite is its parent.
-    f.suite.add_test_case(&TestPath::Case(Uuid::new_v4(), Uuid::new_v4()));
+    f.suite.add_test_case(TestPath::Case(Uuid::new_v4(), Uuid::new_v4()));
     assert_eq!(case_names(&f.suite), vec!["multi case", "case step", "new Case"]);
   }
 
   #[test]
   fn add_test_case_name_is_made_unique() {
     let mut f = fixture();
-    f.suite.add_test_case(&TestPath::Suite(f.suite_id));
-    f.suite.add_test_case(&TestPath::Suite(f.suite_id));
+    f.suite.add_test_case(TestPath::Suite(f.suite_id));
+    f.suite.add_test_case(TestPath::Suite(f.suite_id));
     assert_eq!(
       case_names(&f.suite),
       vec!["multi case", "case step", "new Case", "new Case_1"]

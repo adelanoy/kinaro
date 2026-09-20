@@ -5,3 +5,9 @@ pub mod ui;
 pub use date_time::*;
 pub use conversion::{from_multiline, to_multiline};
 pub use ui::{CellState, next_available_name};
+
+/// Represent an offset forward one direction
+pub enum Offset {
+  Plus,
+  Minus,
+}

@@ -3,6 +3,7 @@ use crate::test::test_case::TestCaseType;
 use crate::{FileProjectMetadata, TestCase, TestStep, TestSuite};
 use gpui_kit::{Context, EventEmitter, SharedString};
 use ki_project::{FileTestMetadata, FileTestsContainer};
+use ki_utils::Offset;
 use log::warn;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
@@ -172,8 +173,11 @@ impl TestMetadata {
   }
 }
 
+/// Events raised bu the TestSContainer entity
 pub enum TestsContainerEvent {
+  /// The content of the container has changed
   TestsModified,
+  /// The status of some node has changed (such as the node was collapsed/expanded in the tree)
   TreeNodesChanged,
 }
 
@@ -184,31 +188,38 @@ pub struct TestsContainer {
 }
 
 impl TestsContainer {
-  pub fn add_test_case(&mut self, path: &TestPath, cx: &mut Context<Self>) -> ProjectResult<()> {
+  pub fn add_test_case(&mut self, path: TestPath, cx: &mut Context<Self>) -> ProjectResult<TestPath> {
     let suite_id = path.suite_id();
     let Some(suite) = self.suites.iter_mut().find(|suite| suite.meta.id() == suite_id) else {
       warn!("TestsContainer:add_test_case: unknow path: {}", path);
-      return Err(ProjectError::TestNotFound(*path));
+      return Err(ProjectError::TestNotFound(path));
     };
-    suite.add_test_case(path);
+    let path = suite.add_test_case(path);
+    // Update opened_tree_nodes
+    self.opened_tree_nodes.insert(path.suite_id());
 
     cx.emit(TestsContainerEvent::TestsModified);
-    Ok(())
+    Ok(path)
   }
 
-  pub fn add_test_step(&mut self, path: &TestPath, cx: &mut Context<Self>) -> ProjectResult<()> {
+  pub fn add_test_step(&mut self, path: TestPath, cx: &mut Context<Self>) -> ProjectResult<TestPath> {
     let suite_id = path.suite_id();
     let Some(suite) = self.suites.iter_mut().find(|suite| suite.meta.id() == suite_id) else {
       warn!("TestsContainer:add_test_step: unknow path: {}", path);
-      return Err(ProjectError::TestNotFound(*path));
+      return Err(ProjectError::TestNotFound(path));
     };
-    suite.add_test_step(path)?;
-
+    let path = suite.add_test_step(path)?;
+    // Update opened_tree_nodes
+    self.opened_tree_nodes.insert(path.suite_id());
+    let (suite_ix, case_ix) = self.case_indexes(&path)?;
+    if !self.suites[suite_ix].cases[case_ix].is_case_step() {
+      self.opened_tree_nodes.insert(path.case_id().unwrap());
+    }
     cx.emit(TestsContainerEvent::TestsModified);
-    Ok(())
+    Ok(path)
   }
 
-  pub fn add_test_suite(&mut self, path: Option<&TestPath>, cx: &mut Context<Self>) {
+  pub fn add_test_suite(&mut self, path: Option<TestPath>, cx: &mut Context<Self>) -> TestPath {
     let position = match path {
       None => None,
       Some(path) => {
@@ -218,11 +229,14 @@ impl TestsContainer {
     };
 
     let name = ki_utils::next_available_name("New Suite", self.suites.iter().map(|suite| suite.meta.name.clone()));
+    let new_suite = TestSuite::new(name);
+    let path = new_suite.meta.path;
     match position {
-      Some(ix) => self.suites.insert(ix + 1, TestSuite::new(name)),
-      None => self.suites.push(TestSuite::new(name)),
+      Some(ix) => self.suites.insert(ix + 1, new_suite),
+      None => self.suites.push(new_suite),
     }
     cx.emit(TestsContainerEvent::TestsModified);
+    path
   }
 
   /// Resolves the suite-list and case-list indices of the case at `path`,
@@ -333,7 +347,7 @@ impl TestsContainer {
 
   #[allow(unused)]
   pub fn info_from_path(&self, path: &TestPath) -> Option<&TestMetadata> {
-    let suite = self.suites.iter().find(|suite| suite.meta.path == *path)?;
+    let suite = self.suites.iter().find(|suite| suite.meta.path.is_parent(path))?;
     match path {
       TestPath::Suite(_) => Some(&suite.meta),
       _ => suite.info_from_path(path),
@@ -341,10 +355,70 @@ impl TestsContainer {
   }
 
   pub fn info_mut_from_path(&mut self, path: &TestPath) -> Option<&mut TestMetadata> {
-    let suite = self.suites.iter_mut().find(|suite| suite.meta.path == *path)?;
+    let suite = self.suites.iter_mut().find(|suite| suite.meta.path.is_parent(path))?;
     match path {
       TestPath::Suite(_) => Some(&mut suite.meta),
       _ => suite.info_mut_from_path(path),
+    }
+  }
+  /// Moves the node at `path` one position toward `offset` among its
+  /// siblings (case in its suite, step in its case, or suite in the
+  /// container). A no-op when the node is already at that end of its
+  /// sibling list.
+  ///
+  /// # Errors
+  /// [`ProjectError::TestNotFound`] if `path` doesn't address an existing
+  /// node, or, for a step, if its owning case is a [`TestCaseType::CaseStep`]
+  /// (so it has no steps to reorder).
+  pub fn move_offset(&mut self, path: TestPath, offset: Offset, cx: &mut Context<Self>) -> ProjectResult<()> {
+    fn offset_pos(ix: usize, max_ix: usize, offset: Offset) -> Option<usize> {
+      match offset {
+        Offset::Plus => {
+          if ix < max_ix {
+            Some(ix + 1)
+          } else {
+            None
+          }
+        }
+        Offset::Minus => {
+          if ix > 0 {
+            Some(ix - 1)
+          } else {
+            None
+          }
+        }
+      }
+    }
+
+    match path {
+      TestPath::Suite(_) => {
+        let Some(suite_ix) = self.suites.iter().position(|suite| suite.meta.path == path) else {
+          return Err(ProjectError::TestNotFound(path));
+        };
+        if let Some(target_ix) = offset_pos(suite_ix, self.suites.len() - 1, offset) {
+          self.suites.swap(suite_ix, target_ix);
+          cx.emit(TestsContainerEvent::TestsModified);
+        }
+        Ok(())
+      }
+      TestPath::Case(_, _) => {
+        let (suite_ix, case_ix) = self.case_indexes(&path)?;
+        if let Some(target_ix) = offset_pos(case_ix, self.suites[suite_ix].cases.len() - 1, offset) {
+          self.suites[suite_ix].cases.swap(case_ix, target_ix);
+          cx.emit(TestsContainerEvent::TestsModified);
+        }
+        Ok(())
+      }
+      TestPath::Step(_, _, _) => {
+        let (suite_ix, case_ix, step_ix) = self.step_indexes(&path)?;
+        if let TestCaseType::CaseMulti { steps } = self.suites[suite_ix].cases[case_ix].case_type_mut()
+          && let Some(target_ix) = offset_pos(step_ix, steps.len() - 1, offset)
+        {
+          steps.swap(step_ix, target_ix);
+          cx.emit(TestsContainerEvent::TestsModified);
+        }
+        Ok(())
+      }
     }
   }
 
@@ -538,8 +612,9 @@ mod tests {
   use crate::test::test_case::{TestCase, TestCaseType};
   use crate::test::test_suite::TestSuite;
   use crate::test::{TestMetadata, TestPath, TestsContainer};
-  use gpui_kit::SharedString;
+  use gpui_kit::{AppContext, Entity, SharedString, TestAppContext};
   use ki_project::{FileTestCase, FileTestCaseType, FileTestMetadata, FileTestStep, FileTestSuite};
+  use ki_utils::Offset;
   use uuid::Uuid;
 
   #[test]
@@ -1338,6 +1413,416 @@ mod tests {
         TestPath::Step(f.suite_b_id, f.case_b_multi_id, Uuid::new_v4()),
       )
       .expect_err("an unknown target step should fail");
+    assert!(matches!(err, ProjectError::TestNotFound(_)));
+  }
+
+  /// `move_offset` requires a live `Context<TestsContainer>` (it calls
+  /// `cx.emit`), unlike the cx-free helpers exercised above, so these tests
+  /// run under `#[gpui_kit::test]` and drive the container through a real
+  /// entity.
+  fn container_entity(container: TestsContainer, cx: &mut TestAppContext) -> Entity<TestsContainer> {
+    cx.new(|_| container)
+  }
+
+  fn three_suites_container() -> TestsContainer {
+    TestsContainer {
+      suites: vec![
+        TestSuite::new(SharedString::new("A")),
+        TestSuite::new(SharedString::new("B")),
+        TestSuite::new(SharedString::new("C")),
+      ],
+      ..Default::default()
+    }
+  }
+
+  fn suite_names(container: &TestsContainer) -> Vec<String> {
+    container.suites.iter().map(|suite| suite.meta.name.to_string()).collect()
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_plus_reorders_suites(cx: &mut TestAppContext) {
+    let container = three_suites_container();
+    let a_id = container.suites[0].meta.id();
+    let entity = container_entity(container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Suite(a_id), Offset::Plus, cx)
+      })
+      .expect("move should succeed");
+
+    entity.read_with(cx, |container, _| assert_eq!(suite_names(container), vec!["B", "A", "C"]));
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_plus_suite_already_last_is_a_no_op(cx: &mut TestAppContext) {
+    let container = three_suites_container();
+    let c_id = container.suites[2].meta.id();
+    let entity = container_entity(container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Suite(c_id), Offset::Plus, cx)
+      })
+      .expect("a no-op move should still succeed");
+
+    entity.read_with(cx, |container, _| assert_eq!(suite_names(container), vec!["A", "B", "C"]));
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_plus_unknown_suite_is_not_found(cx: &mut TestAppContext) {
+    let entity = container_entity(container_fixture().container, cx);
+
+    let err = entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Suite(Uuid::new_v4()), Offset::Plus, cx)
+      })
+      .expect_err("an unknown suite id should fail");
+    assert!(matches!(err, ProjectError::TestNotFound(_)));
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_minus_reorders_suites(cx: &mut TestAppContext) {
+    let container = three_suites_container();
+    let c_id = container.suites[2].meta.id();
+    let entity = container_entity(container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Suite(c_id), Offset::Minus, cx)
+      })
+      .expect("move should succeed");
+
+    entity.read_with(cx, |container, _| assert_eq!(suite_names(container), vec!["A", "C", "B"]));
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_minus_suite_already_first_is_a_no_op(cx: &mut TestAppContext) {
+    let container = three_suites_container();
+    let a_id = container.suites[0].meta.id();
+    let entity = container_entity(container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Suite(a_id), Offset::Minus, cx)
+      })
+      .expect("a no-op move should still succeed");
+
+    entity.read_with(cx, |container, _| assert_eq!(suite_names(container), vec!["A", "B", "C"]));
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_minus_unknown_suite_is_not_found(cx: &mut TestAppContext) {
+    let entity = container_entity(container_fixture().container, cx);
+
+    let err = entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Suite(Uuid::new_v4()), Offset::Minus, cx)
+      })
+      .expect_err("an unknown suite id should fail");
+    assert!(matches!(err, ProjectError::TestNotFound(_)));
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_plus_reorders_cases(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let case_a_multi_id = f.case_a_multi_id;
+    let entity = container_entity(f.container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Case(suite_a_id, case_a_multi_id), Offset::Plus, cx)
+      })
+      .expect("move should succeed");
+
+    entity.read_with(cx, |container, _| {
+      assert_eq!(
+        case_names(&container.suites[0]),
+        vec!["suite a case step", "suite a multi case"]
+      );
+    });
+  }
+
+  /// Regression test: `move_offset` must resolve the case's own position
+  /// among its siblings, not the position of its parent suite in the suite
+  /// list. `suite_b` is `suites[1]`, so a bug conflating the two indices
+  /// would misjudge boundaries or swap with the wrong sibling for any case
+  /// here, even though `case_b_multi_id` is itself `cases[0]`.
+  #[gpui_kit::test]
+  fn move_offset_plus_reorders_cases_in_a_later_suite(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_b_id = f.suite_b_id;
+    let case_b_multi_id = f.case_b_multi_id;
+    let entity = container_entity(f.container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Case(suite_b_id, case_b_multi_id), Offset::Plus, cx)
+      })
+      .expect("move should succeed");
+
+    entity.read_with(cx, |container, _| {
+      assert_eq!(
+        case_names(&container.suites[1]),
+        vec!["suite b case step", "suite b multi case"]
+      );
+    });
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_plus_case_already_last_is_a_no_op(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let case_a_step_id = f.case_a_step_id;
+    let entity = container_entity(f.container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Case(suite_a_id, case_a_step_id), Offset::Plus, cx)
+      })
+      .expect("a no-op move should still succeed");
+
+    entity.read_with(cx, |container, _| {
+      assert_eq!(
+        case_names(&container.suites[0]),
+        vec!["suite a multi case", "suite a case step"]
+      );
+    });
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_plus_unknown_case_is_not_found(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let entity = container_entity(f.container, cx);
+
+    let err = entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Case(suite_a_id, Uuid::new_v4()), Offset::Plus, cx)
+      })
+      .expect_err("an unknown case id should fail");
+    assert!(matches!(err, ProjectError::TestNotFound(_)));
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_minus_reorders_cases(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let case_a_step_id = f.case_a_step_id;
+    let entity = container_entity(f.container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Case(suite_a_id, case_a_step_id), Offset::Minus, cx)
+      })
+      .expect("move should succeed");
+
+    entity.read_with(cx, |container, _| {
+      assert_eq!(
+        case_names(&container.suites[0]),
+        vec!["suite a case step", "suite a multi case"]
+      );
+    });
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_minus_case_already_first_is_a_no_op(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let case_a_multi_id = f.case_a_multi_id;
+    let entity = container_entity(f.container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Case(suite_a_id, case_a_multi_id), Offset::Minus, cx)
+      })
+      .expect("a no-op move should still succeed");
+
+    entity.read_with(cx, |container, _| {
+      assert_eq!(
+        case_names(&container.suites[0]),
+        vec!["suite a multi case", "suite a case step"]
+      );
+    });
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_minus_unknown_case_is_not_found(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let entity = container_entity(f.container, cx);
+
+    let err = entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Case(suite_a_id, Uuid::new_v4()), Offset::Minus, cx)
+      })
+      .expect_err("an unknown case id should fail");
+    assert!(matches!(err, ProjectError::TestNotFound(_)));
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_plus_reorders_steps(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let case_a_multi_id = f.case_a_multi_id;
+    let step_a1_id = f.step_a1_id;
+    let step_a2_id = f.step_a2_id;
+    let entity = container_entity(f.container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Step(suite_a_id, case_a_multi_id, step_a1_id), Offset::Plus, cx)
+      })
+      .expect("move should succeed");
+
+    entity.read_with(cx, |container, _| {
+      assert_eq!(step_ids(&container.suites[0].cases[0]), vec![step_a2_id, step_a1_id]);
+    });
+  }
+
+  /// Regression test: same as `move_offset_plus_reorders_cases_in_a_later_suite`,
+  /// but for the step branch, which must key off the step's own position,
+  /// not its parent suite's position in the suite list.
+  #[gpui_kit::test]
+  fn move_offset_plus_reorders_steps_in_a_later_suite(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_b_id = f.suite_b_id;
+    let case_b_multi_id = f.case_b_multi_id;
+    let step_b1_id = f.step_b1_id;
+    let step_b2_id = f.step_b2_id;
+    let entity = container_entity(f.container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Step(suite_b_id, case_b_multi_id, step_b1_id), Offset::Plus, cx)
+      })
+      .expect("move should succeed");
+
+    entity.read_with(cx, |container, _| {
+      assert_eq!(step_ids(&container.suites[1].cases[0]), vec![step_b2_id, step_b1_id]);
+    });
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_plus_step_already_last_is_a_no_op(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let case_a_multi_id = f.case_a_multi_id;
+    let step_a1_id = f.step_a1_id;
+    let step_a2_id = f.step_a2_id;
+    let entity = container_entity(f.container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Step(suite_a_id, case_a_multi_id, step_a2_id), Offset::Plus, cx)
+      })
+      .expect("a no-op move should still succeed");
+
+    entity.read_with(cx, |container, _| {
+      assert_eq!(step_ids(&container.suites[0].cases[0]), vec![step_a1_id, step_a2_id]);
+    });
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_plus_unknown_step_is_not_found(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let case_a_multi_id = f.case_a_multi_id;
+    let entity = container_entity(f.container, cx);
+
+    let err = entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Step(suite_a_id, case_a_multi_id, Uuid::new_v4()), Offset::Plus, cx)
+      })
+      .expect_err("an unknown step id should fail");
+    assert!(matches!(err, ProjectError::TestNotFound(_)));
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_plus_case_step_has_no_steps_to_reorder(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let case_a_step_id = f.case_a_step_id;
+    let entity = container_entity(f.container, cx);
+
+    // `case_a_step_id` is a CaseStep: it has no steps to index into.
+    let err = entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Step(suite_a_id, case_a_step_id, Uuid::new_v4()), Offset::Plus, cx)
+      })
+      .expect_err("a case step has no children");
+    assert!(matches!(err, ProjectError::TestNotFound(_)));
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_minus_reorders_steps(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let case_a_multi_id = f.case_a_multi_id;
+    let step_a1_id = f.step_a1_id;
+    let step_a2_id = f.step_a2_id;
+    let entity = container_entity(f.container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Step(suite_a_id, case_a_multi_id, step_a2_id), Offset::Minus, cx)
+      })
+      .expect("move should succeed");
+
+    entity.read_with(cx, |container, _| {
+      assert_eq!(step_ids(&container.suites[0].cases[0]), vec![step_a2_id, step_a1_id]);
+    });
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_minus_step_already_first_is_a_no_op(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let case_a_multi_id = f.case_a_multi_id;
+    let step_a1_id = f.step_a1_id;
+    let step_a2_id = f.step_a2_id;
+    let entity = container_entity(f.container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Step(suite_a_id, case_a_multi_id, step_a1_id), Offset::Minus, cx)
+      })
+      .expect("a no-op move should still succeed");
+
+    entity.read_with(cx, |container, _| {
+      assert_eq!(step_ids(&container.suites[0].cases[0]), vec![step_a1_id, step_a2_id]);
+    });
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_minus_unknown_step_is_not_found(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let case_a_multi_id = f.case_a_multi_id;
+    let entity = container_entity(f.container, cx);
+
+    let err = entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Step(suite_a_id, case_a_multi_id, Uuid::new_v4()), Offset::Minus, cx)
+      })
+      .expect_err("an unknown step id should fail");
+    assert!(matches!(err, ProjectError::TestNotFound(_)));
+  }
+
+  #[gpui_kit::test]
+  fn move_offset_minus_case_step_has_no_steps_to_reorder(cx: &mut TestAppContext) {
+    let f = container_fixture();
+    let suite_a_id = f.suite_a_id;
+    let case_a_step_id = f.case_a_step_id;
+    let entity = container_entity(f.container, cx);
+
+    // `case_a_step_id` is a CaseStep: it has no steps to index into.
+    let err = entity
+      .update(cx, |container, cx| {
+        container.move_offset(TestPath::Step(suite_a_id, case_a_step_id, Uuid::new_v4()), Offset::Minus, cx)
+      })
+      .expect_err("a case step has no children");
     assert!(matches!(err, ProjectError::TestNotFound(_)));
   }
 }

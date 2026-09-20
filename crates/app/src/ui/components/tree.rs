@@ -1,4 +1,4 @@
-use crate::actions::{Enter, Escape, MoveDown, MoveLeft, MoveRight, MoveUp};
+use crate::actions::{Down, Enter, Escape, Left, Right, Up};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::scroll::ScrollableElement;
@@ -31,6 +31,8 @@ pub struct ProjectTreeNode {
   pub depth: usize,
   pub leaf: bool,
   pub expanded: bool,
+  pub first: bool,
+  pub last: bool,
 }
 
 impl ProjectTreeNode {
@@ -58,7 +60,11 @@ impl ProjectTreeNode {
 }
 
 pub trait TreeDelegate: Sized + 'static {
-  fn row_count(&self, cx: &App) -> usize;
+  fn find_above(&self, path: &TestPath) -> Option<TestPath>;
+
+  fn find_below(&self, path: &TestPath) -> Option<TestPath>;
+
+  fn row_count(&self) -> usize;
 
   fn node(&self, ix: usize, cx: &Context<TreeState<Self>>) -> &ProjectTreeNode;
 
@@ -67,9 +73,9 @@ pub trait TreeDelegate: Sized + 'static {
 
 #[derive(Debug)]
 pub enum TreeEvent {
-  EntryDoubleClicked(usize),
-  NodeExpanded(usize),
-  NodeCollapsed(usize),
+  EntryDoubleClicked(TestPath),
+  NodeExpanded(TestPath),
+  NodeCollapsed(TestPath),
 }
 
 #[derive(Debug)]
@@ -77,7 +83,7 @@ pub struct TreeState<D: TreeDelegate> {
   focus_handle: FocusHandle,
   scroll_handle: UniformListScrollHandle,
   delegate: D,
-  selected_ix: Option<usize>,
+  selected_path: Option<TestPath>,
 }
 
 impl<D: TreeDelegate> TreeState<D> {
@@ -92,64 +98,67 @@ impl<D: TreeDelegate> TreeState<D> {
   }
 
   #[inline]
-  pub fn selected_index(&self) -> Option<usize> {
-    self.selected_ix
+  pub fn selected_path(&self) -> Option<TestPath> {
+    self.selected_path
+  }
+
+  #[inline]
+  pub fn set_selected_path(&mut self, path: Option<TestPath>) {
+    self.selected_path = path;
   }
 
   pub fn clear_selection(&mut self, cx: &mut Context<TreeState<D>>) {
-    self.selected_ix = None;
+    self.selected_path = None;
     cx.notify();
   }
 
-  fn on_node_click(&mut self, e: &ClickEvent, ix: usize, cx: &mut Context<TreeState<D>>) {
+  fn on_node_click(&mut self, e: &ClickEvent, path: TestPath, cx: &mut Context<TreeState<D>>) {
     cx.stop_propagation();
     if e.click_count() == 2 {
-      cx.emit(TreeEvent::EntryDoubleClicked(ix));
+      cx.emit(TreeEvent::EntryDoubleClicked(path));
     } else {
-      self.selected_ix = Some(ix);
+      self.selected_path = Some(path);
     }
   }
 
-  fn on_node_right_click(&mut self, ix: usize, cx: &mut Context<TreeState<D>>) {
+  fn on_node_right_click(&mut self, path: TestPath, cx: &mut Context<TreeState<D>>) {
     cx.stop_propagation();
-    self.selected_ix = Some(ix);
+    self.selected_path = Some(path);
   }
 
-  fn on_action_left(&mut self, _action: &MoveLeft, _window: &mut Window, cx: &mut Context<TreeState<D>>) {
-    if let Some(ix) = self.selected_ix {
-      cx.emit(TreeEvent::NodeCollapsed(ix));
+  fn on_action_left(&mut self, _action: &Left, _window: &mut Window, cx: &mut Context<TreeState<D>>) {
+    if let Some(path) = self.selected_path {
+      cx.emit(TreeEvent::NodeCollapsed(path));
     }
   }
 
-  fn on_action_right(&mut self, _action: &MoveRight, _window: &mut Window, cx: &mut Context<TreeState<D>>) {
-    if let Some(ix) = self.selected_ix {
-      cx.emit(TreeEvent::NodeExpanded(ix));
+  fn on_action_right(&mut self, _action: &Right, _window: &mut Window, cx: &mut Context<TreeState<D>>) {
+    if let Some(path) = self.selected_path {
+      cx.emit(TreeEvent::NodeExpanded(path));
     }
   }
 
-  fn on_action_up(&mut self, _action: &MoveUp, _window: &mut Window, cx: &mut Context<TreeState<D>>) {
-    if let Some(ix) = self.selected_ix
-      && ix > 0
+  fn on_action_up(&mut self, _action: &Up, _window: &mut Window, cx: &mut Context<TreeState<D>>) {
+    if let Some(path) = &self.selected_path
+      && let Some(above_path) = self.delegate.find_above(path)
     {
-      self.selected_ix = Some(ix - 1);
+      self.selected_path = Some(above_path);
       cx.notify();
     }
   }
 
-  fn on_action_down(&mut self, _action: &MoveDown, _window: &mut Window, cx: &mut Context<TreeState<D>>) {
-    if let Some(ix) = self.selected_ix
-      && ix < self.delegate.row_count(cx) - 1
+  fn on_action_down(&mut self, _action: &Down, _window: &mut Window, cx: &mut Context<TreeState<D>>) {
+    if let Some(path) = &self.selected_path
+      && let Some(below_path) = self.delegate.find_below(path)
     {
-      self.selected_ix = Some(ix + 1);
+      self.selected_path = Some(below_path);
       cx.notify();
     }
   }
 
   fn on_action_confirm(&mut self, _action: &Enter, _window: &mut Window, cx: &mut Context<TreeState<D>>) {
-    if let Some(ix) = self.selected_ix
-      && ix < self.delegate.row_count(cx) - 1
-    {
-      cx.emit(TreeEvent::EntryDoubleClicked(ix));
+    if let Some(path) = self.selected_path {
+      cx.emit(TreeEvent::EntryDoubleClicked(path));
     }
   }
 }
@@ -166,7 +175,7 @@ impl<D: TreeDelegate> TreeState<D> {
       focus_handle: cx.focus_handle(),
       scroll_handle: UniformListScrollHandle::default(),
       delegate,
-      selected_ix: None,
+      selected_path: None,
     }
   }
 }
@@ -178,12 +187,13 @@ impl<D: TreeDelegate> Render for TreeState<D> {
     div().size_full().child(
       uniform_list(
         "tree_entries",
-        self.delegate().row_count(cx),
+        self.delegate().row_count(),
         cx.processor(move |state, visible_range: Range<usize>, window, cx| {
           visible_range
             .map(|ix| {
               let node = state.delegate().node(ix, cx);
-              let is_selected = state.selected_ix == Some(ix);
+              let path = &node.path;
+              let is_selected = state.selected_path == Some(*path);
               let is_open = node.expanded;
               let mut left_padding = px(16.) * node.depth;
               if node.leaf {
@@ -213,17 +223,20 @@ impl<D: TreeDelegate> Render for TreeState<D> {
                             .icon(icon)
                             .cursor(CursorStyle::Arrow)
                             .tab_stop(false)
-                            .on_click(move |_, _, cx| {
-                              entity.update(cx, |_, cx| {
-                                use crate::ui::components::tree::TreeEvent::NodeCollapsed;
-                                use crate::ui::components::tree::TreeEvent::NodeExpanded;
-                                cx.stop_propagation();
-                                if is_open {
-                                  cx.emit(NodeCollapsed(ix))
-                                } else {
-                                  cx.emit(NodeExpanded(ix))
-                                }
-                              })
+                            .on_click({
+                              let path = *path;
+                              move |_, _, cx| {
+                                entity.update(cx, |_, cx| {
+                                  use crate::ui::components::tree::TreeEvent::NodeCollapsed;
+                                  use crate::ui::components::tree::TreeEvent::NodeExpanded;
+                                  cx.stop_propagation();
+                                  if is_open {
+                                    cx.emit(NodeCollapsed(path))
+                                  } else {
+                                    cx.emit(NodeExpanded(path))
+                                  }
+                                })
+                              }
                             }),
                         )
                       }
@@ -231,11 +244,14 @@ impl<D: TreeDelegate> Render for TreeState<D> {
                     // Entry content
                     .child(state.delegate().node_render(ix, is_selected, window, cx)),
                 )
-                .on_click(cx.listener(move |this, e, _, cx| this.on_node_click(e, ix, cx)))
-                .on_mouse_down(
-                  MouseButton::Right,
-                  cx.listener(move |this, _, _, cx| this.on_node_right_click(ix, cx)),
-                )
+                .on_click({
+                  let path = *path;
+                  cx.listener(move |this, e, _, cx| this.on_node_click(e, path, cx))
+                })
+                .on_mouse_down(MouseButton::Right, {
+                  let path = *path;
+                  cx.listener(move |this, _, _, cx| this.on_node_right_click(path, cx))
+                })
             })
             .collect()
         }),

@@ -16,3 +16,6 @@ ki_project.workspace = true
 ki_utils.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }

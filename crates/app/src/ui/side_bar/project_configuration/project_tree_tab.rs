@@ -1,24 +1,27 @@
 use crate::actions::{
-  AddTestCase, AddTestStep, AddTestSuite, Delete, Duplicate, Escape, PROJECT_TREE_CONTEXT_KEY, Rename, SwitchNodeActiveStatus,
+  AddTestCase, AddTestStep, AddTestSuite, Delete, Duplicate, Escape, MoveDown, MoveUp, PROJECT_TREE_CONTEXT_KEY, Rename,
+  SwitchNodeActiveStatus,
 };
 use crate::ui::components::tree::{ProjectTreeNode, ProjectTreeNodeKind, Tree, TreeDelegate, TreeEvent, TreeState};
 use crate::ui::side_bar::project_configuration::ProjectConfigurationTab;
+use gpui_kit::component::dialog::{DialogAction, DialogClose, DialogFooter};
+use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{
   ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt,
   button::{Button, ButtonVariants},
   h_flex,
-  input::{Input, InputEvent, InputState},
   menu::{ContextMenuExt, PopupMenu},
   v_flex,
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
+use ki_utils::Offset;
 use ki_utils::ui::MovingLabel;
 use ki_workspace::test::test_case::TestCaseType;
 use ki_workspace::test::{TestPath, TestsContainer};
-use ki_workspace::{Project, TestCase, TestStep, TestSuite};
+use ki_workspace::{Project, TestCase, TestSuite};
 use log::warn;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -39,85 +42,111 @@ impl ProjectTree {
     cx: &mut Context<Self>,
   ) {
     tree.update(cx, |tree, cx| match e {
-      TreeEvent::NodeExpanded(ix) => tree.delegate_mut().on_expand_status_change(*ix, true, cx),
-      TreeEvent::NodeCollapsed(ix) => tree.delegate_mut().on_expand_status_change(*ix, false, cx),
+      TreeEvent::NodeExpanded(path) => tree.delegate_mut().on_expand_status_change(path, true, cx),
+      TreeEvent::NodeCollapsed(path) => tree.delegate_mut().on_expand_status_change(path, false, cx),
       TreeEvent::EntryDoubleClicked(ix) => println!("Entry action: {}", ix),
     });
   }
 
-  fn on_switch_node_active_status_action(
+  fn on_action_switch_node_active_status(
     &mut self,
     _action: &SwitchNodeActiveStatus,
     _window: &mut Window,
     cx: &mut Context<Self>,
   ) {
     self.tree_state.update(cx, |tree, cx| {
-      let Some(ix) = tree.selected_index() else {
-        warn!("ProjectTree:on_switch_node_enable_status: no tree_state selected_ix");
+      let Some(path) = tree.selected_path() else {
+        warn!("ProjectTree:on_switch_node_enable_status: no tree_state selected path");
         return;
       };
-      tree.delegate_mut().on_switch_node_enable_status(ix, cx);
+      tree.delegate_mut().on_switch_node_enable_status(path, cx);
     })
   }
 
-  fn on_rename_action(&mut self, _: &Rename, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_action_rename(&mut self, _: &Rename, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
-      let Some(ix) = tree.selected_index() else {
-        warn!("ProjectTree:on_rename_node: no tree_state selected_ix");
+      let Some(path) = tree.selected_path() else {
+        warn!("ProjectTree:on_rename_node: no tree_state selected path");
         return;
       };
-      tree.delegate_mut().setup_rename_node(ix, window, cx);
+      tree.delegate_mut().show_rename_dialog(path, window, cx);
     });
   }
 
-  fn on_delete_action(&mut self, _: &Delete, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_action_delete(&mut self, _: &Delete, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
-      let Some(ix) = tree.selected_index() else {
-        warn!("ProjectTree:on_delete_node: no tree_state selected_ix");
+      let Some(path) = tree.selected_path() else {
+        warn!("ProjectTree:on_delete_node: no tree_state selected path");
         return;
       };
-      tree.delegate_mut().show_delete_confirm_dialog(ix, window, cx);
+      tree.delegate_mut().show_delete_confirm_dialog(path, window, cx);
     });
   }
 
-  fn on_duplicate_action(&mut self, _: &Duplicate, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_action_duplicate(&mut self, _: &Duplicate, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
-      let Some(ix) = tree.selected_index() else {
-        warn!("ProjectTree:on_duplicate_node: no tree_state selected_ix");
+      let Some(path) = tree.selected_path() else {
+        warn!("ProjectTree:on_duplicate_node: no tree_state selected path");
         return;
       };
-      tree.delegate_mut().duplicate_node(ix, window, cx);
+      tree.delegate_mut().duplicate_node(path, window, cx);
     });
   }
 
-  fn on_add_test_suite_action(&mut self, _: &AddTestSuite, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_action_add_test_suite(&mut self, _: &AddTestSuite, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
-      let ix = tree.selected_index();
-      tree.delegate_mut().add_test_suite(ix, window, cx);
+      let path = tree.selected_path();
+      if let Some(new_path) = tree.delegate_mut().add_test_suite(path, window, cx) {
+        tree.set_selected_path(Some(new_path));
+      }
     });
   }
 
-  fn on_add_test_case_action(&mut self, _: &AddTestCase, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_action_add_test_case(&mut self, _: &AddTestCase, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
-      let Some(ix) = tree.selected_index() else {
-        warn!("ProjectTree:on_add_test_case: no tree_state selected_ix");
+      let Some(path) = tree.selected_path() else {
+        warn!("ProjectTree:on_add_test_case: no tree_state selected path");
         return;
       };
-      tree.delegate_mut().add_test_case(ix, window, cx);
+      if let Some(new_path) = tree.delegate_mut().add_test_case(path, window, cx) {
+        tree.set_selected_path(Some(new_path));
+      }
     });
   }
 
-  fn on_add_test_step_action(&mut self, _: &AddTestStep, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_action_add_test_step(&mut self, _: &AddTestStep, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
-      let Some(ix) = tree.selected_index() else {
-        warn!("ProjectTree:on_add_step: no tree_state selected_ix");
+      let Some(path) = tree.selected_path() else {
+        warn!("ProjectTree:on_add_step: no tree_state selected path");
         return;
       };
-      tree.delegate_mut().add_test_step(ix, window, cx);
+      if let Some(new_path) = tree.delegate_mut().add_test_step(path, window, cx) {
+        tree.set_selected_path(Some(new_path));
+      }
     });
   }
 
-  fn on_escape_action(&mut self, _action: &Escape, _window: &mut Window, cx: &mut Context<Self>) {
+  fn on_action_move_up(&mut self, _: &MoveUp, window: &mut Window, cx: &mut Context<Self>) {
+    self.tree_state.update(cx, |tree, cx| {
+      let Some(path) = tree.selected_path() else {
+        warn!("ProjectTree:on_move_up_action: no tree_state selected path");
+        return;
+      };
+      tree.delegate_mut().move_up(path, window, cx);
+    });
+  }
+
+  fn on_action_move_down(&mut self, _: &MoveDown, window: &mut Window, cx: &mut Context<Self>) {
+    self.tree_state.update(cx, |tree, cx| {
+      let Some(path) = tree.selected_path() else {
+        warn!("ProjectTree:on_move_down_action: no tree_state selected path");
+        return;
+      };
+      tree.delegate_mut().move_down(path, window, cx);
+    });
+  }
+
+  fn on_action_escape(&mut self, _action: &Escape, _window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree_state, cx| tree_state.clear_selection(cx));
   }
 }
@@ -145,63 +174,162 @@ impl ProjectConfigurationTab for ProjectTree {
 struct ProjectTreeDelegate {
   tests: Entity<TestsContainer>,
   tree_nodes: Vec<ProjectTreeNode>,
-  rename_input_state: Entity<InputState>,
-  _rename_input_sub: Option<Subscription>,
+  _tests_sub: Subscription,
 }
 
 impl ProjectTreeDelegate {
-  fn add_test_case(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let Some(path) = self.tree_nodes.get(ix).map(|node| &node.path) else {
-      warn!("ProjectTreeDelegate:add_test_case: unknown item ix: {}", ix);
-      return;
-    };
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.add_test_case(path, cx)) {
-      window.push_notification(err, cx);
-    } else {
-      self.update_tests_nodes(cx);
+  fn add_test_case(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) -> Option<TestPath> {
+    match self.tests.update(cx, |tests, cx| tests.add_test_case(path, cx)) {
+      Ok(path) => Some(path),
+      Err(err) => {
+        window.push_notification(err, cx);
+        None
+      }
     }
   }
 
-  fn add_test_from_index(&mut self, ix: Option<usize>, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    match ix {
+  fn add_test_from_path(
+    &mut self,
+    path: Option<TestPath>,
+    window: &mut Window,
+    cx: &mut Context<TreeState<Self>>,
+  ) -> Option<TestPath> {
+    match path {
       None => self.add_test_suite(None, window, cx),
-      Some(ix) => match self.tree_nodes.get(ix) {
+      Some(path) => match self.tree_nodes.iter().find(|node| node.path == path) {
         None => {
-          warn!("ProjectTreeDelegate:add_test_from_index: unknown item ix: {}", ix);
+          warn!("ProjectTreeDelegate:add_test_from_index: unknown path: {}", path);
+          None
         }
-        Some(tree_mode) => match tree_mode.node_kind {
-          ProjectTreeNodeKind::Suite => self.add_test_suite(Some(ix), window, cx),
-          ProjectTreeNodeKind::Case => self.add_test_case(ix, window, cx),
-          ProjectTreeNodeKind::CaseStep | ProjectTreeNodeKind::Step => self.add_test_step(ix, window, cx),
+        Some(node) => match node.node_kind {
+          ProjectTreeNodeKind::Suite => self.add_test_suite(Some(path), window, cx),
+          ProjectTreeNodeKind::Case => self.add_test_case(path, window, cx),
+          ProjectTreeNodeKind::CaseStep | ProjectTreeNodeKind::Step => self.add_test_step(path, window, cx),
         },
       },
     }
   }
 
-  fn add_test_step(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let Some(path) = self.tree_nodes.get(ix).map(|node| &node.path) else {
-      warn!("ProjectTreeDelegate:add_test_step: unknown item ix: {}", ix);
-      return;
-    };
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.add_test_step(path, cx)) {
-      window.push_notification(err, cx);
-    } else {
-      self.update_tests_nodes(cx);
+  fn add_test_step(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) -> Option<TestPath> {
+    match self.tests.update(cx, |tests, cx| tests.add_test_step(path, cx)) {
+      Ok(path) => Some(path),
+      Err(err) => {
+        window.push_notification(err, cx);
+        None
+      }
     }
   }
 
-  fn add_test_suite(&mut self, ix: Option<usize>, _window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let path = match ix {
-      None => None,
-      Some(ix) => self.tree_nodes.get(ix).map(|node| &node.path),
-    };
-    self.tests.update(cx, |tests, cx| tests.add_test_suite(path, cx));
-    self.update_tests_nodes(cx);
+  fn add_test_suite(
+    &mut self,
+    path: Option<TestPath>,
+    _window: &mut Window,
+    cx: &mut Context<TreeState<Self>>,
+  ) -> Option<TestPath> {
+    Some(self.tests.update(cx, |tests, cx| tests.add_test_suite(path, cx)))
   }
 
-  fn show_delete_confirm_dialog(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let Some(node) = self.tree_nodes.get(ix) else {
-      warn!("ProjectTreeDelegate:delete_node: unknown item ix: {}", ix);
+  fn delete_node(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.delete_test(&path, cx)) {
+      window.push_notification(err, cx);
+    }
+  }
+
+  fn duplicate_node(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.duplicate_test(&path, cx)) {
+      window.push_notification(err, cx);
+    }
+  }
+
+  fn move_node(&mut self, from: TestPath, to: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.move_test(from, to, cx)) {
+      window.push_notification(err, cx);
+    }
+  }
+
+  fn move_down(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.move_offset(path, Offset::Plus, cx)) {
+      window.push_notification(err, cx);
+    }
+  }
+
+  fn move_up(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.move_offset(path, Offset::Minus, cx)) {
+      window.push_notification(err, cx);
+    }
+  }
+
+  fn new(tests: Entity<TestsContainer>, _window: &mut Window, cx: &mut Context<TreeState<Self>>) -> Self {
+    let _tests_sub = cx.subscribe(&tests, |this, _, _, cx| {
+      this.delegate_mut().update_tests_nodes(cx);
+    });
+    let mut delegate = Self {
+      tests,
+      tree_nodes: vec![],
+      _tests_sub,
+    };
+    delegate.update_tests_nodes(cx);
+    delegate
+  }
+
+  fn on_expand_status_change(&mut self, path: &TestPath, open: bool, cx: &mut Context<TreeState<Self>>) {
+    let id = path.id();
+    self.tests.update(cx, move |project, cx| {
+      if open {
+        project.expand_tree_node(id, cx);
+      } else {
+        project.collapse_tree_node(&id, cx);
+      }
+    });
+  }
+
+  fn on_switch_node_enable_status(&mut self, path: TestPath, cx: &mut Context<TreeState<Self>>) {
+    self.tests.update(cx, move |tests, cx| {
+      tests.switch_node_enable_status(&path, cx);
+    });
+  }
+
+  fn show_rename_dialog(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    let Some(node) = self.tree_nodes.iter().find(|node| node.path == path) else {
+      warn!("ProjectTreeDelegate:setup_rename_node: unknown path: {}", path);
+      return;
+    };
+    let name = node.label.clone();
+    let path = node.path;
+    let input = cx.new(|cx| {
+      let mut state = InputState::new(window, cx);
+      state.set_value(name, window, cx);
+      state
+    });
+    let tests = self.tests.clone();
+    window.open_dialog(cx, move |dialog, window, cx| {
+      input.update(cx, |input, cx| {
+        input.focus(window, cx);
+      });
+      dialog
+        .title("Rename test")
+        .child(v_flex().gap_3().child("Enter the node's name:").child(Input::new(&input)))
+        .footer(
+          DialogFooter::new()
+            .child(DialogClose::new().child(Button::new("cancel").label("Cancel").outline()))
+            .child(DialogAction::new().child(Button::new("confirm").primary().label("Rename"))),
+        )
+        .on_ok({
+          let name = input.clone().read(cx).value();
+          let tests = tests.clone();
+          move |_, window, cx| {
+            if let Err(err) = tests.update(cx, |tests, cx| tests.rename_at(&path, name.clone(), cx)) {
+              window.push_notification(err, cx);
+            }
+            true
+          }
+        })
+    });
+  }
+
+  fn show_delete_confirm_dialog(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
+    let Some(node) = self.tree_nodes.iter().find(|node| node.path == path) else {
+      warn!("ProjectTreeDelegate:delete_node: unknown path: {}", path);
       return;
     };
 
@@ -220,123 +348,13 @@ impl ProjectTreeDelegate {
             move |_, window, cx| {
               this.update(cx, |this, cx| {
                 this.delegate_mut().delete_node(path, window, cx);
+                this.clear_selection(cx);
               });
               true
             }
           })
       }
     });
-  }
-
-  fn delete_node(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.delete_test(&path, cx)) {
-      window.push_notification(err, cx);
-    } else {
-      self.update_tests_nodes(cx);
-    }
-  }
-
-  fn duplicate_node(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let Some(path) = self.tree_nodes.get(ix).map(|node| &node.path) else {
-      warn!("ProjectTreeDelegate:duplicate_node: unknown item ix: {}", ix);
-      return;
-    };
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.duplicate_test(path, cx)) {
-      window.push_notification(err, cx);
-    } else {
-      self.update_tests_nodes(cx);
-    }
-  }
-
-  fn move_node(&mut self, from: TestPath, to: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.move_test(from, to, cx)) {
-      window.push_notification(err, cx);
-    } else {
-      self.update_tests_nodes(cx);
-    }
-  }
-
-  fn new(tests: Entity<TestsContainer>, window: &mut Window, cx: &mut Context<TreeState<Self>>) -> Self {
-    let rename_input_state = cx.new(|cx| InputState::new(window, cx));
-    let mut delegate = Self {
-      tests,
-      tree_nodes: vec![],
-      rename_input_state,
-      _rename_input_sub: None,
-    };
-    delegate.update_tests_nodes(cx);
-    delegate
-  }
-
-  fn on_expand_status_change(&mut self, ix: usize, open: bool, cx: &mut Context<TreeState<Self>>) {
-    let Some(id) = self.tree_nodes.get(ix).map(|node| node.id()) else {
-      warn!("ProjectTreeDelegate:on_expand_status_change: unknown item ix: {}", ix);
-      return;
-    };
-    self.tests.update(cx, move |project, cx| {
-      if open {
-        project.expand_tree_node(id, cx);
-      } else {
-        project.collapse_tree_node(&id, cx);
-      }
-    });
-    // Implement a fine-grained update instead of rebuilding the full tree?
-    self.update_tests_nodes(cx);
-  }
-
-  fn on_rename_input_event(
-    tree_state: &mut TreeState<Self>,
-    input: &Entity<InputState>,
-    event: &InputEvent,
-    window: &mut Window,
-    cx: &mut Context<TreeState<Self>>,
-  ) {
-    match event {
-      InputEvent::PressEnter { .. } | InputEvent::Blur => {
-        // Case: if Esc is pressed, selected_ix is None, and Blur event is raised, unwrap ix would panic
-        if let Some(ix) = tree_state.selected_index() {
-          tree_state.delegate_mut().rename_node(ix, input.read(cx).value(), window, cx);
-          tree_state.focus_handle(cx).focus(window, cx);
-        }
-        tree_state.delegate_mut()._rename_input_sub = None;
-      }
-      _ => {}
-    }
-  }
-
-  fn on_switch_node_enable_status(&mut self, ix: usize, cx: &mut Context<TreeState<Self>>) {
-    let Some(path) = self.tree_nodes.get(ix).map(|node| &node.path) else {
-      warn!("ProjectTreeDelegate:on_switch_active_status: unknown item ix: {}", ix);
-      return;
-    };
-    self.tests.update(cx, move |tests, cx| {
-      tests.switch_node_enable_status(path, cx);
-    });
-    self.update_tests_nodes(cx);
-  }
-
-  fn rename_node(&mut self, ix: usize, name: SharedString, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let Some(path) = self.tree_nodes.get(ix).map(|node| &node.path) else {
-      warn!("ProjectTreeDelegate:rename_node: unknown item ix: {}", ix);
-      return;
-    };
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.rename_at(path, name, cx)) {
-      window.push_notification(err, cx);
-    } else {
-      self.update_tests_nodes(cx);
-    }
-  }
-
-  fn setup_rename_node(&mut self, ix: usize, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let Some(name) = self.tree_nodes.get(ix).map(|node| node.label.clone()) else {
-      warn!("ProjectTreeDelegate:setup_rename_node: unknown item ix: {}", ix);
-      return;
-    };
-    self.rename_input_state.update(cx, |input, cx| {
-      input.set_value(name, window, cx);
-      input.focus(window, cx);
-    });
-    self._rename_input_sub = Some(cx.subscribe_in(&self.rename_input_state, window, Self::on_rename_input_event));
   }
 
   fn update_tests_nodes(&mut self, cx: &mut Context<TreeState<Self>>) {
@@ -350,7 +368,8 @@ impl ProjectTreeDelegate {
 
 fn get_ts_entries(suites: &[TestSuite], opened_nodes: &HashSet<Uuid>) -> Vec<ProjectTreeNode> {
   let mut entries = Vec::new();
-  for suite in suites.iter() {
+  let last_ix = suites.len() - 1;
+  for (ix, suite) in suites.iter().enumerate() {
     let leaf = suite.cases.is_empty();
     let path = suite.meta.path();
     let disabled = suite.meta.disabled;
@@ -364,6 +383,8 @@ fn get_ts_entries(suites: &[TestSuite], opened_nodes: &HashSet<Uuid>) -> Vec<Pro
       depth: 0,
       leaf,
       expanded,
+      first: ix == 0,
+      last: ix == last_ix,
     });
     if !leaf && expanded {
       entries.extend(get_tc_entries(&suite.cases, disabled, opened_nodes));
@@ -374,7 +395,8 @@ fn get_ts_entries(suites: &[TestSuite], opened_nodes: &HashSet<Uuid>) -> Vec<Pro
 
 fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &HashSet<Uuid>) -> Vec<ProjectTreeNode> {
   let mut entries = Vec::new();
-  cases.iter().for_each(|case| {
+  let last_ix = cases.len() - 1;
+  for (ix, case) in cases.iter().enumerate() {
     let path = case.meta.path();
     let disabled = case.meta.disabled;
     let mut case_tree_node = ProjectTreeNode {
@@ -386,6 +408,8 @@ fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &Hash
       depth: 1,
       leaf: true,
       expanded: false,
+      first: ix == 0,
+      last: ix == last_ix,
     };
     match case.case_type() {
       TestCaseType::CaseMulti { steps } => {
@@ -395,7 +419,19 @@ fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &Hash
         case_tree_node.expanded = is_open;
         entries.push(case_tree_node);
         if !is_empty && is_open {
-          entries.extend(steps.iter().map(|step| get_step_node(step, disabled || parent_disabled)));
+          let last_ix = steps.len() - 1;
+          entries.extend(steps.iter().enumerate().map(|(ix, step)| ProjectTreeNode {
+            path: step.meta.path(),
+            node_kind: ProjectTreeNodeKind::Step,
+            label: step.meta.name.clone(),
+            disabled: step.meta.disabled,
+            parent_disabled: disabled || parent_disabled,
+            depth: 2,
+            leaf: true,
+            expanded: false,
+            first: ix == 0,
+            last: ix == last_ix,
+          }));
         }
       }
       TestCaseType::CaseStep { .. } => {
@@ -403,24 +439,15 @@ fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &Hash
         entries.push(case_tree_node);
       }
     }
-  });
+  }
   entries
 }
 
-fn get_step_node(step: &TestStep, parent_disabled: bool) -> ProjectTreeNode {
-  ProjectTreeNode {
-    path: step.meta.path(),
-    node_kind: ProjectTreeNodeKind::Step,
-    label: step.meta.name.clone(),
-    disabled: step.meta.disabled,
-    parent_disabled,
-    depth: 2,
-    leaf: true,
-    expanded: false,
-  }
-}
-
-fn build_context_menu(disabled: bool, kind: ProjectTreeNodeKind) -> Box<ContextMenuBuilder> {
+fn build_context_menu(node: &ProjectTreeNode) -> Box<ContextMenuBuilder> {
+  let kind = node.node_kind;
+  let disabled = node.disabled;
+  let first = node.first;
+  let last = node.last;
   let builder = move |menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
     menu
       .submenu_with_icon(Some(IconName::Plus.into()), "New", window, cx, move |submenu, _, _| {
@@ -440,12 +467,29 @@ fn build_context_menu(disabled: bool, kind: ProjectTreeNodeKind) -> Box<ContextM
       .menu_with_icon("Rename", IconAsset::Rename, Box::new(Rename))
       .separator()
       .menu_with_icon("Delete", IconName::Delete, Box::new(Delete))
+      .separator()
+      .menu_with_icon_and_disabled("Move Up", IconName::ArrowUp, Box::new(MoveUp), first)
+      .menu_with_icon_and_disabled("Move Down", IconName::ArrowDown, Box::new(MoveDown), last)
   };
   Box::new(builder)
 }
 
 impl TreeDelegate for ProjectTreeDelegate {
-  fn row_count(&self, _cx: &App) -> usize {
+  fn find_above(&self, path: &TestPath) -> Option<TestPath> {
+    let pos = self.tree_nodes.iter().position(|node| node.path == *path)?;
+    if pos > 0 { Some(self.tree_nodes[pos - 1].path) } else { None }
+  }
+
+  fn find_below(&self, path: &TestPath) -> Option<TestPath> {
+    let pos = self.tree_nodes.iter().position(|node| node.path == *path)?;
+    if pos < self.tree_nodes.len() - 1 {
+      Some(self.tree_nodes[pos + 1].path)
+    } else {
+      None
+    }
+  }
+
+  fn row_count(&self) -> usize {
     self.tree_nodes.len()
   }
 
@@ -453,11 +497,10 @@ impl TreeDelegate for ProjectTreeDelegate {
     self.tree_nodes.get(ix).unwrap()
   }
 
-  fn node_render(&self, ix: usize, selected: bool, _window: &mut Window, cx: &mut Context<TreeState<Self>>) -> impl IntoElement {
+  fn node_render(&self, ix: usize, _selected: bool, _window: &mut Window, cx: &mut Context<TreeState<Self>>) -> impl IntoElement {
     let node = &self.tree_nodes[ix];
     let id = node.path.id();
     let icon = node.icon();
-    let is_edited = selected && self._rename_input_sub.is_some();
     let left_padding = if icon.is_some() { px(0.) } else { px(14.) };
 
     h_flex()
@@ -466,25 +509,11 @@ impl TreeDelegate for ProjectTreeDelegate {
       .pl(left_padding)
       .gap_x_1()
       .when_some(icon, |this, icon| this.child(icon))
-      .when(!is_edited, |this| {
-        this.tooltip(move |window, cx| Tooltip::new(format!("{}", id.clone())).build(window, cx))
-      })
-      .when_else(
-        is_edited,
-        |this| this.child(Input::new(&self.rename_input_state)),
-        |this| {
-          this
-            .child(node.label.clone())
-            .when(node.disabled || node.parent_disabled, |this| {
-              this.child(Icon::new(IconAsset::Ban).xsmall())
-            })
-            .when(node.disabled, |this| this.text_color(cx.theme().muted_foreground))
-        },
-      )
-      .hover(|style| {
-        style
-          .bg(cx.theme().sidebar_accent.opacity(0.8))
-          .text_color(cx.theme().sidebar_accent_foreground)
+      .tooltip(move |window, cx| Tooltip::new(format!("{}", id.clone())).build(window, cx))
+      .child(node.label.clone())
+      .when(node.disabled, |this| this.child(Icon::new(IconAsset::Ban).xsmall()))
+      .when(node.disabled || node.parent_disabled, |this| {
+        this.text_color(cx.theme().muted_foreground)
       })
       .on_drag(
         MovingLabel {
@@ -502,25 +531,27 @@ impl TreeDelegate for ProjectTreeDelegate {
           table.delegate_mut().move_node(e.data, to_path, window, cx);
         })
       })
-      .context_menu(build_context_menu(node.disabled, node.node_kind))
+      .context_menu(build_context_menu(node))
   }
 }
 
 impl Render for ProjectTree {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-    let selected_index = self.tree_state.read(cx).selected_index();
+    let selected_path = self.tree_state.read(cx).selected_path();
 
     v_flex()
       .id("project-tree")
       .key_context(PROJECT_TREE_CONTEXT_KEY)
-      .on_action(cx.listener(Self::on_escape_action))
-      .on_action(cx.listener(Self::on_switch_node_active_status_action))
-      .on_action(cx.listener(Self::on_rename_action))
-      .on_action(cx.listener(Self::on_delete_action))
-      .on_action(cx.listener(Self::on_duplicate_action))
-      .on_action(cx.listener(Self::on_add_test_suite_action))
-      .on_action(cx.listener(Self::on_add_test_case_action))
-      .on_action(cx.listener(Self::on_add_test_step_action))
+      .on_action(cx.listener(Self::on_action_escape))
+      .on_action(cx.listener(Self::on_action_switch_node_active_status))
+      .on_action(cx.listener(Self::on_action_rename))
+      .on_action(cx.listener(Self::on_action_delete))
+      .on_action(cx.listener(Self::on_action_duplicate))
+      .on_action(cx.listener(Self::on_action_add_test_suite))
+      .on_action(cx.listener(Self::on_action_add_test_case))
+      .on_action(cx.listener(Self::on_action_add_test_step))
+      .on_action(cx.listener(Self::on_action_move_up))
+      .on_action(cx.listener(Self::on_action_move_down))
       .size_full()
       .gap_y_2()
       .p_1()
@@ -538,7 +569,9 @@ impl Render for ProjectTree {
                 let tree_state = self.tree_state.clone();
                 move |_, window, cx| {
                   tree_state.update(cx, |tree_state, cx| {
-                    tree_state.delegate_mut().add_test_from_index(selected_index, window, cx);
+                    if let Some(new_path) = tree_state.delegate_mut().add_test_from_path(selected_path, window, cx) {
+                      tree_state.set_selected_path(Some(new_path));
+                    }
                   });
                 }
               }),
@@ -547,7 +580,7 @@ impl Render for ProjectTree {
             Button::new("btn-remove-tree-node")
               .ghost()
               .small()
-              .disabled(selected_index.is_none())
+              .disabled(selected_path.is_none())
               .icon(IconName::Delete),
           ),
       )
