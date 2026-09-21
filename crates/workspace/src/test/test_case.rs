@@ -34,16 +34,26 @@ impl TestCase {
   /// # Errors
   /// Returns [`ProjectError::OperationNotAllowed`] when called on a
   /// [`TestCaseType::CaseStep`], since a case step cannot have children.
-  pub fn add_test_step(&mut self, path: &TestPath) -> ProjectResult<()> {
+  pub fn add_test_step(&mut self, path: TestPath) -> ProjectResult<TestPath> {
     match &mut self.case_type {
       TestCaseType::CaseMulti { steps } => {
-        let position = steps.iter().position(|step| step.meta.path == *path);
+        let position = steps.iter().position(|step| step.meta.path == path);
         let name = ki_utils::next_available_name("New Step", steps.iter().map(|step| step.meta.name.clone()));
-        match position {
-          Some(ix) => steps.insert(ix + 1, TestStep::new(path.suite_id(), self.meta.id(), name)),
-          None => steps.push(TestStep::new(path.suite_id(), self.meta.id(), name)),
-        }
-        Ok(())
+        let path = match position {
+          Some(ix) => {
+            let new_step = TestStep::new(path.suite_id(), self.meta.id(), name);
+            let path = new_step.meta.path;
+            steps.insert(ix + 1, new_step);
+            path
+          }
+          None => {
+            let new_step = TestStep::new(path.suite_id(), self.meta.id(), name);
+            let path = new_step.meta.path;
+            steps.push(new_step);
+            path
+          }
+        };
+        Ok(path)
       }
       TestCaseType::CaseStep { .. } => {
         error!(
@@ -410,7 +420,7 @@ mod tests {
     let mut case = TestCase::new_multi(suite_id, SharedString::new("case"));
     let case_id = case.meta.id();
     case
-      .add_test_step(&TestPath::Case(suite_id, case_id))
+      .add_test_step(TestPath::Case(suite_id, case_id))
       .expect("add_test_step should succeed");
     assert_eq!(step_names(&case), vec!["New Step"]);
   }
@@ -419,7 +429,7 @@ mod tests {
   fn add_test_step_after_known_step() {
     let mut f = fixture();
     f.case
-      .add_test_step(&TestPath::Step(f.suite_id, f.case_id, f.step_a_id))
+      .add_test_step(TestPath::Step(f.suite_id, f.case_id, f.step_a_id))
       .expect("add_test_step should succeed");
     assert_eq!(step_names(&f.case), vec!["step a", "New Step", "step b"]);
   }
@@ -429,8 +439,8 @@ mod tests {
     let mut f = fixture();
     // A CaseMulti path never matches a step's own path, so both calls fall
     // through to appending at the end.
-    f.case.add_test_step(&TestPath::Case(f.suite_id, f.case_id)).unwrap();
-    f.case.add_test_step(&TestPath::Case(f.suite_id, f.case_id)).unwrap();
+    f.case.add_test_step(TestPath::Case(f.suite_id, f.case_id)).unwrap();
+    f.case.add_test_step(TestPath::Case(f.suite_id, f.case_id)).unwrap();
     assert_eq!(step_names(&f.case), vec!["step a", "step b", "New Step", "New Step_1"]);
   }
 
@@ -439,7 +449,7 @@ mod tests {
     let mut f = case_step_fixture();
     let err = f
       .case
-      .add_test_step(&TestPath::Case(f.suite_id, f.case_id))
+      .add_test_step(TestPath::Case(f.suite_id, f.case_id))
       .expect_err("adding a step to a case step should be rejected");
     assert!(matches!(err, ProjectError::OperationNotAllowed));
   }

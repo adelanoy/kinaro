@@ -1,8 +1,8 @@
 {
   "name": "example_project",
   "version": 1,
-  "created": "2026-09-14T23:43:12",
-  "modified": "2026-09-19T14:36:02",
+  "created": "2026-09-14T03:43:12",
+  "modified": "2026-09-21T15:04:56",
   "variables": {
     "variables": [
       {
@@ -25,8 +25,8 @@
         "value": "8080",
         "overrides": {
           "c4aa980a-39fe-449f-bf0d-6e0807375f09": "8081",
-          "b929fd98-c721-44bf-9e0a-0860c732a2db": "8443",
-          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "443"
+          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "443",
+          "b929fd98-c721-44bf-9e0a-0860c732a2db": "8443"
         }
       },
       {
@@ -36,9 +36,9 @@
         "kind": "Text",
         "value": "admin",
         "overrides": {
+          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "svc-prod",
           "b929fd98-c721-44bf-9e0a-0860c732a2db": "svc-test",
-          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "admin",
-          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "svc-prod"
+          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "admin"
         }
       },
       {
@@ -48,8 +48,8 @@
         "kind": "PasswordClear",
         "value": "",
         "overrides": {
-          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "dev-secret",
           "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "prod-secret",
+          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "dev-secret",
           "b929fd98-c721-44bf-9e0a-0860c732a2db": "test-secret"
         }
       }
@@ -126,6 +126,26 @@
             "caseType": {
               "type": "CaseStep",
               "data": ""
+            }
+          }
+        ]
+      },
+      {
+        "id": "4217cdfa-3639-4d10-9a36-a56c3f355ede",
+        "name": "New Suite",
+        "cases": [
+          {
+            "id": "10e5ac8b-6928-4527-963e-d18134fb8a45",
+            "name": "new Case",
+            "caseType": {
+              "type": "CaseMulti",
+              "steps": [
+                {
+                  "id": "eac08c8c-d18d-411f-a43d-d784aa75cb73",
+                  "name": "New Step",
+                  "data": ""
+                }
+              ]
             }
           }
         ]
