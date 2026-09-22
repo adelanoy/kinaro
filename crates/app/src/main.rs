@@ -15,7 +15,7 @@ use std::default::Default;
 use std::path::PathBuf;
 
 fn main() {
-  let config_dir = dirs::config_local_dir().unwrap().join("Kinaro_gpui");
+  let config_dir = dirs::config_local_dir().unwrap().join("Kinaro");
   gpui_kit::platform::application()
     .with_assets(Assets)
     .run(move |cx| {

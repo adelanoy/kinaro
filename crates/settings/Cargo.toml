@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+#Internals
+ki_utils.workspace = true
+
 #Externals
 gpui-kit.workspace = true
 serde.workspace = true

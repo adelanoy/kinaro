@@ -1,10 +1,9 @@
-use crate::ui::side_bar::project_configuration::ProjectConfigurationTabs;
-use ki_workspace::variable::{ProfileInfo, ProjectVariablesEvent};
-use ki_workspace::{Project, ProjectEvent};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::{ActiveTheme, IndexPath, Sizable, h_flex, v_flex};
 use gpui_kit::*;
+use ki_workspace::variable::{ProfileInfo, ProjectVariablesEvent};
+use ki_workspace::{Project, ProjectEvent};
 use uuid::Uuid;
 
 pub(super) struct ProjectConfigurator {
@@ -12,10 +11,10 @@ pub(super) struct ProjectConfigurator {
   _project_event_sub: Subscription,
   _project_vars_event_sub: Subscription,
   profile_select_state: Entity<SelectState<Vec<ProfileInfo>>>,
-  project_config_tabs: Entity<ProjectConfigurationTabs>,
 }
 
 impl ProjectConfigurator {
+  #[allow(unused)]
   pub(super) fn new(
     project: Entity<Project>,
     window: &mut Window,
@@ -52,15 +51,11 @@ impl ProjectConfigurator {
       },
     );
 
-    let project_config_tabs =
-      cx.new(|cx| ProjectConfigurationTabs::new(project.clone(), window, cx));
-
     let this = Self {
       focus_handle: cx.focus_handle(),
       _project_event_sub,
       _project_vars_event_sub,
       profile_select_state,
-      project_config_tabs,
     };
 
     this.update_profiles_select_state(project_vars.read(cx).profile_infos(), window, cx);
@@ -118,7 +113,6 @@ impl Render for ProjectConfigurator {
           .child(Select::new(&self.profile_select_state).small()),
       )
       .child(Separator::horizontal())
-      .child(self.project_config_tabs.clone())
   }
 }
 
