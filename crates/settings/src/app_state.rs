@@ -2,6 +2,7 @@ use crate::GlobalSettings;
 use crate::error::SettingsError;
 use gpui_kit::component::ThemeMode;
 use gpui_kit::{App, AppContext, BorrowAppContext, Bounds, Window, WindowBounds, point, px, size};
+use ki_utils::shared::SidebarPanel;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -105,10 +106,11 @@ impl From<&WindowBoundsContent> for WindowBounds {
   }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct SidebarState {
   pub collapsed: bool,
   pub width: f32,
+  pub selected_panel: SidebarPanel,
 }
 
 impl Default for SidebarState {
@@ -116,6 +118,7 @@ impl Default for SidebarState {
     Self {
       collapsed: false,
       width: 250.0,
+      selected_panel: SidebarPanel::ProjectTree,
     }
   }
 }

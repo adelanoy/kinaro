@@ -3,7 +3,7 @@ use crate::actions::{
   SwitchNodeActiveStatus,
 };
 use crate::ui::components::tree::{ProjectTreeNode, ProjectTreeNodeKind, Tree, TreeDelegate, TreeEvent, TreeState};
-use crate::ui::side_bar::project_configuration::ProjectConfigurationTab;
+use crate::ui::side_bar::ProjectConfigurationPanel;
 use gpui_kit::component::dialog::{DialogAction, DialogClose, DialogFooter};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::tooltip::Tooltip;
@@ -18,6 +18,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
 use ki_utils::Offset;
+use ki_utils::shared::SidebarPanel;
 use ki_utils::ui::MovingLabel;
 use ki_workspace::test::test_case::TestCaseType;
 use ki_workspace::test::{TestPath, TestsContainer};
@@ -28,7 +29,7 @@ use uuid::Uuid;
 
 type ContextMenuBuilder = dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu;
 
-pub(super) struct ProjectTree {
+pub(in crate::ui::side_bar) struct ProjectTree {
   tree_state: Entity<TreeState<ProjectTreeDelegate>>,
   _tree_sub: Subscription,
 }
@@ -151,13 +152,17 @@ impl ProjectTree {
   }
 }
 
-impl ProjectConfigurationTab for ProjectTree {
+impl ProjectConfigurationPanel for ProjectTree {
   fn name() -> &'static str {
     "Project Tree"
   }
 
   fn icon() -> impl Into<Icon> {
     IconAsset::Tree
+  }
+
+  fn panel_type() -> SidebarPanel {
+    SidebarPanel::ProjectTree
   }
 
   fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<impl Render> {

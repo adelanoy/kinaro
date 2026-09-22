@@ -1,5 +1,5 @@
 use crate::actions::{Delete, Duplicate, Escape};
-use crate::ui::side_bar::project_configuration::ProjectConfigurationTab;
+use crate::ui::side_bar::ProjectConfigurationPanel;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::label::Label;
@@ -11,13 +11,14 @@ use gpui_kit::component::{ActiveTheme, Disableable, Icon, IconName, IndexPath, S
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
+use ki_utils::shared::SidebarPanel;
 use ki_utils::ui::{CellState, MovingLabel};
 use ki_workspace::Project;
 use ki_workspace::variable::{ProfileInfo, ProjectVariables, VariableKind, VariableReference};
 use log::warn;
 use uuid::Uuid;
 
-pub(super) struct VariableEditor {
+pub(in crate::ui::side_bar) struct VariableEditor {
   table_state: Entity<TableState<VariableDataTableDelegate>>,
 }
 
@@ -57,13 +58,17 @@ impl VariableEditor {
   }
 }
 
-impl ProjectConfigurationTab for VariableEditor {
+impl ProjectConfigurationPanel for VariableEditor {
   fn name() -> &'static str {
     "Variables"
   }
 
   fn icon() -> impl Into<Icon> {
     IconAsset::Variable
+  }
+
+  fn panel_type() -> SidebarPanel {
+    SidebarPanel::Variable
   }
 
   fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<impl Render> {

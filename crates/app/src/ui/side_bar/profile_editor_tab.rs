@@ -1,5 +1,5 @@
 use crate::actions::{Delete, Duplicate, Escape};
-use crate::ui::side_bar::project_configuration::ProjectConfigurationTab;
+use crate::ui::side_bar::ProjectConfigurationPanel;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::label::Label;
@@ -9,12 +9,13 @@ use gpui_kit::component::{Disableable, Icon, IconName, Sizable, WindowExt, h_fle
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
+use ki_utils::shared::SidebarPanel;
 use ki_utils::ui::{CellState, MovingLabel};
 use ki_workspace::Project;
 use ki_workspace::variable::{ProfileInfo, ProjectVariables};
 use log::warn;
 
-pub(super) struct ProfileEditor {
+pub(in crate::ui::side_bar) struct ProfileEditor {
   focus_handle: FocusHandle,
   table_state: Entity<TableState<ProfileDataTableDelegate>>,
   _table_subscriptions: Subscription,
@@ -56,13 +57,17 @@ impl ProfileEditor {
   }
 }
 
-impl ProjectConfigurationTab for ProfileEditor {
+impl ProjectConfigurationPanel for ProfileEditor {
   fn name() -> &'static str {
     "Profiles"
   }
 
   fn icon() -> impl Into<Icon> {
     IconAsset::Profile
+  }
+
+  fn panel_type() -> SidebarPanel {
+    SidebarPanel::Profile
   }
 
   fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<impl Render> {
