@@ -1,7 +1,7 @@
 use gpui_kit::component::notification::Notification;
 use ki_project::ProjectFileError;
+use ki_utils::TestPath;
 use std::path::PathBuf;
-use crate::test::TestPath;
 
 /// Result alias for Workspace
 pub type WorkspaceResult<T> = Result<T, WorkspaceError>;
@@ -30,12 +30,8 @@ impl From<WorkspaceError> for Notification {
     match value {
       WorkspaceError::ProjectNotLoaded => Notification::warning("The project is invalid"),
       WorkspaceError::Io(err) => Notification::error(format!("IO Error: {}", err)),
-      WorkspaceError::Write(err) => {
-        Notification::error(format!("Could not write workspace file: {}", err))
-      }
-      WorkspaceError::Read(err) => {
-        Notification::error(format!("Could not read workspace file: {}", err))
-      }
+      WorkspaceError::Write(err) => Notification::error(format!("Could not write workspace file: {}", err)),
+      WorkspaceError::Read(err) => Notification::error(format!("Could not read workspace file: {}", err)),
       WorkspaceError::Project(err) => err.into(),
     }
   }
@@ -44,7 +40,7 @@ impl From<WorkspaceError> for Notification {
 /// Result alias for Project
 pub type ProjectResult<T> = Result<T, ProjectError>;
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum ProjectError {
   /// Io error
   #[error("ProjectError::Io (err: {})", .0)]
@@ -76,6 +72,9 @@ pub enum ProjectError {
   /// An operation was attempted on a missing test
   #[error("ProjectError::TestNotFound (path: {})", .0)]
   TestNotFound(TestPath),
+  /// The requested operation had no effect, nothing was changed
+  #[error("ProjectError::NoOp")]
+  NoOp,
 }
 
 impl From<ProjectFileError> for ProjectError {
@@ -93,31 +92,19 @@ impl From<ProjectFileError> for ProjectError {
 impl From<ProjectError> for Notification {
   fn from(value: ProjectError) -> Notification {
     match value {
-      ProjectError::Io(err) => {
-        Notification::error(format!("I/O error on project file: {}", err))
+      ProjectError::Io(err) => Notification::error(format!("I/O error on project file: {}", err)),
+      ProjectError::Write(err) => Notification::error(format!("Could not write project file: {}", err)),
+      ProjectError::Read(err) => Notification::error(format!("Could not read project file: {}", err)),
+      ProjectError::BadLocation(path) => {
+        Notification::error(format!("Invalid location for project file: {}", path.to_string_lossy()))
       }
-      ProjectError::Write(err) => {
-        Notification::error(format!("Could not write project file: {}", err))
-      }
-      ProjectError::Read(err) => {
-        Notification::error(format!("Could not read project file: {}", err))
-      }
-      ProjectError::BadLocation(path) => Notification::error(format!(
-        "Invalid location for project file: {}",
-        path.to_string_lossy()
-      )),
-      ProjectError::UnknownProject(path) => {
-        Notification::error(format!("The project with id: {:?} is unknown", path))
-      }
-      ProjectError::InvalidName(name) => {
-        Notification::error(format!("Invalid name for project: {}", name))
-      }
-      ProjectError::OperationNotAllowed => {
-        Notification::error("A non-allowed operation was invoked, see logs for details")
-      }
+      ProjectError::UnknownProject(path) => Notification::error(format!("The project with id: {:?} is unknown", path)),
+      ProjectError::InvalidName(name) => Notification::error(format!("Invalid name for project: {}", name)),
+      ProjectError::OperationNotAllowed => Notification::error("A non-allowed operation was invoked, see logs for details"),
       ProjectError::ProfileNotFound => Notification::warning("Unknown profile"),
       ProjectError::VariableNotFound => Notification::warning("Unknown variable"),
       ProjectError::TestNotFound(_) => Notification::warning("The test could not be found"),
+      ProjectError::NoOp => Notification::warning("Nothing was done"),
     }
   }
 }

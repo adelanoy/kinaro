@@ -34,7 +34,7 @@ Cargo workspace with `crates/app` as the only default member (binary crate name:
 - **`crates/settings`** (`ki_settings`) — global app settings/state (`GlobalSettings`, `AppState`), persisted as JSON in the OS config dir.
 - **`crates/assets`** (`ki_assets`) — embedded assets (fonts, icons, themes) via `rust-embed`, plus GPUI `AssetSource` wiring.
 - **`crates/log`** (`ki_log`) — `log4rs` setup; filters to only `kinaro`/`ki_*` targets, logs to console + a rotating file (in `target/` for debug builds, the config dir otherwise).
-- **`crates/utils`** (`ki_utils`) — small shared helpers (e.g. `next_available_name` for generating unique names when duplicating/adding tree nodes).
+- **`crates/utils`** (`ki_utils`) — small shared helpers and types (e.g. `next_available_name` for generating unique names when duplicating/adding tree nodes, `TestPath` for addressing test tree nodes).
 
 ## The File ↔ Workspace split
 
@@ -53,14 +53,14 @@ Conversion is always explicit and one of three methods on the workspace type:
 
 This is the most elaborate part of the domain model (`crates/workspace/src/test/`):
 
-- `TestsContainer` owns `Vec<TestSuite>`; a `TestSuite` owns `Vec<TestCase>`; a `TestCase` is either `CaseMulti { steps: Vec<TestStep> }` (a case with its own steps) or `CaseStep { data }` (a single step promoted directly to case level, so it counts as a case in the suite's list without needing a wrapper). A `CaseStep { data }` is considered a step from the user point of view, but located in a suite.
-- Nodes are addressed by **`TestPath`**, an enum path (`Suite(suite_id)`, `CaseMulti(suite_id, case_id)`, `CaseStep(suite_id, case_id)`, `Step(suite_id, case_id, step_id)`) rather than by index — indices shift as the tree is edited, ids don't. Most container methods take a `&TestInfoId` to say "do this relative to the node at this path".
-- `TestInfoId::is_parent(other)` checks ancestry (a suite is a parent of everything under it, a `CaseMulti` is a parent of its own steps, etc.) and is how "insert relative to whatever's selected in the UI tree" is implemented: e.g. `TestSuite::add_test_case` finds the case whose id `is_parent` of the given path and inserts right after it, falling back to appending at the end when nothing matches (root suite selected, or an unrelated path).
+- `TestsContainer` owns `Vec<TestSuite>`; a `TestSuite` owns `Vec<TestCase>`; a `TestCase` holds its `meta: TestMetadata` (id, name, description, disabled flag) and a `TestCaseType` (read via `case_type()` / `case_type_mut()`), which is either `CaseMulti { steps: Vec<TestStep> }` (a case with its own steps) or `CaseStep { data }` (a single step promoted directly to case level, so it counts as a case in the suite's list without needing a wrapper). A `CaseStep { data }` is considered a step from the user point of view, but located in a suite.
+- Nodes are addressed by **`TestPath`** (defined in `ki_utils`), an enum path (`Suite(suite_id)`, `Case(suite_id, case_id)`, `Step(suite_id, case_id, step_id)`) rather than by index — indices shift as the tree is edited, ids don't. `Case` covers both `CaseMulti` and `CaseStep`: the path doesn't encode the case type, so code that needs it must look up the case itself. Most container methods take a `&TestPath` to say "do this relative to the node at this path".
+- `TestPath::is_parent(other)` checks ancestry and is reflexive (a path is its own parent; a suite is a parent of everything under it; a case is a parent of its own steps; a step only of itself). It is how "insert relative to whatever's selected in the UI tree" is implemented: e.g. `TestSuite::add_test_case` finds the case whose id `is_parent` of the given path and inserts right after it, falling back to appending at the end when nothing matches (root suite selected, or an unrelated path).
 - Renaming for uniqueness (new cases/steps, duplicates) goes through `ki_utils::next_available_name`, which appends `_1`, `_2`, ... only when the name is already taken.
-- `TestsContainer`/`TestSuite`'s mutating methods return `ProjectResult<()>` and emit `TestsContainerEvent` (`TestsModified` / `TreeNodesChanged`) on success; `Project` subscribes to these and triggers a save + re-emits its own `ProjectEvent`.
+- `TestsContainer`/`TestSuite`'s mutating methods return `ProjectResult<()>` and emit `TestsContainerEvent` (`TestAdded` / `ConfigChanged`) on success; `Project` subscribes to these and triggers a save + re-emits its own `ProjectEvent`.
 - the `data` field in `CaseStep` and `TestStep` is a placeholder that will eventually host the actual step data, for now, it should be ignored
 
-The `crates/app` side mirrors this with `TestPath`-driven `ProjectTreeDelegate` methods (`crates/app/src/ui/side_bar/project_configuration/project_tree_tab.rs`) that resolve a selected tree row's index to its `TestPath` before calling into `ki_workspace`.
+The `crates/app` side mirrors this with `TestPath`-driven `ProjectTreeDelegate` methods (`crates/app/src/ui/side_bar/project_tree_tab.rs`) that resolve a selected tree row's index to its `TestPath` before calling into `ki_workspace`.
 
 ## GPUI/gpui-kit conventions
 
@@ -71,4 +71,5 @@ The `crates/app` side mirrors this with `TestPath`-driven `ProjectTreeDelegate` 
 
 ## Project conventions
 - Function documentation should include an Error section whenever it returns a Result, or a derived type (ProjectResult, WorkspaceResult...).
+- Function documentation should include an Event section whenever it emits an event (through the use of `Context::emit(event)`)
 - Documentation of functions/fields should avoid referencing more-private functions and fields

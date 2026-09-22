@@ -2,6 +2,7 @@ use crate::error::{ProjectError, WorkspaceError, WorkspaceResult};
 use gpui_kit::{App, Entity, EventEmitter, SharedString, Subscription};
 use gpui_kit::{AppContext, Context};
 use ki_settings::GlobalSettings;
+use ki_utils::TestPath;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -23,7 +24,6 @@ pub use test::test_suite::TestSuite;
 
 const WORKSPACES_FILENAME: &str = "workspace.json";
 
-
 /// Serialized version of a workspace
 #[derive(Serialize, Deserialize, Default)]
 struct WorkspaceFile {
@@ -39,7 +39,11 @@ struct FileProjectMetadata {
   /// The currently active profile id, if any
   active_profile: Option<Uuid>,
   /// The list of open nodes in the project tree
-  opened_tree_nodes: HashSet<Uuid>,
+  opened_tree_nodes: HashSet<TestPath>,
+  /// The list of open nodes in the editor
+  editor_tabs: Vec<TestPath>,
+  /// the currently active node index in the editor
+  active_editor_tab_index: Option<usize>,
 }
 
 impl WorkspaceFile {
@@ -69,7 +73,7 @@ pub enum WorkspaceEvent {
 
 /// The workspace is the structure that holds all projects loaded or not.
 ///
-/// It is basically a [`HashMap`] with a [`ProjectMetadata`] as a key and the result of the loading (Either a [`Entity<Project>`] or a [`ProjectError`])
+/// It is basically a [`HashMap`] with the project file path as a key and the result of the loading (Either a [`Entity<Project>`] or a [`ProjectError`])
 /// as value
 pub struct Workspace {
   active_project: Option<PathBuf>,
@@ -216,6 +220,8 @@ impl Workspace {
         path: path.clone(),
         active_profile: None,
         opened_tree_nodes: HashSet::new(),
+        editor_tabs: Vec::new(),
+        active_editor_tab_index: None,
       };
       let project = Project::load(&metadata, cx)?;
       let name = project.read(cx).name.clone();
@@ -386,7 +392,7 @@ impl Workspace {
   /// Project event's handler, mostly used to serialize to file project's settings
   fn on_project_event(&mut self, _project: Entity<Project>, event: &ProjectEvent, cx: &mut Context<Self>) {
     match event {
-      ProjectEvent::ActiveProfile(_) | ProjectEvent::TestTreeNodes => self.save(cx),
+      ProjectEvent::ProjectConfigChanged | ProjectEvent::ActiveProfile(_) => self.save(cx),
       _ => {}
     }
   }

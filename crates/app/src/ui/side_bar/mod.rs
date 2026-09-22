@@ -8,7 +8,7 @@ use crate::ui::side_bar::project_tree_tab::ProjectTree;
 use crate::ui::side_bar::var_editor_tab::VariableEditor;
 use gpui_kit::component::{ActiveTheme, Colorize, Icon};
 use gpui_kit::*;
-use ki_utils::shared::SidebarPanel;
+use ki_utils::SidebarPanel;
 use ki_workspace::Project;
 
 pub struct ProjectSidebar {

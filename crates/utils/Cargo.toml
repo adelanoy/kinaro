@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+uuid.workspace = true
 chrono.workspace = true
 serde.workspace = true
 gpui-kit.workspace = true

@@ -2,7 +2,7 @@ use crate::GlobalSettings;
 use crate::error::SettingsError;
 use gpui_kit::component::ThemeMode;
 use gpui_kit::{App, AppContext, BorrowAppContext, Bounds, Window, WindowBounds, point, px, size};
-use ki_utils::shared::SidebarPanel;
+use ki_utils::SidebarPanel;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::fs;

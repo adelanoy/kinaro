@@ -3,103 +3,14 @@ use crate::test::test_case::TestCaseType;
 use crate::{FileProjectMetadata, TestCase, TestStep, TestSuite};
 use gpui_kit::{Context, EventEmitter, SharedString};
 use ki_project::{FileTestMetadata, FileTestsContainer};
-use ki_utils::Offset;
+use ki_utils::{Offset, TestPath};
 use log::warn;
 use std::collections::HashSet;
-use std::fmt::{Display, Formatter};
 use uuid::Uuid;
 
 pub mod test_case;
 pub mod test_step;
 pub mod test_suite;
-
-/// Enum wrapping the type of test Item (Suite, Case or Step), it's id and it's path.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum TestPath {
-  Suite(Uuid),
-  Case(Uuid, Uuid),
-  Step(Uuid, Uuid, Uuid),
-}
-
-impl TestPath {
-  pub fn id(&self) -> Uuid {
-    match *self {
-      TestPath::Suite(id) => id,
-      TestPath::Case(_, id) => id,
-      TestPath::Step(_, _, id) => id,
-    }
-  }
-
-  #[inline]
-  pub fn is_case(&self) -> bool {
-    matches!(self, TestPath::Case(_, _))
-  }
-
-  pub fn case_id(&self) -> Option<Uuid> {
-    match *self {
-      TestPath::Suite(_) => None,
-      TestPath::Case(_, id) => Some(id),
-      TestPath::Step(_, id, _) => Some(id),
-    }
-  }
-
-  #[inline]
-  pub fn is_step(&self) -> bool {
-    matches!(self, TestPath::Step(_, _, _))
-  }
-
-  pub fn step_id(&self) -> Option<Uuid> {
-    match *self {
-      TestPath::Suite(_) | TestPath::Case(_, _) => None,
-      TestPath::Step(_, _, id) => Some(id),
-    }
-  }
-
-  #[inline]
-  pub fn is_suite(&self) -> bool {
-    matches!(self, TestPath::Suite(_))
-  }
-
-  pub fn suite_id(&self) -> Uuid {
-    match *self {
-      TestPath::Suite(id) => id,
-      TestPath::Case(id, _) => id,
-      TestPath::Step(id, _, _) => id,
-    }
-  }
-
-  pub fn is_parent(&self, other: &TestPath) -> bool {
-    match self {
-      TestPath::Suite(_) => match other {
-        TestPath::Suite(_) => self == other,
-        TestPath::Case(suite_id, _) => self.suite_id() == *suite_id,
-        TestPath::Step(suite_id, _, _) => self.suite_id() == *suite_id,
-      },
-      TestPath::Case(_, _) => match other {
-        TestPath::Suite(_) => false,
-        TestPath::Case(_, _) => self == other,
-        TestPath::Step(suite_id, case_id, _) => self.suite_id() == *suite_id && self.case_id() == Some(*case_id),
-      },
-      TestPath::Step(_, _, _) => match other {
-        TestPath::Suite(_) => false,
-        TestPath::Case(_, _) => false,
-        TestPath::Step(_, _, _) => self == other,
-      },
-    }
-  }
-}
-
-impl Display for TestPath {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    match self {
-      TestPath::Suite(suite_id) => f.write_fmt(format_args!("Suite:{}", suite_id)),
-      TestPath::Case(suite_id, case_id) => f.write_fmt(format_args!("Suite:{}/Case:{}", suite_id, case_id)),
-      TestPath::Step(suite_id, case_id, step_id) => {
-        f.write_fmt(format_args!("Suite:{}/Case:{}/Step:{}", suite_id, case_id, step_id))
-      }
-    }
-  }
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TestMetadata {
@@ -173,21 +84,66 @@ impl TestMetadata {
   }
 }
 
-/// Events raised bu the TestSContainer entity
+/// Events raised by the [`TestsContainer`] entity.
+///
+/// Test data events (`TestsModified`, `TestAdded`, `TestMoved`, `TestRenamed`,
+/// `TestRemoved`) mean the project file must be saved; configuration events
+/// (`ConfigChanged`, `TestOpenInEditor`, `TestClosedInEditor`,
+/// `EditorActiveTabIndex`) mean the workspace file must be saved.
 pub enum TestsContainerEvent {
-  /// The content of the container has changed
+  /// The content of the tests was modified (reordered, enabled/disabled, ...)
   TestsModified,
-  /// The status of some node has changed (such as the node was collapsed/expanded in the tree)
-  TreeNodesChanged,
+  /// A test was added at the given path (new or duplicated node)
+  TestAdded(TestPath),
+  /// A test was moved, changing its path: `(old path, new path)`
+  TestMoved(TestPath, TestPath),
+  /// A test was renamed: `(path, old name, new name)`
+  TestRenamed(TestPath, SharedString, SharedString),
+  /// A test was removed, along with all of its descendants
+  TestRemoved(TestPath),
+  /// The tests' configuration (e.g. expanded tree nodes) has changed
+  ConfigChanged,
+  /// A test was requested to be opened in the editor. The container's state
+  /// is left unchanged: the editor is expected to handle the request and
+  /// call [`TestsContainer::open_test_in_editor`]
+  RequestOpenInEditor(TestPath),
+  /// A test was opened in the editor
+  TestOpenInEditor(TestPath),
+  /// A test was closed in the editor
+  TestClosedInEditor(TestPath),
+  /// The editor's active tab index has changed
+  EditorActiveTabIndex(Option<usize>),
 }
 
+/// The live test tree of a project, along with its UI configuration (expanded
+/// tree nodes, tabs opened in the editor and the active one).
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct TestsContainer {
+  /// The root test suites, in display order
   pub suites: Vec<TestSuite>,
-  opened_tree_nodes: HashSet<Uuid>,
+  opened_tree_nodes: HashSet<TestPath>,
+  editor_tabs: Vec<TestPath>,
+  active_editor_tab_index: Option<usize>,
 }
 
 impl TestsContainer {
+  /// Returns the index of the active tab in [`TestsContainer::opened_editor_nodes`],
+  /// or `None` when no tab is opened.
+  #[inline]
+  pub fn active_editor_tab_index(&self) -> Option<usize> {
+    self.active_editor_tab_index
+  }
+
+  /// Adds a new, empty multi-step case to the suite `path` goes through,
+  /// right after the case that is a parent of `path`, or at the end of the
+  /// suite when there is none. The suite is marked as expanded in the tree.
+  /// Returns the path of the new case.
+  ///
+  /// # Errors
+  /// [`ProjectError::TestNotFound`] if the suite of `path` doesn't exist.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestAdded`] with the path of the new case.
   pub fn add_test_case(&mut self, path: TestPath, cx: &mut Context<Self>) -> ProjectResult<TestPath> {
     let suite_id = path.suite_id();
     let Some(suite) = self.suites.iter_mut().find(|suite| suite.meta.id() == suite_id) else {
@@ -196,12 +152,25 @@ impl TestsContainer {
     };
     let path = suite.add_test_case(path);
     // Update opened_tree_nodes
-    self.opened_tree_nodes.insert(path.suite_id());
+    self.opened_tree_nodes.insert(suite.meta.path);
 
-    cx.emit(TestsContainerEvent::TestsModified);
+    cx.emit(TestsContainerEvent::TestAdded(path));
     Ok(path)
   }
 
+  /// Adds a new step relative to `path`. When `path` addresses the suite or
+  /// a [`TestCaseType::CaseStep`], a new case step is appended to the suite;
+  /// otherwise the step is added to the multi-step case `path` goes through,
+  /// right after the step at `path` or at the end of the case. The parent
+  /// suite and case are marked as expanded in the tree. Returns the path of
+  /// the new step.
+  ///
+  /// # Errors
+  /// [`ProjectError::TestNotFound`] if the suite or case of `path` doesn't
+  /// exist.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestAdded`] with the path of the new step.
   pub fn add_test_step(&mut self, path: TestPath, cx: &mut Context<Self>) -> ProjectResult<TestPath> {
     let suite_id = path.suite_id();
     let Some(suite) = self.suites.iter_mut().find(|suite| suite.meta.id() == suite_id) else {
@@ -210,15 +179,22 @@ impl TestsContainer {
     };
     let path = suite.add_test_step(path)?;
     // Update opened_tree_nodes
-    self.opened_tree_nodes.insert(path.suite_id());
+    self.opened_tree_nodes.insert(suite.meta.path);
     let (suite_ix, case_ix) = self.case_indexes(&path)?;
-    if !self.suites[suite_ix].cases[case_ix].is_case_step() {
-      self.opened_tree_nodes.insert(path.case_id().unwrap());
+    let case = &self.suites[suite_ix].cases[case_ix];
+    if !case.is_case_step() {
+      self.opened_tree_nodes.insert(case.meta.path);
     }
-    cx.emit(TestsContainerEvent::TestsModified);
+    cx.emit(TestsContainerEvent::TestAdded(path));
     Ok(path)
   }
 
+  /// Adds a new, empty suite right after the suite `path` goes through, or
+  /// at the end when `path` is `None` or its suite doesn't exist. Returns
+  /// the path of the new suite.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestAdded`] with the path of the new suite.
   pub fn add_test_suite(&mut self, path: Option<TestPath>, cx: &mut Context<Self>) -> TestPath {
     let position = match path {
       None => None,
@@ -235,8 +211,14 @@ impl TestsContainer {
       Some(ix) => self.suites.insert(ix + 1, new_suite),
       None => self.suites.push(new_suite),
     }
-    cx.emit(TestsContainerEvent::TestsModified);
+    cx.emit(TestsContainerEvent::TestAdded(path));
     path
+  }
+
+  /// Returns the case `path` points to or goes through (the owning case of a
+  /// step), or `None` for a suite path or when no such case exists.
+  pub fn case_from_path(&self, path: &TestPath) -> Option<&TestCase> {
+    self.suite_from_path(path)?.case_from_path(path)
   }
 
   /// Resolves the suite-list and case-list indices of the case at `path`,
@@ -259,108 +241,156 @@ impl TestsContainer {
     Ok((suite_ix, case_ix))
   }
 
-  /// Resolves the suite-list, case-list and step-list indices of the step at
-  /// `path`. Only valid when `path` addresses a step owned by a
-  /// [`TestCaseType::CaseMulti`]; a [`TestCaseType::CaseStep`] has no steps
-  /// to index into.
+  /// Removes `path` from the tabs opened in the editor. A no-op when it
+  /// isn't opened. The active tab index is left unchanged: the caller is
+  /// responsible for updating it through [`TestsContainer::set_active_editor_tab`].
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestClosedInEditor`] if the tab was removed.
+  pub fn close_test_from_editor(&mut self, path: TestPath, cx: &mut Context<Self>) {
+    if let Some(pos) = self.editor_tabs.iter().position(|p| *p == path) {
+      self.editor_tabs.remove(pos);
+      cx.emit(TestsContainerEvent::TestClosedInEditor(path));
+    }
+  }
+
+  /// Marks the node at `id` as collapsed in the project tree.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::ConfigChanged`]
+  pub fn collapse_tree_node(&mut self, id: &TestPath, cx: &mut Context<Self>) {
+    self.opened_tree_nodes.remove(id);
+    cx.emit(TestsContainerEvent::ConfigChanged);
+  }
+
+  /// Deletes the node at `path`, along with all of its descendants. Tabs
+  /// opened in the editor are left unchanged: the editor is expected to close
+  /// the ones under `path` upon [`TestsContainerEvent::TestRemoved`].
   ///
   /// # Errors
-  /// [`ProjectError::TestNotFound`] if no suite is a parent of `path`, no
-  /// case in that suite owns it, or the owning case is a
-  /// [`TestCaseType::CaseStep`] (so it can't own a step by definition) or
-  /// has no step matching `path`.
-  fn step_indexes(&self, path: &TestPath) -> ProjectResult<(usize, usize, usize)> {
-    let Some(suite_ix) = self.suites.iter().position(|suite| suite.meta.path.is_parent(path)) else {
-      return Err(ProjectError::TestNotFound(*path));
-    };
-    let Some(case_ix) = self.suites[suite_ix]
-      .cases
-      .iter()
-      .position(|case| case.meta.path.is_parent(path))
-    else {
-      return Err(ProjectError::TestNotFound(*path));
-    };
-    let Some(step_ix) = (match self.suites[suite_ix].cases[case_ix].case_type() {
-      TestCaseType::CaseMulti { steps } => steps.iter().position(|step| step.meta.path == *path),
-      TestCaseType::CaseStep { .. } => None,
-    }) else {
-      return Err(ProjectError::TestNotFound(*path));
-    };
-    Ok((suite_ix, case_ix, step_ix))
-  }
-
-  pub fn collapse_tree_node(&mut self, id: &Uuid, cx: &mut Context<Self>) {
-    self.opened_tree_nodes.remove(id);
-    cx.emit(TestsContainerEvent::TreeNodesChanged);
-  }
-
-  pub fn delete_test(&mut self, path: &TestPath, cx: &mut Context<Self>) -> ProjectResult<()> {
-    let Some(ix) = self.suites.iter().position(|suite| suite.meta.path.is_parent(path)) else {
+  /// [`ProjectError::TestNotFound`] if `path` doesn't address an existing
+  /// node.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestRemoved`] with `path`.
+  pub fn delete_test(&mut self, path: TestPath, cx: &mut Context<Self>) -> ProjectResult<()> {
+    let Some(ix) = self.suites.iter().position(|suite| suite.meta.path.is_parent(&path)) else {
       warn!("TestsContainer:delete_test: unknow path: {}", path);
-      return Err(ProjectError::TestNotFound(*path));
+      return Err(ProjectError::TestNotFound(path));
     };
 
     if path.is_suite() {
       self.suites.remove(ix);
     } else {
-      self.suites[ix].delete_test(path)?;
+      self.suites[ix].delete_test(&path)?;
     };
-    cx.emit(TestsContainerEvent::TestsModified);
+    cx.emit(TestsContainerEvent::TestRemoved(path));
     Ok(())
   }
 
-  pub fn duplicate_test(&mut self, path: &TestPath, cx: &mut Context<Self>) -> ProjectResult<()> {
-    let Some(ix) = self.suites.iter().position(|suite| suite.meta.path.is_parent(path)) else {
+  /// Duplicates the node at `path` (with all of its descendants, under new
+  /// ids) and inserts the copy right after it, with a name made unique
+  /// against its siblings.
+  ///
+  /// # Errors
+  /// - [`ProjectError::TestNotFound`] if `path` doesn't address an existing
+  ///   node.
+  /// - [`ProjectError::OperationNotAllowed`] if `path` addresses a step
+  ///   whose owning case is a [`TestCaseType::CaseStep`].
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestAdded`] with the path of the copy.
+  pub fn duplicate_test(&mut self, path: TestPath, cx: &mut Context<Self>) -> ProjectResult<()> {
+    let Some(ix) = self.suites.iter().position(|suite| suite.meta.path.is_parent(&path)) else {
       warn!("TestsContainer:duplicate_test: unknow path: {}", path);
-      return Err(ProjectError::TestNotFound(*path));
+      return Err(ProjectError::TestNotFound(path));
     };
 
-    if matches!(path, TestPath::Suite(_)) {
+    let new_path = if matches!(path, TestPath::Suite(_)) {
       let new_name = ki_utils::next_available_name(
         &self.suites[ix].meta.name,
         self.suites.iter().map(|suite| suite.meta.name.clone()),
       );
       let duplicate = self.suites[ix].duplicate(new_name);
+      let new_path = duplicate.meta.path;
       if ix == self.suites.len() - 1 {
         self.suites.push(duplicate);
       } else {
         self.suites.insert(ix + 1, duplicate);
       }
+      new_path
     } else {
-      self.suites[ix].duplicate_child(path)?;
-    }
-    cx.emit(TestsContainerEvent::TestsModified);
+      self.suites[ix].duplicate_child(&path)?
+    };
+    cx.emit(TestsContainerEvent::TestAdded(new_path));
     Ok(())
   }
 
-  pub fn expand_tree_node(&mut self, id: Uuid, cx: &mut Context<Self>) {
+  /// Marks the node at `id` as expanded in the project tree.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::ConfigChanged`]
+  pub fn expand_tree_node(&mut self, id: TestPath, cx: &mut Context<Self>) {
     self.opened_tree_nodes.insert(id);
-    cx.emit(TestsContainerEvent::TreeNodesChanged);
+    cx.emit(TestsContainerEvent::ConfigChanged);
   }
 
+  /// Builds the container from its on-disk representation and the
+  /// workspace's saved configuration for this project. Expanded tree nodes
+  /// and editor tabs that no longer address an existing node are dropped,
+  /// and the active tab index is clamped to the remaining tabs.
   pub(super) fn from_file(file_container: FileTestsContainer, metadata: &FileProjectMetadata) -> Self {
-    Self {
+    let mut this = Self {
       suites: file_container.suites.into_iter().map(TestSuite::from_file).collect(),
-      opened_tree_nodes: metadata.opened_tree_nodes.clone(),
+      opened_tree_nodes: HashSet::new(),
+      editor_tabs: vec![],
+      active_editor_tab_index: None,
+    };
+    // Check config data: filter non-existing path and make sure the editor's tab index is consistent
+    this.opened_tree_nodes = metadata
+      .opened_tree_nodes
+      .iter()
+      .filter(|path| match path {
+        TestPath::Suite(_) => this.suite_from_path(path).is_some(),
+        TestPath::Case(_, _) => this.case_from_path(path).is_some(),
+        TestPath::Step(_, _, _) => this.step_from_path(path).is_some(),
+      })
+      .copied()
+      .collect();
+
+    this.editor_tabs = metadata
+      .editor_tabs
+      .iter()
+      .filter(|path| match path {
+        TestPath::Suite(_) => this.suite_from_path(path).is_some(),
+        TestPath::Case(_, _) => this.case_from_path(path).is_some(),
+        TestPath::Step(_, _, _) => this.step_from_path(path).is_some(),
+      })
+      .copied()
+      .collect();
+
+    let mut active_editor_tab_index = metadata.active_editor_tab_index;
+    if this.editor_tabs.is_empty() {
+      active_editor_tab_index = None;
+    } else if let Some(ix) = active_editor_tab_index
+      && ix >= this.editor_tabs.len()
+    {
+      active_editor_tab_index = Some(this.editor_tabs.len() - 1);
     }
+    this.active_editor_tab_index = active_editor_tab_index;
+
+    this
   }
 
-  #[allow(unused)]
-  pub fn info_from_path(&self, path: &TestPath) -> Option<&TestMetadata> {
-    let suite = self.suites.iter().find(|suite| suite.meta.path.is_parent(path))?;
-    match path {
-      TestPath::Suite(_) => Some(&suite.meta),
-      _ => suite.info_from_path(path),
-    }
-  }
-
-  pub fn info_mut_from_path(&mut self, path: &TestPath) -> Option<&mut TestMetadata> {
+  /// Returns the metadata of the node at `path`, or `None` if it doesn't exist.
+  fn info_mut_from_path(&mut self, path: &TestPath) -> Option<&mut TestMetadata> {
     let suite = self.suites.iter_mut().find(|suite| suite.meta.path.is_parent(path))?;
     match path {
       TestPath::Suite(_) => Some(&mut suite.meta),
       _ => suite.info_mut_from_path(path),
     }
   }
+
   /// Moves the node at `path` one position toward `offset` among its
   /// siblings (case in its suite, step in its case, or suite in the
   /// container). A no-op when the node is already at that end of its
@@ -370,6 +400,9 @@ impl TestsContainer {
   /// [`ProjectError::TestNotFound`] if `path` doesn't address an existing
   /// node, or, for a step, if its owning case is a [`TestCaseType::CaseStep`]
   /// (so it has no steps to reorder).
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestsModified`] if the node was moved.
   pub fn move_offset(&mut self, path: TestPath, offset: Offset, cx: &mut Context<Self>) -> ProjectResult<()> {
     fn offset_pos(ix: usize, max_ix: usize, offset: Offset) -> Option<usize> {
       match offset {
@@ -423,21 +456,48 @@ impl TestsContainer {
   }
 
   /// Moves the node at `from` to the node at `to`, e.g. for drag-and-drop
-  /// reordering in the project tree. A no-op when `from == to`.
+  /// reordering in the project tree. What happens depends on the kind of
+  /// node at `to`: dropped on a suite, a case or step is appended to its
+  /// cases (a step becoming a [`TestCaseType::CaseStep`]) and a suite is
+  /// moved to its position; dropped on a case, a case is moved to its
+  /// position and a step is appended to its steps; dropped on a step, a
+  /// step (or a [`TestCaseType::CaseStep`], becoming a step) is moved to its
+  /// position. "Moved to its position" means inserted before `to`, or after
+  /// it when coming from above within the same parent.
+  /// Every node whose path changes keeps its id, and the opened tree nodes
+  /// and editor tabs are remapped to the new paths.
   ///
   /// # Errors
-  /// [`ProjectError::TestNotFound`] if `from` or `to` doesn't address an
-  /// existing node.
+  /// - [`ProjectError::NoOp`] if the move has no effect: `from == to`, a
+  ///   suite dropped on a case or step, a case dropped on its own suite, a
+  ///   multi-step case dropped on a step, a step dropped on its own case or
+  ///   on a [`TestCaseType::CaseStep`].
+  /// - [`ProjectError::TestNotFound`] if `from` or `to` doesn't address an
+  ///   existing node.
+  ///
+  /// # Events
+  /// - [`TestsContainerEvent::TestMoved`] for each node whose path changed.
+  /// - [`TestsContainerEvent::ConfigChanged`] for each such node that was
+  ///   an opened tree node or an editor tab.
+  /// - [`TestsContainerEvent::TestsModified`] once the move is done.
   pub fn move_test(&mut self, from: TestPath, to: TestPath, cx: &mut Context<Self>) -> ProjectResult<()> {
     if from == to {
-      return Ok(());
+      return Err(ProjectError::NoOp);
     }
 
-    match to {
-      TestPath::Suite(_) => self.move_to_suite(from, to),
-      TestPath::Case(_, _) => self.move_to_case(from, to),
-      TestPath::Step(_, _, _) => self.move_to_step(from, to),
-    }?;
+    let updated_paths = match to {
+      TestPath::Suite(_) => self.move_to_suite(from, to)?,
+      TestPath::Case(_, _) => self.move_to_case(from, to)?,
+      TestPath::Step(_, _, _) => self.move_to_step(from, to)?.into_iter().collect(),
+    };
+
+    // A move within the same parent keeps the paths unchanged: skip those
+    for (old_path, new_path) in updated_paths.into_iter().filter(|(old, new)| old != new) {
+      if self.update_config_after_path_change(&old_path, new_path) {
+        cx.emit(TestsContainerEvent::ConfigChanged);
+      }
+      cx.emit(TestsContainerEvent::TestMoved(old_path, new_path));
+    }
 
     cx.emit(TestsContainerEvent::TestsModified);
     Ok(())
@@ -447,11 +507,13 @@ impl TestsContainer {
   /// in place, while a case or step is detached from its current parent and
   /// appended at the end of `to`'s case list (a step is first promoted to a
   /// [`TestCaseType::CaseStep`], keeping its own id as the new case's id).
+  /// Returns the `(old, new)` path of every node whose path changed.
   ///
   /// # Errors
-  /// [`ProjectError::TestNotFound`] if `to` doesn't address an existing
-  /// suite, or `from` doesn't address an existing node.
-  fn move_to_suite(&mut self, from: TestPath, to: TestPath) -> ProjectResult<()> {
+  /// - [`ProjectError::NoOp`] if `from` is a case already in `to`.
+  /// - [`ProjectError::TestNotFound`] if `to` doesn't address an existing
+  ///   suite, or `from` doesn't address an existing node.
+  fn move_to_suite(&mut self, from: TestPath, to: TestPath) -> ProjectResult<Vec<(TestPath, TestPath)>> {
     let Some(to_suite_ix) = self.suites.iter().position(|suite| suite.meta.path == to) else {
       return Err(ProjectError::TestNotFound(to));
     };
@@ -462,97 +524,111 @@ impl TestsContainer {
         };
         let suite = self.suites.remove(from_ix);
         self.suites.insert(to_suite_ix, suite);
-        Ok(())
+        Ok(vec![])
       }
-      TestPath::Case(_, _) => {
+      TestPath::Case(from_suite_id, _) => {
+        if from_suite_id == to.suite_id() {
+          return Err(ProjectError::NoOp);
+        }
         let (from_suite_ix, from_case_ix) = self.case_indexes(&from)?;
-        let case = self.suites[from_suite_ix].cases.remove(from_case_ix).reparent(to.suite_id());
+        let mut case = self.suites[from_suite_ix].cases.remove(from_case_ix);
+        let old_paths = case.all_paths();
+        case.reparent(to.suite_id());
+        let updated_paths: Vec<(TestPath, TestPath)> = old_paths.into_iter().zip(case.all_paths()).collect();
         self.suites[to_suite_ix].cases.push(case);
-        Ok(())
+        Ok(updated_paths)
       }
       TestPath::Step(_, _, id) => {
         let (from_suite_ix, from_case_ix) = self.case_indexes(&from)?;
         let Some(step) = self.suites[from_suite_ix].cases[from_case_ix].remove_step(id) else {
           return Err(ProjectError::TestNotFound(from));
         };
+        let old_path = step.meta.path;
         let case_step = TestCase::from_step(step, to.suite_id());
+        let new_path = case_step.meta.path;
         self.suites[to_suite_ix].cases.push(case_step);
-        Ok(())
+        Ok(vec![(old_path, new_path)])
       }
     }
   }
 
-  /// Moves the node at `from` onto the case at `to`. A suite source is a
-  /// no-op (a suite can't become a case's child). A case source has its
-  /// steps merged into `to`'s step list and is then removed — unless `to`
-  /// is itself a [`TestCaseType::CaseStep`], which has no steps to merge
-  /// into, in which case this is a no-op. A step source is detached from
-  /// its case and inserted at `to`'s position as a new
-  /// [`TestCaseType::CaseStep`], keeping its own id.
+  /// Moves the node at `from` onto the case at `to`. A case source is
+  /// detached from its suite and inserted at `to`'s position, moved under
+  /// `to`'s suite along with its steps (all ids kept). A step source is
+  /// detached from its case and appended at the end of `to`'s steps,
+  /// keeping its own id. Returns the `(old, new)` path of every moved node.
   ///
   /// # Errors
-  /// [`ProjectError::TestNotFound`] if `from` or `to` doesn't address an
-  /// existing node.
-  fn move_to_case(&mut self, from: TestPath, to: TestPath) -> ProjectResult<()> {
+  /// - [`ProjectError::NoOp`] if `from` is a suite (it can't become a
+  ///   case's child), or a step already in `to`, or a step while `to` is a
+  ///   [`TestCaseType::CaseStep`] (it can't hold steps).
+  /// - [`ProjectError::TestNotFound`] if `from` or `to` doesn't address an
+  ///   existing node.
+  fn move_to_case(&mut self, from: TestPath, to: TestPath) -> ProjectResult<Vec<(TestPath, TestPath)>> {
     match from {
-      TestPath::Suite(_) => Ok(()),
+      TestPath::Suite(_) => Err(ProjectError::NoOp),
       TestPath::Case(_, _) => {
         let (from_suite_ix, from_case_ix) = self.case_indexes(&from)?;
         let (to_suite_ix, to_case_ix) = self.case_indexes(&to)?;
-        // Fighting the borrow checker: Cannot convert case and add it to its target in one go as it borrows twice self.suites
-        // So, first clone/convert, add to target, and then remove original
-        if !self.suites[to_suite_ix].cases[to_case_ix].is_case_step() {
-          let new_steps: Vec<TestStep> = self.suites[from_suite_ix].cases[from_case_ix]
-            .to_steps()
-            .into_iter()
-            .map(|step| step.reparent(to.suite_id(), to.case_id().expect("Has a case_id")))
-            .collect();
-          if let TestCaseType::CaseMulti { steps } = self.suites[to_suite_ix].cases[to_case_ix].case_type_mut() {
-            steps.extend(new_steps);
-          };
-          self.suites[from_suite_ix].cases.remove(from_case_ix);
-        }
-        Ok(())
+        let mut case = self.suites[from_suite_ix].cases.remove(from_case_ix);
+        let old_paths = case.all_paths();
+        case.reparent(to.suite_id());
+        let updated_paths: Vec<(TestPath, TestPath)> = old_paths.into_iter().zip(case.all_paths()).collect();
+        self.suites[to_suite_ix].cases.insert(to_case_ix, case);
+        Ok(updated_paths)
       }
-      TestPath::Step(_, _, id) => {
+      TestPath::Step(from_suite_id, from_case_id, id) => {
+        if from_suite_id == to.suite_id() && from_case_id == to.case_id().unwrap() {
+          return Err(ProjectError::NoOp);
+        }
         let (from_suite_ix, from_case_ix) = self.case_indexes(&from)?;
         let (to_suite_ix, to_case_ix) = self.case_indexes(&to)?;
-        let Some(step) = self.suites[from_suite_ix].cases[from_case_ix].remove_step(id) else {
+        if self.suites[to_suite_ix].cases[to_case_ix].is_case_step() {
+          return Err(ProjectError::NoOp);
+        }
+        let Some(mut step) = self.suites[from_suite_ix].cases[from_case_ix].remove_step(id) else {
           return Err(ProjectError::TestNotFound(from));
         };
-        let case_step = TestCase::from_step(step, to.suite_id());
-        self.suites[to_suite_ix].cases.insert(to_case_ix, case_step);
-        Ok(())
+        let old_path = step.meta.path;
+        step = step.reparent(to.suite_id(), to.case_id().unwrap());
+        let updated_path = (old_path, step.meta.path);
+        if let TestCaseType::CaseMulti { steps } = self.suites[to_suite_ix].cases[to_case_ix].case_type_mut() {
+          steps.push(step);
+        };
+        Ok(vec![updated_path])
       }
     }
   }
 
-  /// Moves the node at `from` onto the step at `to`. A suite source is a
-  /// no-op. A case source is only valid when it's a
-  /// [`TestCaseType::CaseStep`]: it's converted to a step and
-  /// inserted at `to`'s position, then removed from its case. A step source
-  /// is detached from its case and inserted at `to`'s position.
+  /// Moves the node at `from` onto the step at `to`. A case source is only
+  /// moved when it's a [`TestCaseType::CaseStep`]: it's converted to a step
+  /// keeping its own id, inserted at `to`'s position, then removed from its
+  /// suite. A step source is detached from its case and inserted at `to`'s
+  /// position. Returns the `(old, new)` path of the moved node.
   ///
   /// # Errors
-  /// [`ProjectError::TestNotFound`] if `from` or `to` doesn't address an
-  /// existing node.
-  fn move_to_step(&mut self, from: TestPath, to: TestPath) -> ProjectResult<()> {
+  /// - [`ProjectError::NoOp`] if `from` is a suite or a multi-step case.
+  /// - [`ProjectError::TestNotFound`] if `from` or `to` doesn't address an
+  ///   existing node.
+  fn move_to_step(&mut self, from: TestPath, to: TestPath) -> ProjectResult<Option<(TestPath, TestPath)>> {
     match from {
-      TestPath::Suite(_) => Ok(()),
+      TestPath::Suite(_) => Err(ProjectError::NoOp),
       TestPath::Case(_, _) => {
+        let (to_suite_ix, to_case_ix, to_step_ix) = self.step_indexes(&to)?;
         let (from_suite_ix, from_case_ix) = self.case_indexes(&from)?;
-        if self.suites[from_suite_ix].cases[from_case_ix].is_case_step() {
-          let (to_suite_ix, to_case_ix, to_step_ix) = self.step_indexes(&to)?;
-          let step = self.suites[from_suite_ix].cases[from_case_ix]
-            .to_steps()
-            .remove(0)
-            .reparent(to.suite_id(), to.case_id().expect("Has a case_id"));
-          if let TestCaseType::CaseMulti { steps } = self.suites[to_suite_ix].cases[to_case_ix].case_type_mut() {
-            steps.insert(to_step_ix, step);
-          };
-          self.suites[from_suite_ix].cases.remove(from_case_ix);
+        if !self.suites[from_suite_ix].cases[from_case_ix].is_case_step() {
+          return Err(ProjectError::NoOp);
         }
-        Ok(())
+        let step = self.suites[from_suite_ix].cases[from_case_ix]
+          .to_steps()
+          .remove(0)
+          .reparent(to.suite_id(), to.case_id().expect("Has a case_id"));
+        let updated_path = Some((from, step.meta.path));
+        if let TestCaseType::CaseMulti { steps } = self.suites[to_suite_ix].cases[to_case_ix].case_type_mut() {
+          steps.insert(to_step_ix, step);
+        };
+        self.suites[from_suite_ix].cases.remove(from_case_ix);
+        Ok(updated_path)
       }
       TestPath::Step(_, _, id) => {
         let (from_suite_ix, from_case_ix) = self.case_indexes(&from)?;
@@ -560,34 +636,137 @@ impl TestsContainer {
         let Some(mut step) = self.suites[from_suite_ix].cases[from_case_ix].remove_step(id) else {
           return Err(ProjectError::TestNotFound(from));
         };
+        step = step.reparent(to.suite_id(), to.case_id().expect("Has a case_id"));
+        let updated_path = Some((from, step.meta.path));
         if let TestCaseType::CaseMulti { steps } = self.suites[to_suite_ix].cases[to_case_ix].case_type_mut() {
-          step = step.reparent(to.suite_id(), to.case_id().expect("Has a case_id"));
           steps.insert(to_step_ix, step);
         };
-        Ok(())
+        Ok(updated_path)
       }
     }
   }
 
+  /// Adds `path` to the tabs opened in the editor (a no-op if it already is)
+  /// and sets `selected_tab` as the active tab index.
+  ///
+  /// # Events
+  /// - [`TestsContainerEvent::TestOpenInEditor`] if `path` wasn't opened yet.
+  /// - [`TestsContainerEvent::EditorActiveTabIndex`] if the active tab index
+  ///   changed.
+  pub fn open_test_in_editor(&mut self, path: TestPath, selected_tab: Option<usize>, cx: &mut Context<Self>) {
+    if !self.editor_tabs.contains(&path) {
+      self.editor_tabs.push(path);
+      cx.emit(TestsContainerEvent::TestOpenInEditor(path));
+    }
+    if self.active_editor_tab_index != selected_tab {
+      self.active_editor_tab_index = selected_tab;
+      cx.emit(TestsContainerEvent::EditorActiveTabIndex(selected_tab));
+    }
+  }
+
+  /// Returns the paths of the nodes expanded in the project tree.
   #[inline]
-  pub fn opened_tree_nodes(&self) -> &HashSet<Uuid> {
+  pub fn opened_tree_nodes(&self) -> &HashSet<TestPath> {
     &self.opened_tree_nodes
   }
 
-  pub fn rename_at(&mut self, path: &TestPath, name: SharedString, cx: &mut Context<Self>) -> ProjectResult<()> {
-    let Some(test_info) = self.info_mut_from_path(path) else {
+  /// Returns the paths of the tabs opened in the editor, in display order.
+  #[inline]
+  pub fn opened_editor_nodes(&self) -> &Vec<TestPath> {
+    &self.editor_tabs
+  }
+
+  /// Requests the node at `path` to be opened in the editor, without
+  /// changing the container's state.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::RequestOpenInEditor`] with `path`.
+  pub fn request_open_in_editor(&mut self, path: TestPath, cx: &mut Context<Self>) {
+    cx.emit(TestsContainerEvent::RequestOpenInEditor(path));
+  }
+
+  /// Renames the node at `path`. A no-op when the name is unchanged.
+  ///
+  /// # Errors
+  /// [`ProjectError::TestNotFound`] if `path` doesn't address an existing
+  /// node.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestRenamed`] if the name changed.
+  pub fn rename_at(&mut self, path: TestPath, name: SharedString, cx: &mut Context<Self>) -> ProjectResult<()> {
+    let Some(test_info) = self.info_mut_from_path(&path) else {
       warn!("TestsContainer:rename_at: unknow path: {}", path);
-      return Err(ProjectError::TestNotFound(*path));
+      return Err(ProjectError::TestNotFound(path));
     };
 
     if test_info.name != name {
-      test_info.name = name;
-      cx.emit(TestsContainerEvent::TestsModified);
+      let old_name = test_info.name.clone();
+      test_info.name = name.clone();
+      cx.emit(TestsContainerEvent::TestRenamed(path, old_name, name));
     }
-
     Ok(())
   }
 
+  /// Sets the index of the active tab in the editor. The index isn't checked
+  /// against the opened tabs.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::EditorActiveTabIndex`] if the index changed.
+  #[inline]
+  pub fn set_active_editor_tab(&mut self, ix: Option<usize>, cx: &mut Context<Self>) {
+    if self.active_editor_tab_index != ix {
+      self.active_editor_tab_index = ix;
+      cx.emit(TestsContainerEvent::EditorActiveTabIndex(ix));
+    }
+  }
+
+  /// Returns the step `path` points to, or `None` for a suite or case path
+  /// or when no such step exists.
+  pub fn step_from_path(&self, path: &TestPath) -> Option<&TestStep> {
+    self.case_from_path(path)?.step_from_path(path)
+  }
+
+  /// Resolves the suite-list, case-list and step-list indices of the step at
+  /// `path`. Only valid when `path` addresses a step owned by a
+  /// [`TestCaseType::CaseMulti`]; a [`TestCaseType::CaseStep`] has no steps
+  /// to index into.
+  ///
+  /// # Errors
+  /// [`ProjectError::TestNotFound`] if no suite is a parent of `path`, no
+  /// case in that suite owns it, or the owning case is a
+  /// [`TestCaseType::CaseStep`] (so it can't own a step by definition) or
+  /// has no step matching `path`.
+  fn step_indexes(&self, path: &TestPath) -> ProjectResult<(usize, usize, usize)> {
+    let Some(suite_ix) = self.suites.iter().position(|suite| suite.meta.path.is_parent(path)) else {
+      return Err(ProjectError::TestNotFound(*path));
+    };
+    let Some(case_ix) = self.suites[suite_ix]
+      .cases
+      .iter()
+      .position(|case| case.meta.path.is_parent(path))
+    else {
+      return Err(ProjectError::TestNotFound(*path));
+    };
+    let Some(step_ix) = (match self.suites[suite_ix].cases[case_ix].case_type() {
+      TestCaseType::CaseMulti { steps } => steps.iter().position(|step| step.meta.path == *path),
+      TestCaseType::CaseStep { .. } => None,
+    }) else {
+      return Err(ProjectError::TestNotFound(*path));
+    };
+    Ok((suite_ix, case_ix, step_ix))
+  }
+
+  /// Returns the suite `path` points to or goes through, or `None` when no
+  /// such suite exists.
+  pub fn suite_from_path(&self, path: &TestPath) -> Option<&TestSuite> {
+    self.suites.iter().find(|suite| suite.meta.path.is_parent(path))
+  }
+
+  /// Toggles the disabled flag of the node at `path`. A no-op (logged) when
+  /// `path` doesn't address an existing node.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestsModified`] if the flag was toggled.
   pub fn switch_node_enable_status(&mut self, path: &TestPath, cx: &mut Context<Self>) {
     let Some(info) = self.info_mut_from_path(path) else {
       warn!("TestsContainer:switch_active_status: unknow path: {}", path);
@@ -597,10 +776,28 @@ impl TestsContainer {
     cx.emit(TestsContainerEvent::TestsModified);
   }
 
+  /// Produces the on-disk representation of the test tree. The UI
+  /// configuration isn't part of it: it's saved in the workspace file.
   pub fn to_file(&self) -> FileTestsContainer {
     FileTestsContainer {
       suites: self.suites.iter().map(|suite| suite.get_file()).collect(),
     }
+  }
+
+  /// Remaps `old_path` to `new_path` in the opened tree nodes and editor
+  /// tabs. Returns `true` if either of them was changed.
+  fn update_config_after_path_change(&mut self, old_path: &TestPath, new_path: TestPath) -> bool {
+    let mut config_changed = false;
+    if self.opened_tree_nodes.remove(old_path) {
+      self.opened_tree_nodes.insert(new_path);
+      config_changed = true;
+    }
+
+    if let Some(path) = self.editor_tabs.iter_mut().find(|path| *path == old_path) {
+      *path = new_path;
+      config_changed = true;
+    }
+    config_changed
   }
 }
 
@@ -1155,9 +1352,11 @@ mod tests {
   #[test]
   fn move_to_case_suite_source_is_a_no_op() {
     let mut f = container_fixture();
-    f.container
+    let err = f
+      .container
       .move_to_case(TestPath::Suite(f.suite_a_id), TestPath::Case(f.suite_b_id, f.case_b_multi_id))
-      .expect("a suite source should be a no-op, not an error");
+      .expect_err("a suite source should be a no-op");
+    assert_eq!(err, ProjectError::NoOp);
     assert_eq!(
       case_names(&f.container.suites[0]),
       vec!["suite a multi case", "suite a case step"]
@@ -1165,7 +1364,7 @@ mod tests {
   }
 
   #[test]
-  fn move_to_case_merges_case_multi_steps_into_target() {
+  fn move_to_case_inserts_case_multi_at_target_and_reparents_it() {
     let mut f = container_fixture();
     f.container
       .move_to_case(
@@ -1174,56 +1373,73 @@ mod tests {
       )
       .expect("move should succeed");
 
-    // The source case is gone.
+    // Removed from its original suite.
     assert_eq!(case_names(&f.container.suites[0]), vec!["suite a case step"]);
-    // Its steps are appended to the target case, reparented under it.
-    let target = &f.container.suites[1].cases[0];
-    assert_eq!(step_ids(target), vec![f.step_b1_id, f.step_b2_id, f.step_a1_id, f.step_a2_id]);
-    let TestCaseType::CaseMulti { steps } = target.case_type() else {
+    // Inserted at the target's position, the target itself left untouched.
+    assert_eq!(
+      case_names(&f.container.suites[1]),
+      vec!["suite a multi case", "suite b multi case", "suite b case step"]
+    );
+    assert_eq!(step_ids(&f.container.suites[1].cases[1]), vec![f.step_b1_id, f.step_b2_id]);
+    // Reparented under the target suite, keeping its own id and its steps' ids.
+    let moved = &f.container.suites[1].cases[0];
+    assert!(matches!(moved.meta.path(), TestPath::Case(suite, case) if suite == f.suite_b_id && case == f.case_a_multi_id));
+    let TestCaseType::CaseMulti { steps } = moved.case_type() else {
       panic!("expected a CaseMulti");
     };
-    for step in &steps[2..] {
-      assert!(matches!(step.meta.path(), TestPath::Step(suite, case, _) if suite == f.suite_b_id && case == f.case_b_multi_id));
-    }
+    assert!(
+      matches!(steps[0].meta.path(), TestPath::Step(suite, case, id) if suite == f.suite_b_id && case == f.case_a_multi_id && id == f.step_a1_id)
+    );
+    assert!(
+      matches!(steps[1].meta.path(), TestPath::Step(suite, case, id) if suite == f.suite_b_id && case == f.case_a_multi_id && id == f.step_a2_id)
+    );
   }
 
   #[test]
-  fn move_to_case_converts_case_step_into_a_step_and_appends() {
+  fn move_to_case_inserts_case_step_at_case_step_target() {
     let mut f = container_fixture();
     f.container
       .move_to_case(
         TestPath::Case(f.suite_a_id, f.case_a_step_id),
-        TestPath::Case(f.suite_b_id, f.case_b_multi_id),
+        TestPath::Case(f.suite_b_id, f.case_b_step_id),
       )
       .expect("move should succeed");
 
     assert_eq!(case_names(&f.container.suites[0]), vec!["suite a multi case"]);
-    let target = &f.container.suites[1].cases[0];
-    let TestCaseType::CaseMulti { steps } = target.case_type() else {
-      panic!("expected a CaseMulti");
-    };
-    assert_eq!(steps.len(), 3);
-    let appended = steps.last().expect("the case step should have been appended");
-    assert_ne!(appended.meta.id(), f.case_a_step_id);
-    assert_eq!(appended.meta.name, SharedString::new("suite a case step"));
-    assert_eq!(appended.data, "suite a case step data");
+    assert_eq!(
+      case_names(&f.container.suites[1]),
+      vec!["suite b multi case", "suite a case step", "suite b case step"]
+    );
+    // Still a case step, keeping its own id and data.
+    let moved = &f.container.suites[1].cases[1];
+    assert!(moved.is_case_step());
+    assert!(matches!(moved.meta.path(), TestPath::Case(suite, case) if suite == f.suite_b_id && case == f.case_a_step_id));
+    assert!(matches!(moved.case_type(), TestCaseType::CaseStep { data } if data == "suite a case step data"));
   }
 
-  #[test]
-  fn move_to_case_case_to_case_step_target_is_a_no_op() {
+  #[gpui_kit::test]
+  fn move_test_to_case_updates_opened_tree_nodes_and_editor_tabs(cx: &mut TestAppContext) {
     let mut f = container_fixture();
-    f.container
-      .move_to_case(
-        TestPath::Case(f.suite_a_id, f.case_a_multi_id),
-        TestPath::Case(f.suite_b_id, f.case_b_step_id),
-      )
-      .expect("a case-step target should be a no-op, not an error");
-    // Nothing moved: the source case is still there, the target still a case step.
-    assert_eq!(
-      case_names(&f.container.suites[0]),
-      vec!["suite a multi case", "suite a case step"]
-    );
-    assert!(f.container.suites[1].cases[1].is_case_step());
+    let old_case = TestPath::Case(f.suite_a_id, f.case_a_multi_id);
+    let old_step = TestPath::Step(f.suite_a_id, f.case_a_multi_id, f.step_a1_id);
+    let untouched = TestPath::Suite(f.suite_a_id);
+    f.container.opened_tree_nodes.extend([untouched, old_case]);
+    f.container.editor_tabs = vec![untouched, old_step, old_case];
+    let entity = container_entity(f.container, cx);
+
+    entity
+      .update(cx, |container, cx| {
+        container.move_test(old_case, TestPath::Case(f.suite_b_id, f.case_b_multi_id), cx)
+      })
+      .expect("move should succeed");
+
+    let new_case = TestPath::Case(f.suite_b_id, f.case_a_multi_id);
+    let new_step = TestPath::Step(f.suite_b_id, f.case_a_multi_id, f.step_a1_id);
+    entity.read_with(cx, |container, _| {
+      assert_eq!(container.opened_tree_nodes, [untouched, new_case].into_iter().collect());
+      // Tabs are renamed in place, keeping their order.
+      assert_eq!(container.editor_tabs, vec![untouched, new_step, new_case]);
+    });
   }
 
   #[test]
@@ -1253,24 +1469,26 @@ mod tests {
   }
 
   #[test]
-  fn move_to_case_moves_a_step_into_a_case_inserted_at_position() {
+  fn move_to_case_appends_a_step_to_the_target_case_multi() {
     let mut f = container_fixture();
-    f.container
-      .move_to_case(
-        TestPath::Step(f.suite_a_id, f.case_a_multi_id, f.step_a1_id),
-        TestPath::Case(f.suite_b_id, f.case_b_multi_id),
-      )
+    let old_path = TestPath::Step(f.suite_a_id, f.case_a_multi_id, f.step_a1_id);
+    let paths = f
+      .container
+      .move_to_case(old_path, TestPath::Case(f.suite_b_id, f.case_b_multi_id))
       .expect("move should succeed");
 
     assert_eq!(step_ids(&f.container.suites[0].cases[0]), vec![f.step_a2_id]);
-    // Inserted right before the target case (case_b_multi_id is suite_b.cases[0]).
+    // Appended at the end of the target case's steps, the suite's cases untouched.
     assert_eq!(
       case_names(&f.container.suites[1]),
-      vec!["suite a step 1", "suite b multi case", "suite b case step"]
+      vec!["suite b multi case", "suite b case step"]
     );
-    let inserted = &f.container.suites[1].cases[0];
-    assert!(inserted.is_case_step());
-    assert_eq!(inserted.meta.id(), f.step_a1_id);
+    assert_eq!(
+      step_ids(&f.container.suites[1].cases[0]),
+      vec![f.step_b1_id, f.step_b2_id, f.step_a1_id]
+    );
+    let new_path = TestPath::Step(f.suite_b_id, f.case_b_multi_id, f.step_a1_id);
+    assert_eq!(paths, vec![(old_path, new_path)]);
   }
 
   #[test]
@@ -1289,24 +1507,28 @@ mod tests {
   #[test]
   fn move_to_step_suite_source_is_a_no_op() {
     let mut f = container_fixture();
-    f.container
+    let err = f
+      .container
       .move_to_step(
         TestPath::Suite(f.suite_a_id),
         TestPath::Step(f.suite_b_id, f.case_b_multi_id, f.step_b1_id),
       )
-      .expect("a suite source should be a no-op, not an error");
+      .expect_err("a suite source should be a no-op");
+    assert_eq!(err, ProjectError::NoOp);
     assert_eq!(step_ids(&f.container.suites[1].cases[0]), vec![f.step_b1_id, f.step_b2_id]);
   }
 
   #[test]
   fn move_to_step_case_multi_source_is_a_no_op() {
     let mut f = container_fixture();
-    f.container
+    let err = f
+      .container
       .move_to_step(
         TestPath::Case(f.suite_a_id, f.case_a_multi_id),
         TestPath::Step(f.suite_b_id, f.case_b_multi_id, f.step_b1_id),
       )
-      .expect("a CaseMulti source should be a no-op, not an error");
+      .expect_err("a CaseMulti source should be a no-op");
+    assert_eq!(err, ProjectError::NoOp);
     assert_eq!(
       case_names(&f.container.suites[0]),
       vec!["suite a multi case", "suite a case step"]
@@ -1330,11 +1552,13 @@ mod tests {
     };
     assert_eq!(steps.len(), 3);
     // Inserted right before step_b1 (its position in the target's step list).
-    assert_ne!(steps[0].meta.id(), f.case_a_step_id);
     assert_eq!(steps[0].meta.name, SharedString::new("suite a case step"));
     assert_eq!(steps[0].data, "suite a case step data");
-    // Reparented under the target suite/case.
-    assert!(matches!(steps[0].meta.path(), TestPath::Step(suite, case, _) if suite == f.suite_b_id && case == f.case_b_multi_id));
+    // Reparented under the target suite/case, keeping the case step's id.
+    assert_eq!(
+      steps[0].meta.path(),
+      TestPath::Step(f.suite_b_id, f.case_b_multi_id, f.case_a_step_id)
+    );
     assert_eq!(steps[1].meta.id(), f.step_b1_id);
     assert_eq!(steps[2].meta.id(), f.step_b2_id);
   }

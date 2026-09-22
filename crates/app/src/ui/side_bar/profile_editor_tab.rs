@@ -9,7 +9,7 @@ use gpui_kit::component::{Disableable, Icon, IconName, Sizable, WindowExt, h_fle
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
-use ki_utils::shared::SidebarPanel;
+use ki_utils::SidebarPanel;
 use ki_utils::ui::{CellState, MovingLabel};
 use ki_workspace::Project;
 use ki_workspace::variable::{ProfileInfo, ProjectVariables};

@@ -2,7 +2,8 @@ use crate::actions::{
   AddTestCase, AddTestStep, AddTestSuite, Delete, Duplicate, Escape, MoveDown, MoveUp, PROJECT_TREE_CONTEXT_KEY, Rename,
   SwitchNodeActiveStatus,
 };
-use crate::ui::components::tree::{ProjectTreeNode, ProjectTreeNodeKind, Tree, TreeDelegate, TreeEvent, TreeState};
+use crate::ui::ProjectTestNodeKind;
+use crate::ui::components::tree::{ProjectTreeNode, Tree, TreeDelegate, TreeEvent, TreeState};
 use crate::ui::side_bar::ProjectConfigurationPanel;
 use gpui_kit::component::dialog::{DialogAction, DialogClose, DialogFooter};
 use gpui_kit::component::input::{Input, InputState};
@@ -17,15 +18,15 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
-use ki_utils::Offset;
-use ki_utils::shared::SidebarPanel;
+use ki_utils::SidebarPanel;
 use ki_utils::ui::MovingLabel;
+use ki_utils::{Offset, TestPath};
+use ki_workspace::error::ProjectError;
+use ki_workspace::test::TestsContainer;
 use ki_workspace::test::test_case::TestCaseType;
-use ki_workspace::test::{TestPath, TestsContainer};
 use ki_workspace::{Project, TestCase, TestSuite};
 use log::warn;
 use std::collections::HashSet;
-use uuid::Uuid;
 
 type ContextMenuBuilder = dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu;
 
@@ -43,9 +44,9 @@ impl ProjectTree {
     cx: &mut Context<Self>,
   ) {
     tree.update(cx, |tree, cx| match e {
-      TreeEvent::NodeExpanded(path) => tree.delegate_mut().on_expand_status_change(path, true, cx),
-      TreeEvent::NodeCollapsed(path) => tree.delegate_mut().on_expand_status_change(path, false, cx),
-      TreeEvent::EntryDoubleClicked(ix) => println!("Entry action: {}", ix),
+      TreeEvent::NodeExpanded(path) => tree.delegate_mut().on_expand_status_change(*path, true, cx),
+      TreeEvent::NodeCollapsed(path) => tree.delegate_mut().on_expand_status_change(*path, false, cx),
+      TreeEvent::EntryDoubleClicked(path) => tree.delegate_mut().on_node_double_clicked(*path, cx),
     });
   }
 
@@ -207,9 +208,9 @@ impl ProjectTreeDelegate {
           None
         }
         Some(node) => match node.node_kind {
-          ProjectTreeNodeKind::Suite => self.add_test_suite(Some(path), window, cx),
-          ProjectTreeNodeKind::Case => self.add_test_case(path, window, cx),
-          ProjectTreeNodeKind::CaseStep | ProjectTreeNodeKind::Step => self.add_test_step(path, window, cx),
+          ProjectTestNodeKind::Suite => self.add_test_suite(Some(path), window, cx),
+          ProjectTestNodeKind::Case => self.add_test_case(path, window, cx),
+          ProjectTestNodeKind::CaseStep | ProjectTestNodeKind::Step => self.add_test_step(path, window, cx),
         },
       },
     }
@@ -235,20 +236,21 @@ impl ProjectTreeDelegate {
   }
 
   fn delete_node(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.delete_test(&path, cx)) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.delete_test(path, cx)) {
       window.push_notification(err, cx);
     }
   }
 
   fn duplicate_node(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.duplicate_test(&path, cx)) {
+    if let Err(err) = self.tests.update(cx, |tests, cx| tests.duplicate_test(path, cx)) {
       window.push_notification(err, cx);
     }
   }
 
   fn move_node(&mut self, from: TestPath, to: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    if let Err(err) = self.tests.update(cx, |tests, cx| tests.move_test(from, to, cx)) {
-      window.push_notification(err, cx);
+    match self.tests.update(cx, |tests, cx| tests.move_test(from, to, cx)) {
+      Ok(_) | Err(ProjectError::NoOp) => {}
+      Err(err) => window.push_notification(err, cx),
     }
   }
 
@@ -277,14 +279,19 @@ impl ProjectTreeDelegate {
     delegate
   }
 
-  fn on_expand_status_change(&mut self, path: &TestPath, open: bool, cx: &mut Context<TreeState<Self>>) {
-    let id = path.id();
-    self.tests.update(cx, move |project, cx| {
+  fn on_expand_status_change(&mut self, path: TestPath, open: bool, cx: &mut Context<TreeState<Self>>) {
+    self.tests.update(cx, move |tests, cx| {
       if open {
-        project.expand_tree_node(id, cx);
+        tests.expand_tree_node(path, cx);
       } else {
-        project.collapse_tree_node(&id, cx);
+        tests.collapse_tree_node(&path, cx);
       }
+    });
+  }
+
+  fn on_node_double_clicked(&mut self, path: TestPath, cx: &mut Context<TreeState<Self>>) {
+    self.tests.update(cx, move |tests, cx| {
+      tests.request_open_in_editor(path, cx);
     });
   }
 
@@ -323,7 +330,7 @@ impl ProjectTreeDelegate {
           let name = input.clone().read(cx).value();
           let tests = tests.clone();
           move |_, window, cx| {
-            if let Err(err) = tests.update(cx, |tests, cx| tests.rename_at(&path, name.clone(), cx)) {
+            if let Err(err) = tests.update(cx, |tests, cx| tests.rename_at(path, name.clone(), cx)) {
               window.push_notification(err, cx);
             }
             true
@@ -371,17 +378,17 @@ impl ProjectTreeDelegate {
   }
 }
 
-fn get_ts_entries(suites: &[TestSuite], opened_nodes: &HashSet<Uuid>) -> Vec<ProjectTreeNode> {
+fn get_ts_entries(suites: &[TestSuite], opened_nodes: &HashSet<TestPath>) -> Vec<ProjectTreeNode> {
   let mut entries = Vec::new();
   let last_ix = suites.len() - 1;
   for (ix, suite) in suites.iter().enumerate() {
     let leaf = suite.cases.is_empty();
     let path = suite.meta.path();
     let disabled = suite.meta.disabled;
-    let expanded = opened_nodes.contains(&path.id());
+    let expanded = opened_nodes.contains(&path);
     entries.push(ProjectTreeNode {
       path,
-      node_kind: ProjectTreeNodeKind::Suite,
+      node_kind: ProjectTestNodeKind::Suite,
       label: suite.meta.name.clone(),
       disabled,
       parent_disabled: false,
@@ -398,7 +405,7 @@ fn get_ts_entries(suites: &[TestSuite], opened_nodes: &HashSet<Uuid>) -> Vec<Pro
   entries
 }
 
-fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &HashSet<Uuid>) -> Vec<ProjectTreeNode> {
+fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &HashSet<TestPath>) -> Vec<ProjectTreeNode> {
   let mut entries = Vec::new();
   let last_ix = cases.len() - 1;
   for (ix, case) in cases.iter().enumerate() {
@@ -406,7 +413,7 @@ fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &Hash
     let disabled = case.meta.disabled;
     let mut case_tree_node = ProjectTreeNode {
       path,
-      node_kind: ProjectTreeNodeKind::Case,
+      node_kind: ProjectTestNodeKind::Case,
       label: case.meta.name.clone(),
       disabled,
       parent_disabled,
@@ -419,7 +426,7 @@ fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &Hash
     match case.case_type() {
       TestCaseType::CaseMulti { steps } => {
         let is_empty = steps.is_empty();
-        let is_open = opened_nodes.contains(&path.id());
+        let is_open = opened_nodes.contains(&path);
         case_tree_node.leaf = is_empty;
         case_tree_node.expanded = is_open;
         entries.push(case_tree_node);
@@ -427,7 +434,7 @@ fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &Hash
           let last_ix = steps.len() - 1;
           entries.extend(steps.iter().enumerate().map(|(ix, step)| ProjectTreeNode {
             path: step.meta.path(),
-            node_kind: ProjectTreeNodeKind::Step,
+            node_kind: ProjectTestNodeKind::Step,
             label: step.meta.name.clone(),
             disabled: step.meta.disabled,
             parent_disabled: disabled || parent_disabled,
@@ -440,7 +447,7 @@ fn get_tc_entries(cases: &[TestCase], parent_disabled: bool, opened_nodes: &Hash
         }
       }
       TestCaseType::CaseStep { .. } => {
-        case_tree_node.node_kind = ProjectTreeNodeKind::CaseStep;
+        case_tree_node.node_kind = ProjectTestNodeKind::CaseStep;
         entries.push(case_tree_node);
       }
     }
@@ -457,10 +464,10 @@ fn build_context_menu(node: &ProjectTreeNode) -> Box<ContextMenuBuilder> {
     menu
       .submenu_with_icon(Some(IconName::Plus.into()), "New", window, cx, move |submenu, _, _| {
         let mut submenu = submenu;
-        if matches!(kind, ProjectTreeNodeKind::Suite) {
+        if matches!(kind, ProjectTestNodeKind::Suite) {
           submenu = submenu.menu_with_icon("Test Suite", IconAsset::TestSuite, Box::new(AddTestSuite));
         }
-        if matches!(kind, ProjectTreeNodeKind::Suite | ProjectTreeNodeKind::Case) {
+        if matches!(kind, ProjectTestNodeKind::Suite | ProjectTestNodeKind::Case) {
           submenu = submenu.menu_with_icon("Test Case", IconAsset::TestCase, Box::new(AddTestCase));
         }
         submenu.menu_with_icon("Test Step", IconAsset::TestStep, Box::new(AddTestStep))
@@ -505,15 +512,13 @@ impl TreeDelegate for ProjectTreeDelegate {
   fn node_render(&self, ix: usize, _selected: bool, _window: &mut Window, cx: &mut Context<TreeState<Self>>) -> impl IntoElement {
     let node = &self.tree_nodes[ix];
     let id = node.path.id();
-    let icon = node.icon();
-    let left_padding = if icon.is_some() { px(0.) } else { px(14.) };
+    let icon = node.node_kind.icon();
 
     h_flex()
       .id(node.id())
       .size_full()
-      .pl(left_padding)
       .gap_x_1()
-      .when_some(icon, |this, icon| this.child(icon))
+      .child(icon)
       .tooltip(move |window, cx| Tooltip::new(format!("{}", id.clone())).build(window, cx))
       .child(node.label.clone())
       .when(node.disabled, |this| this.child(Icon::new(IconAsset::Ban).xsmall()))

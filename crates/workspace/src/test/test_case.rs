@@ -18,7 +18,7 @@ pub enum TestCaseType {
 /// or a [`TestCaseType::CaseStep`] (a case level step).
 ///
 /// Cases are created with [`TestCase::new_multi`] / [`TestCase::new_step`], or
-/// loaded from their on-disk representation with [`TestCase::from_file`].
+/// loaded from their on-disk representation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestCase {
   /// Metadata for the case itself (id, name, description, disabled flag).
@@ -121,13 +121,14 @@ impl TestCase {
   }
 
   /// Duplicates the step addressed by `path`, inserting the copy right
-  /// after it with a name made unique against its siblings.
+  /// after it with a name made unique against its siblings. Returns the
+  /// path of the copy.
   ///
   /// # Errors
   /// - [`ProjectError::TestNotFound`] if no step matches `path`.
   /// - [`ProjectError::OperationNotAllowed`] when called on a
   ///   [`TestCaseType::CaseStep`], since it has no children.
-  pub(crate) fn duplicate_child(&mut self, path: &TestPath) -> ProjectResult<()> {
+  pub(crate) fn duplicate_child(&mut self, path: &TestPath) -> ProjectResult<TestPath> {
     match &mut self.case_type {
       TestCaseType::CaseMulti { steps } => {
         let Some(ix) = steps.iter().position(|step| step.meta.path == *path) else {
@@ -136,8 +137,9 @@ impl TestCase {
         };
         let name = ki_utils::next_available_name(&steps[ix].meta.name, steps.iter().map(|case| case.meta.name.clone()));
         let duplicate = steps[ix].duplicate(name);
+        let new_path = duplicate.meta.path;
         steps.insert(ix + 1, duplicate);
-        Ok(())
+        Ok(new_path)
       }
       TestCaseType::CaseStep { .. } => {
         error!(
@@ -223,6 +225,16 @@ impl TestCase {
     matches!(self.case_type, TestCaseType::CaseStep { .. })
   }
 
+  /// Returns the path of this case followed by the paths of its steps, in
+  /// order (only the case's own path for a [`TestCaseType::CaseStep`]).
+  pub(crate) fn all_paths(&self) -> Vec<TestPath> {
+    let mut paths = vec![self.meta.path];
+    if let TestCaseType::CaseMulti { steps } = &self.case_type {
+      steps.iter().for_each(|step| paths.push(step.meta.path));
+    };
+    paths
+  }
+
   /// Creates a new, empty [`TestCaseType::CaseMulti`] with a freshly
   /// generated id.
   pub fn new_multi(suite_id: Uuid, name: SharedString) -> Self {
@@ -269,7 +281,7 @@ impl TestCase {
   /// reparents a [`TestCaseType::CaseMulti`]'s steps under the new suite
   /// (same case id, their own step ids kept). A no-op when `suite_id` is
   /// already its current suite.
-  pub(crate) fn reparent(mut self, suite_id: Uuid) -> Self {
+  pub(crate) fn reparent(&mut self, suite_id: Uuid) {
     if suite_id != self.meta.path.suite_id() {
       let case_id = self.meta.id();
       self.meta.path = TestPath::Case(suite_id, case_id);
@@ -280,15 +292,25 @@ impl TestCase {
         });
       }
     }
-    self
+  }
+
+  /// Returns the step of this case addressed by `path`, or `None` when this
+  /// is a [`TestCaseType::CaseStep`] or no step matches.
+  pub(crate) fn step_from_path(&self, path: &TestPath) -> Option<&TestStep> {
+    if let TestCaseType::CaseMulti { steps } = &self.case_type {
+      steps.iter().find(|step| step.meta.path == *path)
+    } else {
+      None
+    }
   }
 
   /// Converts this case to the step(s) it is equivalent to, at its own
   /// current suite/case location, without modifying this case. A
   /// [`TestCaseType::CaseMulti`] yields its steps, keeping their own ids; a
-  /// [`TestCaseType::CaseStep`] yields a single step with a freshly
-  /// generated id, carrying this case's name, description, disabled flag
-  /// and data. To move the result elsewhere, reparent each returned
+  /// [`TestCaseType::CaseStep`] yields a single step reusing this case's id
+  /// (as both its owning case id and its own id), carrying this case's
+  /// name, description, disabled flag and data. To move the result
+  /// elsewhere, reparent each returned
   /// [`TestStep`] via [`TestStep::reparent`](crate::test::test_step::TestStep::reparent).
   pub(crate) fn to_steps(&self) -> Vec<TestStep> {
     let suite_id = self.meta.path.suite_id();
@@ -305,8 +327,9 @@ impl TestCase {
         })
         .collect(),
       TestCaseType::CaseStep { data } => {
+        // Reuse the case id as the step id: in case it is referenced elsewhere, it will stay consistent
         let meta = TestMetadata {
-          path: TestPath::Step(suite_id, case_id, Uuid::new_v4()),
+          path: TestPath::Step(suite_id, case_id, case_id),
           name: self.meta.name.clone(),
           description: self.meta.description.clone(),
           disabled: self.meta.disabled,
@@ -687,7 +710,8 @@ mod tests {
   fn reparent_updates_path_and_cascades_to_case_multi_steps() {
     let f = fixture();
     let new_suite = Uuid::new_v4();
-    let case = f.case.reparent(new_suite);
+    let mut case = f.case.clone();
+    case.reparent(new_suite);
 
     assert!(matches!(case.meta.path(), TestPath::Case(suite, id) if suite == new_suite && id == f.case_id));
     let TestCaseType::CaseMulti { steps } = case.case_type() else {
@@ -704,8 +728,10 @@ mod tests {
   #[test]
   fn reparent_is_a_no_op_for_the_same_suite() {
     let f = fixture();
-    let case = f.case.clone().reparent(f.suite_id);
-    assert_eq!(case, f.case);
+    let mut case = f.case.clone();
+    let path = case.meta.path;
+    case.reparent(f.suite_id);
+    assert_eq!(path, case.meta.path);
   }
 
   #[test]
@@ -724,14 +750,13 @@ mod tests {
   }
 
   #[test]
-  fn to_steps_on_case_step_creates_a_single_step_with_a_fresh_id() {
+  fn to_steps_on_case_step_creates_a_single_step_keeping_the_case_id() {
     let f = case_step_fixture();
     let steps = f.case.to_steps();
 
     assert_eq!(steps.len(), 1);
-    assert_ne!(steps[0].meta.id(), f.case_id);
     assert_eq!(steps[0].meta.name, SharedString::new("case step"));
     assert_eq!(steps[0].data, "payload");
-    assert!(matches!(steps[0].meta.path(), TestPath::Step(suite, case, _) if suite == f.suite_id && case == f.case_id));
+    assert_eq!(steps[0].meta.path(), TestPath::Step(f.suite_id, f.case_id, f.case_id));
   }
 }
