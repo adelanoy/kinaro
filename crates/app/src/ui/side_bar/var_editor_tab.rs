@@ -11,7 +11,7 @@ use gpui_kit::component::{ActiveTheme, Disableable, Icon, IconName, IndexPath, S
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
-use ki_utils::shared::SidebarPanel;
+use ki_utils::SidebarPanel;
 use ki_utils::ui::{CellState, MovingLabel};
 use ki_workspace::Project;
 use ki_workspace::variable::{ProfileInfo, ProjectVariables, VariableKind, VariableReference};

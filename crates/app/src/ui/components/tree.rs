@@ -1,30 +1,21 @@
 use crate::actions::{Down, Enter, Escape, Left, Right, Up};
+use crate::ui::ProjectTestNodeKind;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::component::{ActiveTheme, Icon, IconName, h_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use ki_assets::icon::IconAsset;
-use ki_workspace::test::TestPath;
+use ki_utils::TestPath;
 use std::ops::Range;
 use uuid::Uuid;
 
 pub const TREE_CONTEXT: &str = "Tree";
 
-/// The display-relevant shape of a [`ProjectTreeNode`]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProjectTreeNodeKind {
-  Suite,
-  Case,
-  CaseStep,
-  Step,
-}
-
 #[derive(Debug, Clone)]
 pub struct ProjectTreeNode {
   pub path: TestPath,
-  pub node_kind: ProjectTreeNodeKind,
+  pub node_kind: ProjectTestNodeKind,
   pub label: SharedString,
   pub disabled: bool,
   pub parent_disabled: bool,
@@ -36,13 +27,6 @@ pub struct ProjectTreeNode {
 }
 
 impl ProjectTreeNode {
-  pub fn icon(&self) -> Option<Icon> {
-    match self.node_kind {
-      ProjectTreeNodeKind::Suite => Some(Icon::new(IconAsset::TestSuite)),
-      ProjectTreeNodeKind::Case => Some(Icon::new(IconAsset::TestCase)),
-      ProjectTreeNodeKind::CaseStep | ProjectTreeNodeKind::Step => Some(Icon::new(IconAsset::TestStep)),
-    }
-  }
 
   pub fn id(&self) -> Uuid {
     self.path.id()
@@ -51,9 +35,9 @@ impl ProjectTreeNode {
   /// Returns a label describing the type of node
   pub fn label(&self) -> SharedString {
     match self.node_kind {
-      ProjectTreeNodeKind::Suite => "Test Suite",
-      ProjectTreeNodeKind::Case => "Test Case",
-      ProjectTreeNodeKind::CaseStep | ProjectTreeNodeKind::Step => "Test Step",
+      ProjectTestNodeKind::Suite => "Test Suite",
+      ProjectTestNodeKind::Case => "Test Case",
+      ProjectTestNodeKind::CaseStep | ProjectTestNodeKind::Step => "Test Step",
     }
     .into()
   }

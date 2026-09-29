@@ -14,7 +14,7 @@ use uuid::Uuid;
 /// tree is addressed through [`TestPath`] paths rather than by index.
 ///
 /// Suites are created with [`TestSuite::new`], or loaded from their on-disk
-/// representation with [`TestSuite::from_file`].
+/// representation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestSuite {
   /// Metadata for the suite itself (id, name, description, disabled flag).
@@ -75,6 +75,12 @@ impl TestSuite {
     }
   }
 
+  /// Returns the case of this suite that `path` points to or goes through
+  /// (the owning case of a step), or `None` when no case matches.
+  pub(crate) fn case_from_path(&self, path: &TestPath) -> Option<&TestCase> {
+    self.cases.iter().find(|case| case.meta.path.is_parent(path))
+  }
+
   /// Deletes the node addressed by `path` from this suite: the whole case
   /// when `path` addresses a case, or a single step delegated to its
   /// owning case otherwise.
@@ -108,12 +114,15 @@ impl TestSuite {
 
   /// Duplicates the case (or, for a step within a `CaseMulti`, delegates to
   /// that case) addressed by `path`, inserting the copy right after it
-  /// with a name made unique against its siblings.
+  /// with a name made unique against its siblings. Returns the path of the
+  /// copy.
   ///
   /// # Errors
-  /// [`ProjectError::TestNotFound`] if no case in this suite is
-  /// (or owns) the node addressed by `path`.
-  pub(crate) fn duplicate_child(&mut self, path: &TestPath) -> ProjectResult<()> {
+  /// - [`ProjectError::TestNotFound`] if no case in this suite is
+  ///   (or owns) the node addressed by `path`.
+  /// - [`ProjectError::OperationNotAllowed`] if `path` addresses a step
+  ///   whose owning case is a `CaseStep`.
+  pub(crate) fn duplicate_child(&mut self, path: &TestPath) -> ProjectResult<TestPath> {
     let Some(ix) = self.cases.iter().position(|case| case.meta.path.is_parent(path)) else {
       error!("TestSuite:duplicate_child: unknow path: {}", path);
       return Err(ProjectError::TestNotFound(*path));
@@ -125,12 +134,13 @@ impl TestSuite {
         self.cases.iter().map(|case| case.meta.name.clone()),
       );
       let duplicate = self.cases[ix].duplicate(name);
+      let new_path = duplicate.meta.path;
       if ix == self.cases.len() - 1 {
         self.cases.push(duplicate);
       } else {
         self.cases.insert(ix + 1, duplicate);
       }
-      Ok(())
+      Ok(new_path)
     } else {
       self.cases[ix].duplicate_child(path)
     }

@@ -17,10 +17,11 @@ pub const PROJECT_FILE_EXT: &str = "kpr";
 pub enum ProjectEvent {
   /// Emitted when the active profile has been modified
   ActiveProfile(Option<Uuid>),
-  /// Emitted when the test tree content has changed
-  TestTree,
-  /// Emitted when the test tree nodes have changed
-  TestTreeNodes,
+  /// Emitted when the test tree content has changed (the project file has been saved)
+  TestTreeData,
+  /// Emitted when the project's configuration (expanded tree nodes, editor tabs...) has changed
+  /// and the workspace should save itself
+  ProjectConfigChanged,
 }
 
 #[derive(Debug)]
@@ -44,7 +45,9 @@ impl Project {
     self.active_profile
   }
 
-  /// Change the currently active profile
+  /// Change the currently active profile. A no-op when `profile_id` is already active or doesn't
+  /// address an existing profile.
+  ///
   /// # Events
   /// Emits a [`ProjectEvent::ActiveProfile`] if active profile was successfully changed
   pub fn switch_profile(&mut self, profile_id: Option<Uuid>, cx: &mut Context<Self>) {
@@ -54,16 +57,10 @@ impl Project {
     match profile_id {
       None => {
         self.active_profile = None;
-        cx.emit(ProjectEvent::TestTreeNodes);
+        cx.emit(ProjectEvent::ActiveProfile(None));
       }
       Some(profile_id) => {
-        if self
-          .variables
-          .read(cx)
-          .profiles
-          .iter()
-          .any(|p| p.id == profile_id)
-        {
+        if self.variables.read(cx).profiles.iter().any(|p| p.id == profile_id) {
           self.active_profile = Some(profile_id);
           cx.emit(ProjectEvent::ActiveProfile(self.active_profile));
         }
@@ -71,10 +68,7 @@ impl Project {
     }
   }
 
-  pub(super) fn load(
-    metadata: &FileProjectMetadata,
-    cx: &mut Context<Workspace>,
-  ) -> ProjectResult<Entity<Self>> {
+  pub(super) fn load(metadata: &FileProjectMetadata, cx: &mut Context<Workspace>) -> ProjectResult<Entity<Self>> {
     let path = &metadata.path;
     if !path.exists() || path.extension() != Some(PROJECT_FILE_EXT.as_ref()) {
       error!("Invalid project at: {}", path.to_string_lossy());
@@ -83,11 +77,7 @@ impl Project {
 
     let file_project = ProjectFile::load(path).map_err(|err| {
       let error = ProjectError::from(err);
-      error!(
-                "Failed to load project at: {}. Error: {:?}",
-                path.to_string_lossy(),
-                error
-            );
+      error!("Failed to load project at: {}. Error: {:?}", path.to_string_lossy(), error);
       error
     })?;
     let this = cx.new(|cx| {
@@ -137,29 +127,38 @@ impl Project {
     this
   }
 
-  /// save the project to file and emit the passed event
+  /// Saves the project to its file, asynchronously. Failures are logged.
   pub fn save(&mut self, cx: &mut Context<Self>) {
     cx.spawn(async move |this, cx| {
       if let Some(this) = this.upgrade()
         && let Err(err) = this.update(cx, |this, cx| {
-        let project = this.to_file(cx);
-        project.save(&this.path).map_err(ProjectError::from)?;
-        // Update the 'modified' attribute if save was successful
-        this.modified = project.modified;
-        Ok::<(), ProjectError>(())
-      })
+          let project = this.to_file(cx);
+          project.save(&this.path).map_err(ProjectError::from)?;
+          // Update the 'modified' attribute if save was successful
+          this.modified = project.modified;
+          Ok::<(), ProjectError>(())
+        })
       {
         error!("Failed to save project file: {}", err);
       }
     })
-      .detach();
+    .detach();
   }
 
   pub(super) fn metadata(&self, cx: &App) -> FileProjectMetadata {
+    let (opened_tree_nodes, opened_editor_nodes, active_editor_index) = self.tests.read_with(cx, |tests, _| {
+      (
+        tests.opened_tree_nodes().clone(),
+        tests.opened_editor_nodes().clone(),
+        tests.active_editor_tab_index(),
+      )
+    });
     FileProjectMetadata {
       path: self.path.clone(),
       active_profile: self.active_profile,
-      opened_tree_nodes: self.tests.read(cx).opened_tree_nodes().clone(),
+      opened_tree_nodes,
+      editor_tabs: opened_editor_nodes,
+      active_editor_tab_index: active_editor_index,
     }
   }
 
@@ -189,11 +188,7 @@ impl Project {
     // Check if the currently active profile has been deleted
     if let ProjectVariablesEvent::ProfilesChanged = e
       && let Some(active_profile) = self.active_profile
-      && !project_vars
-      .read(cx)
-      .profiles
-      .iter()
-      .any(|p| p.id == active_profile)
+      && !project_vars.read(cx).profiles.iter().any(|p| p.id == active_profile)
     {
       self.active_profile = None;
       cx.emit(ProjectEvent::ActiveProfile(self.active_profile));
@@ -202,18 +197,24 @@ impl Project {
     self.save(cx);
   }
 
-  fn on_tests_event(
-    &mut self,
-    _tests: Entity<TestsContainer>,
-    event: &TestsContainerEvent,
-    cx: &mut Context<Self>,
-  ) {
+  fn on_tests_event(&mut self, _tests: Entity<TestsContainer>, event: &TestsContainerEvent, cx: &mut Context<Self>) {
     match event {
-      TestsContainerEvent::TestsModified => {
+      // Trigger project save
+      TestsContainerEvent::TestsModified
+      | TestsContainerEvent::TestAdded(_)
+      | TestsContainerEvent::TestRenamed(_, _, _)
+      | TestsContainerEvent::TestMoved(_, _)
+      | TestsContainerEvent::TestRemoved(_) => {
         self.save(cx);
-        cx.emit(ProjectEvent::TestTree);
-      }
-      TestsContainerEvent::TreeNodesChanged => cx.emit(ProjectEvent::TestTreeNodes),
+        cx.emit(ProjectEvent::TestTreeData)
+      },
+      // Trigger workspace save
+      TestsContainerEvent::ConfigChanged
+      | TestsContainerEvent::TestOpenInEditor(_)
+      | TestsContainerEvent::TestClosedInEditor(_)
+      | TestsContainerEvent::EditorActiveTabIndex(_) => cx.emit(ProjectEvent::ProjectConfigChanged),
+      // Internal messages, ignore
+      TestsContainerEvent::RequestOpenInEditor(_) => {}
     }
   }
 }

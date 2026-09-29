@@ -3619,6 +3619,7 @@ dependencies = [
  "chrono",
  "gpui-kit",
  "serde",
+ "uuid",
 ]
 
 [[package]]

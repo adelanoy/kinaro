@@ -1,8 +1,10 @@
 mod components;
+mod editor;
 mod side_bar;
 mod title_bar;
 
 use crate::actions::{CreateProject, OpenProject};
+use crate::ui::editor::Editor;
 use crate::ui::side_bar::{ProjectPanelDescriptor, ProjectSidebar};
 use crate::ui::title_bar::AppTitleBar;
 use gpui_kit::component::button::{Button, ButtonVariants, Toggle, ToggleVariants};
@@ -12,17 +14,36 @@ use gpui_kit::component::form::{field, v_form};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::resizable::{h_resizable, resizable_panel};
-use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{ActiveTheme, Disableable, Icon, IconName, Root, Sizable, Size, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
   App, AppContext, Axis, ClickEvent, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
   PathPromptOptions, Render, SharedString, Styled, Subscription, Window, div, px,
 };
+use ki_assets::icon::IconAsset;
 use ki_settings::app_state::AppState;
 use ki_workspace::project::PROJECT_FILE_EXT;
 use ki_workspace::{Workspace, WorkspaceEvent};
 use std::path::PathBuf;
+
+/// The display-relevant shape of a [`ProjectTreeNode`]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectTestNodeKind {
+  Suite,
+  Case,
+  CaseStep,
+  Step,
+}
+
+impl ProjectTestNodeKind {
+  pub fn icon(&self) -> Icon {
+    match self {
+      ProjectTestNodeKind::Suite => Icon::new(IconAsset::TestSuite),
+      ProjectTestNodeKind::Case => Icon::new(IconAsset::TestCase),
+      ProjectTestNodeKind::CaseStep | ProjectTestNodeKind::Step => Icon::new(IconAsset::TestStep),
+    }
+  }
+}
 
 pub struct WorkspaceView {
   workspace: Entity<Workspace>,
@@ -31,6 +52,7 @@ pub struct WorkspaceView {
   project_panel_descriptors: Vec<ProjectPanelDescriptor>,
   sidebar_collapsed: bool,
   sidebar_width: f32,
+  editor: Option<Entity<Editor>>,
   focus_handle: FocusHandle,
   _workspace_sub: Subscription,
 }
@@ -46,15 +68,7 @@ impl WorkspaceView {
     let workspace = cx.new(Workspace::init);
     let _workspace_sub = cx.subscribe_in(&workspace, window, |this, workspace, event, window, cx| {
       if let WorkspaceEvent::ActiveProjectChanged = event {
-        let selected_panel = AppState::read(cx, |app_state| app_state.sidebar.selected_panel);
-        this.project_sidebar = workspace
-          .read(cx)
-          .active_project()
-          .map(|project| cx.new(|cx| ProjectSidebar::new(project.clone(), selected_panel, window, cx)));
-        this.project_panel_descriptors = this.project_sidebar
-          .as_ref()
-          .map(|sidebar| sidebar.read_with(cx, |sidebar, cx| sidebar.panel_descriptors(cx)))
-          .unwrap_or(vec![]);
+        this.load_project(workspace, window, cx);
         cx.notify();
       }
     });
@@ -66,19 +80,10 @@ impl WorkspaceView {
     let sidebar_state = AppState::read(cx, |app_state| app_state.sidebar);
     let sidebar_collapsed = sidebar_state.collapsed;
     let mut sidebar_width = sidebar_state.width;
-    let selected_panel = sidebar_state.selected_panel;
     let max_sidebar_width = window.bounds().size.width.as_f32() * 0.8;
     if sidebar_width > max_sidebar_width {
       sidebar_width = max_sidebar_width;
     }
-    let project_sidebar = workspace
-      .read(cx)
-      .active_project()
-      .map(|project| cx.new(|cx| ProjectSidebar::new(project.clone(), selected_panel, window, cx)));
-    let project_panel_descriptors = project_sidebar
-      .as_ref()
-      .map(|sidebar| sidebar.read_with(cx, |sidebar, cx| sidebar.panel_descriptors(cx)))
-      .unwrap_or(vec![]);
 
     // Check if any project failed to load. If there is display a notif at end of render cycle
     let project_errors = workspace.read(cx).all_failed_projects();
@@ -100,17 +105,39 @@ impl WorkspaceView {
     let focus_handle = cx.focus_handle();
     window.focus(&focus_handle, cx);
 
-    Self {
-      workspace,
+    let mut workspace_view = Self {
+      workspace: workspace.clone(),
       title_bar,
-      project_sidebar,
-      project_panel_descriptors,
+      project_sidebar: None,
+      project_panel_descriptors: vec![],
       sidebar_collapsed,
       sidebar_width,
+      editor: None,
       focus_handle,
       _workspace_sub,
-    }
+    };
+    workspace_view.load_project(&workspace, window, cx);
+    workspace_view
   }
+
+  fn load_project(&mut self, workspace: &Entity<Workspace>, window: &mut Window, cx: &mut Context<WorkspaceView>) {
+    let selected_panel = AppState::read(cx, |app_state| app_state.sidebar.selected_panel);
+    self.project_sidebar = workspace
+      .read(cx)
+      .active_project()
+      .map(|project| cx.new(|cx| ProjectSidebar::new(project.clone(), selected_panel, window, cx)));
+    self.project_panel_descriptors = self
+      .project_sidebar
+      .as_ref()
+      .map(|sidebar| sidebar.read_with(cx, |sidebar, cx| sidebar.panel_descriptors(cx)))
+      .unwrap_or(vec![]);
+
+    self.editor = workspace
+      .read(cx)
+      .active_project()
+      .map(|project| cx.new(|cx| Editor::new(project.clone(), window, cx)));
+  }
+
   fn on_action_create_project(&mut self, _: &CreateProject, window: &mut Window, cx: &mut Context<Self>) {
     let workspace = self.workspace.clone();
     let name_input = cx.new(|cx| InputState::new(window, cx));
@@ -208,7 +235,7 @@ impl WorkspaceView {
     .detach();
   }
 
-  fn sidebar_toggle(&self, cx: &mut Context<Self>) -> Vec<impl IntoElement> {
+  fn sidebar_toggles(&self, cx: &mut Context<Self>) -> Vec<impl IntoElement> {
     let settings_panel = AppState::read(cx, |app_state| app_state.sidebar.selected_panel);
     self
       .project_panel_descriptors
@@ -264,7 +291,7 @@ impl Render for WorkspaceView {
             project_active,
             |this| {
               this
-                .child(v_flex().h_full().p_1().gap_y_1().children(self.sidebar_toggle(cx)))
+                .child(v_flex().h_full().p_1().gap_y_1().children(self.sidebar_toggles(cx)))
                 .child(
                   h_resizable("kinaro-main-view")
                     .on_resize({
@@ -285,36 +312,7 @@ impl Render for WorkspaceView {
                         .size_range(px(250.0)..max_sidebar_width)
                         .child(self.project_sidebar.clone().unwrap()),
                     )
-                    .child(
-                      v_flex()
-                        .size_full()
-                        .child(
-                          h_flex().gap_x_2().px_2().pt_1().child(
-                            TabBar::new("tabs")
-                              .selected_index(0)
-                              .child(
-                                Tab::new()
-                                  .label("Custom Tab")
-                                  .suffix(
-                                    Button::new("inbox")
-                                      .ghost()
-                                      .xsmall()
-                                      .icon(IconName::Close)
-                                      .on_click(|_, _, cx| {
-                                        println!("Button close tab clicked");
-                                        cx.stop_propagation();
-                                      }),
-                                  )
-                                  .on_click(|_, _, _| {
-                                    println!("Custom tab clicked");
-                                  }),
-                              )
-                              .child(Tab::new().label("Profile"))
-                              .child(Tab::new().label("Settings")),
-                          ),
-                        )
-                        .into_any_element(),
-                    ),
+                    .child(self.editor.clone().unwrap().into_any_element()),
                 )
             },
             |this| {
