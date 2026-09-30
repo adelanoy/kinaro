@@ -206,13 +206,10 @@ impl AppState {
           serde_json::from_slice::<AppState>(&file)
             .map_err(|err| SettingsError::ReadJson(err.to_string()))
         });
-      match settings {
-        Err(err) => {
-          error!("Failed to load window settings: {err}. Reverting to default");
-          AppState::default()
-        }
-        Ok(state) => state,
-      }
+      settings.unwrap_or_else(|err| {
+        error!("Failed to load window settings: {err}. Reverting to default");
+        AppState::default()
+      })
     } else {
       AppState::default()
     }
