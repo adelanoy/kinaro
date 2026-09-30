@@ -32,11 +32,7 @@ impl GlobalSettings {
 
   /// Update the app state and save the file.
   /// Throttle the saving of the file every 500ms
-  pub fn update_app_state(
-    &mut self,
-    cx: &mut App,
-    update: impl FnOnce(&mut AppState, &mut App) -> bool,
-  ) {
+  pub fn update_app_state(&mut self, cx: &mut App, update: impl FnOnce(&mut AppState, &mut App) -> bool) {
     if !update(&mut self.app_state, cx) {
       return;
     }
@@ -45,9 +41,7 @@ impl GlobalSettings {
     }
 
     self.app_state_save_task_queued = Some(cx.spawn(async move |cx| {
-      cx.background_executor()
-        .timer(Duration::from_millis(500))
-        .await;
+      cx.background_executor().timer(Duration::from_millis(500)).await;
       cx.update_global(|settings: &mut GlobalSettings, _cx| {
         settings.app_state.save(&settings.config_dir);
         settings.app_state_save_task_queued.take();

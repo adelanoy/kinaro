@@ -4,9 +4,9 @@ use crate::test::{TestsContainer, TestsContainerEvent};
 use crate::variable::{ProjectVariables, ProjectVariablesEvent};
 use crate::{FileProjectMetadata, Workspace};
 use chrono::{DateTime, Local};
-use gpui_kit::{App, AppContext, Context, Entity, EventEmitter, SharedString, Subscription};
+use gpui_kit::{App, AppContext, Context, Entity, EventEmitter, SharedString, Subscription, Task};
 use ki_project::ProjectFile;
-use log::error;
+use log::{debug, error};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -37,35 +37,14 @@ pub struct Project {
   _variables_event_sub: Subscription,
   _tests_event_sub: Subscription,
   active_profile: Option<Uuid>,
+  /// Save throttle handle
+  save_task_queued: Option<Task<()>>,
 }
 
 impl Project {
   #[inline]
   pub fn active_profile(&self) -> Option<Uuid> {
     self.active_profile
-  }
-
-  /// Change the currently active profile. A no-op when `profile_id` is already active or doesn't
-  /// address an existing profile.
-  ///
-  /// # Events
-  /// Emits a [`ProjectEvent::ActiveProfile`] if active profile was successfully changed
-  pub fn switch_profile(&mut self, profile_id: Option<Uuid>, cx: &mut Context<Self>) {
-    if profile_id == self.active_profile {
-      return;
-    }
-    match profile_id {
-      None => {
-        self.active_profile = None;
-        cx.emit(ProjectEvent::ActiveProfile(None));
-      }
-      Some(profile_id) => {
-        if self.variables.read(cx).profiles.iter().any(|p| p.id == profile_id) {
-          self.active_profile = Some(profile_id);
-          cx.emit(ProjectEvent::ActiveProfile(self.active_profile));
-        }
-      }
-    }
   }
 
   pub(super) fn load(metadata: &FileProjectMetadata, cx: &mut Context<Workspace>) -> ProjectResult<Entity<Self>> {
@@ -81,6 +60,8 @@ impl Project {
       error
     })?;
     let this = cx.new(|cx| {
+      Self::register_quit_callback(path, cx);
+
       let variables = cx.new(|_| ProjectVariables::from_file(file_project.variables));
       let _variables_event_sub = cx.subscribe(&variables, Self::on_profiles_variables_event);
       let endpoints = WorkspaceEndpoint::from_file(&file_project.endpoints);
@@ -100,6 +81,7 @@ impl Project {
         _tests_event_sub,
         active_profile,
         path: path.to_owned(),
+        save_task_queued: None,
       }
     });
 
@@ -107,6 +89,8 @@ impl Project {
   }
 
   pub(super) fn new(path: PathBuf, name: SharedString, cx: &mut Context<Self>) -> Self {
+    Self::register_quit_callback(&path, cx);
+
     let variables = cx.new(|_| Default::default());
     let _variables_event_sub = cx.subscribe(&variables, Self::on_profiles_variables_event);
     let tests = cx.new(|_| Default::default());
@@ -122,27 +106,11 @@ impl Project {
       _tests_event_sub,
       tests,
       active_profile: None,
+      save_task_queued: None,
     };
     this.save(cx);
-    this
-  }
 
-  /// Saves the project to its file, asynchronously. Failures are logged.
-  pub fn save(&mut self, cx: &mut Context<Self>) {
-    cx.spawn(async move |this, cx| {
-      if let Some(this) = this.upgrade()
-        && let Err(err) = this.update(cx, |this, cx| {
-          let project = this.to_file(cx);
-          project.save(&this.path).map_err(ProjectError::from)?;
-          // Update the 'modified' attribute if save was successful
-          this.modified = project.modified;
-          Ok::<(), ProjectError>(())
-        })
-      {
-        error!("Failed to save project file: {}", err);
-      }
-    })
-    .detach();
+    this
   }
 
   pub(super) fn metadata(&self, cx: &App) -> FileProjectMetadata {
@@ -159,23 +127,6 @@ impl Project {
       opened_tree_nodes,
       editor_tabs: opened_editor_nodes,
       active_editor_tab_index: active_editor_index,
-    }
-  }
-
-  fn to_file(&self, cx: &Context<Self>) -> ProjectFile {
-    let variables = self.variables.read(cx).to_file();
-    let endpoints = self.endpoints.iter().map(|e| e.to_file()).collect();
-    let tests = self.tests.read(cx).to_file();
-    let modified = Local::now();
-
-    ProjectFile {
-      name: self.name.to_string(),
-      version: 1,
-      created: self.created,
-      modified,
-      variables,
-      endpoints,
-      tests,
     }
   }
 
@@ -207,7 +158,7 @@ impl Project {
       | TestsContainerEvent::TestRemoved(_) => {
         self.save(cx);
         cx.emit(ProjectEvent::TestTreeData)
-      },
+      }
       // Trigger workspace save
       TestsContainerEvent::ConfigChanged
       | TestsContainerEvent::TestOpenInEditor(_)
@@ -215,6 +166,100 @@ impl Project {
       | TestsContainerEvent::EditorActiveTabIndex(_) => cx.emit(ProjectEvent::ProjectConfigChanged),
       // Internal messages, ignore
       TestsContainerEvent::RequestOpenInEditor(_) => {}
+    }
+  }
+
+  /// Register a callback on app quitting to force save the project file
+  fn register_quit_callback(path: &PathBuf, cx: &mut Context<Self>) {
+    cx.on_app_quit({
+      let path = path.to_owned();
+      move |this, cx| {
+        this.save_task_queued = None;
+        let bytes = this.to_file(cx);
+        cx.background_executor().spawn({
+          debug!("Save project file on quit to {}", path.to_string_lossy());
+          let path = path.clone();
+          async move {
+            _ = bytes.save(&path);
+          }
+        })
+      }
+    })
+      .detach();
+  }
+
+  fn to_file(&self, cx: &App) -> ProjectFile {
+    let variables = self.variables.read(cx).to_file();
+    let endpoints = self.endpoints.iter().map(|e| e.to_file()).collect();
+    let tests = self.tests.read(cx).to_file();
+    let modified = Local::now();
+
+    ProjectFile {
+      name: self.name.to_string(),
+      version: 1,
+      created: self.created,
+      modified,
+      variables,
+      endpoints,
+      tests,
+    }
+  }
+
+  /// Saves the project to its file, asynchronously. Failures are logged.
+  pub fn save(&mut self, cx: &mut Context<Self>) {
+    if self.save_task_queued.is_some() {
+      return;
+    }
+    let path = self.path.clone();
+    self.save_task_queued = Some(cx.spawn(async move |this, cx| {
+      let file = this
+        .read_with(cx, |this, cx| this.to_file(cx))
+        .map_err(|e| ProjectError::Io(e.to_string()));
+      let result = match file {
+        Ok(file) => cx
+          .background_executor()
+          .spawn({
+            let path = path.clone();
+            async move { file.save(&path) }
+          })
+          .await
+          .map_err(ProjectError::from),
+        Err(err) => Err(err),
+      };
+      match result {
+        Ok(date_time_modified) => {
+          _ = this.update(cx, |this, _| this.modified = date_time_modified);
+          debug!("Saved project file to {}", path.to_string_lossy())
+        }
+        Err(err) => error!("Error while saving project file: {:?}", err),
+      }
+
+      _ = this.update(cx, |this, _| {
+        this.save_task_queued.take();
+      });
+    }));
+  }
+
+  /// Change the currently active profile. A no-op when `profile_id` is already active or doesn't
+  /// address an existing profile.
+  ///
+  /// # Events
+  /// Emits a [`ProjectEvent::ActiveProfile`] if active profile was successfully changed
+  pub fn switch_profile(&mut self, profile_id: Option<Uuid>, cx: &mut Context<Self>) {
+    if profile_id == self.active_profile {
+      return;
+    }
+    match profile_id {
+      None => {
+        self.active_profile = None;
+        cx.emit(ProjectEvent::ActiveProfile(None));
+      }
+      Some(profile_id) => {
+        if self.variables.read(cx).profiles.iter().any(|p| p.id == profile_id) {
+          self.active_profile = Some(profile_id);
+          cx.emit(ProjectEvent::ActiveProfile(self.active_profile));
+        }
+      }
     }
   }
 }

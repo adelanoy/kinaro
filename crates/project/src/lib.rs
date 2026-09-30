@@ -4,14 +4,14 @@ mod test;
 mod variable;
 
 pub use {
-    endpoint::{FileEndpoint, FileRestParameter, HttpMethod},
-    error::ProjectFileError,
-    ki_project::ProjectFile,
-    test::{
-      FileTestMetadata, FileTestsContainer, test_case::FileTestCase, test_step::FileTestStep, test_case::FileTestCaseType,
-      test_suite::FileTestSuite,
+  endpoint::{FileEndpoint, FileRestParameter, HttpMethod},
+  error::ProjectFileError,
+  ki_project::ProjectFile,
+  test::{
+    FileTestMetadata, FileTestsContainer, test_case::FileTestCase, test_case::FileTestCaseType, test_step::FileTestStep,
+    test_suite::FileTestSuite,
   },
-    variable::{FileProfile, FileProjectVariables, FileVariable, FileVariableKind},
+  variable::{FileProfile, FileProjectVariables, FileVariable, FileVariableKind},
 };
 
 mod ki_project {
@@ -21,7 +21,6 @@ mod ki_project {
   use crate::variable::FileProjectVariables;
   use chrono::{DateTime, Local};
   use ki_utils::java_date_format;
-  use log::debug;
   use serde::{Deserialize, Serialize};
   use std::fs;
   use std::path::{Path, PathBuf};
@@ -58,24 +57,16 @@ mod ki_project {
     pub fn load(path: &Path) -> Result<ProjectFile> {
       check_project_path(path, true)
         .and_then(|()| fs::read(path).map_err(ProjectFileError::Io))
-        .and_then(|file| {
-          serde_json::from_slice::<ProjectFile>(&file)
-            .map_err(|err| ProjectFileError::Read(err.to_string()))
-        })
+        .and_then(|file| serde_json::from_slice::<ProjectFile>(&file).map_err(|err| ProjectFileError::Read(err.to_string())))
     }
 
-    pub fn save(&self, path: &PathBuf) -> Result<()> {
-      debug!(
-                "Saving project file {} to {}",
-                self.name,
-                path.to_string_lossy()
-            );
-      fs::File::create(path)
-        .map_err(ProjectFileError::from)
-        .and_then(|file| {
-          serde_json::to_writer_pretty(file, &self)
-            .map_err(|err| ProjectFileError::Write(err.to_string()))
-        })
+    pub fn save(&self, path: &PathBuf) -> Result<DateTime<Local>> {
+      fs::File::create(path).map_err(ProjectFileError::from).and_then(|file| {
+        let date_time = self.modified;
+        serde_json::to_writer_pretty(file, &self)
+          .map_err(|err| ProjectFileError::Write(err.to_string()))
+          .map(|()| date_time)
+      })
     }
   }
 

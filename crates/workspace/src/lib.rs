@@ -1,5 +1,5 @@
 use crate::error::{ProjectError, WorkspaceError, WorkspaceResult};
-use gpui_kit::{App, Entity, EventEmitter, SharedString, Subscription};
+use gpui_kit::{App, Entity, EventEmitter, SharedString, Subscription, Task};
 use gpui_kit::{AppContext, Context};
 use ki_settings::GlobalSettings;
 use ki_utils::TestPath;
@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use uuid::Uuid;
 
 pub mod endpoint;
@@ -78,6 +79,8 @@ pub enum WorkspaceEvent {
 pub struct Workspace {
   active_project: Option<PathBuf>,
   workspace_projects: HashMap<PathBuf, WorkspaceProject>,
+  /// Save throttle handle
+  save_task_queued: Option<Task<()>>,
 }
 
 impl Workspace {
@@ -89,7 +92,8 @@ impl Workspace {
   /// If the active project path read from the workspace file points to a non-existant project file, or if the file failed to load, the active project is
   /// set to *None*
   pub fn init(cx: &mut Context<Self>) -> Self {
-    let file_path = cx.read_global(|settings: &GlobalSettings, _| settings.config_dir.join(WORKSPACES_FILENAME));
+    let config_dir = cx.read_global(|settings: &GlobalSettings, _| settings.config_dir.clone());
+    let file_path = config_dir.join(WORKSPACES_FILENAME);
 
     let WorkspaceFile {
       active_project,
@@ -123,9 +127,23 @@ impl Workspace {
       },
     };
 
+    // Create a strong entity ref on the app, otherwise, the only entity is in the WorkspaceView and is dropped before this callback
+    let this = cx.entity();
+    App::on_app_quit(cx, move |cx| {
+      let config_dir = cx.read_global(|settings: &GlobalSettings, _| settings.config_dir.clone());
+      let bytes = this.read(cx).serialize(cx);
+      cx.background_executor().spawn(async move {
+        _ = bytes
+          .and_then(|bytes| Self::write_to_disk(&config_dir, &bytes))
+          .map(|path| debug!("Save workspace file on quit to {}", path.to_string_lossy()));
+      })
+    })
+    .detach();
+
     Workspace {
       active_project,
       workspace_projects,
+      save_task_queued: None,
     }
   }
 
@@ -323,28 +341,57 @@ impl Workspace {
     self.save(cx);
   }
 
-  /// Saves the workspace file in a background thread
-  fn save(&self, cx: &mut Context<Self>) {
-    let config_dir = cx.read_global(|settings: &GlobalSettings, _| settings.config_dir.clone());
-    let file_path = config_dir.join(WORKSPACES_FILENAME);
+  /// Saves the workspace file in a background thread. Saves are throttled to trigger once every 500ms in case of rapid succession of calls
+  fn save(&mut self, cx: &mut Context<Self>) {
+    if self.save_task_queued.is_some() {
+      return;
+    }
 
-    cx.spawn(async move |this, cx| {
-      _ = this.read_with(cx, |this, cx| {
-        if let Err(err) = fs::create_dir_all(&*config_dir)
-          .map_err(|e| WorkspaceError::Io(e.to_string()))
-          .and_then(|_| fs::File::create(&file_path).map_err(|e| WorkspaceError::Io(e.to_string())))
-          .and_then(|file| {
-            let file_content = this.to_file(cx);
-            serde_json::to_writer_pretty(file, &file_content).map_err(WorkspaceError::Write)
-          })
-        {
-          error!("Error while saving workspace file: {:?}", err);
-        } else {
-          debug!("Saving workspace to {}", file_path.to_string_lossy());
+    let config_dir = cx.read_global(|settings: &GlobalSettings, _| settings.config_dir.clone());
+    self.save_task_queued = Some(cx.spawn(async move |this, cx| {
+      cx.background_executor().timer(Duration::from_millis(500)).await;
+
+      let bytes = this
+        .read_with(cx, |this, cx| this.serialize(cx))
+        .map_err(|e| WorkspaceError::Io(e.to_string()))
+        .and_then(|res| res);
+
+      let result = match bytes {
+        Ok(bytes) => {
+          cx.background_executor()
+            .spawn(async move { Self::write_to_disk(&config_dir, &bytes) })
+            .await
         }
+        Err(err) => Err(err),
+      };
+      match result {
+        Ok(path) => debug!("Saved workspace to {}", path.to_string_lossy()),
+        Err(err) => error!("Error while saving workspace file: {:?}", err),
+      }
+      _ = this.update(cx, |this, _| {
+        this.save_task_queued.take();
       });
-    })
-    .detach();
+    }));
+  }
+
+  /// Serializes the workspace to its pretty-printed JSON representation
+  ///
+  /// # Errors
+  /// Returns a [`WorkspaceError::Write`] if the serialization fails
+  fn serialize(&self, cx: &App) -> WorkspaceResult<Vec<u8>> {
+    serde_json::to_vec_pretty(&self.to_file(cx)).map_err(WorkspaceError::Write)
+  }
+
+  /// Writes the given bytes to the workspace file, creating the config directory if needed.
+  ///
+  /// # Errors
+  /// Returns a [`WorkspaceError::Io`] if the directory or the file could not be written
+  fn write_to_disk(config_dir: &Path, bytes: &[u8]) -> WorkspaceResult<PathBuf> {
+    let file_path = config_dir.join(WORKSPACES_FILENAME);
+    fs::create_dir_all(config_dir)
+      .and_then(|_| fs::write(&file_path, bytes))
+      .map(|_| file_path)
+      .map_err(|e| WorkspaceError::Io(e.to_string()))
   }
 
   /// Switch the active project to the one referenced by the given path
