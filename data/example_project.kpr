@@ -1,8 +1,8 @@
 {
   "name": "example_project",
   "version": 1,
-  "created": "2026-09-13T15:43:12",
-  "modified": "2026-10-01T11:04:28",
+  "created": "2026-09-13T07:43:12",
+  "modified": "2026-10-01T16:52:42",
   "variables": {
     "variables": [
       {
@@ -24,8 +24,8 @@
         "kind": "Text",
         "value": "8080",
         "overrides": {
-          "b929fd98-c721-44bf-9e0a-0860c732a2db": "8443",
-          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "443"
+          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "443",
+          "b929fd98-c721-44bf-9e0a-0860c732a2db": "8443"
         }
       },
       {
@@ -36,8 +36,8 @@
         "value": "admin",
         "overrides": {
           "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "svc-prod",
-          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "admin",
-          "b929fd98-c721-44bf-9e0a-0860c732a2db": "svc-test"
+          "b929fd98-c721-44bf-9e0a-0860c732a2db": "svc-test",
+          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "admin"
         }
       },
       {

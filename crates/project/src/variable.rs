@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -16,7 +16,7 @@ pub struct FileVariable {
   pub description: String,
   pub kind: FileVariableKind,
   pub value: String,
-  pub overrides: HashMap<Uuid, String>,
+  pub overrides: BTreeMap<Uuid, String>,
 }
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Copy, Clone, Debug)]
