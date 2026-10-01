@@ -1,3 +1,4 @@
+use crate::test::test_step::FileStepData;
 use crate::test::{FileTestMetadata, test_step::FileTestStep};
 use serde::{Deserialize, Serialize};
 
@@ -5,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type")]
 pub enum FileTestCaseType {
   CaseMulti { steps: Vec<FileTestStep> },
-  CaseStep { data: String },
+  CaseStep { data: FileStepData },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -1,4 +1,6 @@
 use crate::error::{ProjectError, ProjectResult};
+use crate::test::step_delay::DelayStep;
+use crate::test::test_step::StepData;
 use crate::test::{TestMetadata, TestPath, test_step::TestStep};
 use gpui_kit::SharedString;
 use ki_project::{FileTestCase, FileTestCaseType};
@@ -11,13 +13,13 @@ pub enum TestCaseType {
   /// A case that owns its own list of steps.
   CaseMulti { steps: Vec<TestStep> },
   /// A case level step, so that it can be positioned directly under a suite
-  CaseStep { data: String },
+  CaseStep { data: StepData },
 }
 
 /// A test case: either a [`TestCaseType::CaseMulti`] holding its own steps,
 /// or a [`TestCaseType::CaseStep`] (a case level step).
 ///
-/// Cases are created with [`TestCase::new_multi`] / [`TestCase::new_step`], or
+/// Cases are created with [`TestCase::new_multi`] / [`TestCase::new_step_delay`], or
 /// loaded from their on-disk representation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestCase {
@@ -41,13 +43,13 @@ impl TestCase {
         let name = ki_utils::next_available_name("New Step", steps.iter().map(|step| step.meta.name.clone()));
         let path = match position {
           Some(ix) => {
-            let new_step = TestStep::new(path.suite_id(), self.meta.id(), name);
+            let new_step = TestStep::new_delay(path.suite_id(), self.meta.id(), name);
             let path = new_step.meta.path;
             steps.insert(ix + 1, new_step);
             path
           }
           None => {
-            let new_step = TestStep::new(path.suite_id(), self.meta.id(), name);
+            let new_step = TestStep::new_delay(path.suite_id(), self.meta.id(), name);
             let path = new_step.meta.path;
             steps.push(new_step);
             path
@@ -167,7 +169,7 @@ impl TestCase {
       },
       FileTestCaseType::CaseStep { data } => Self {
         meta: info,
-        case_type: TestCaseType::CaseStep { data },
+        case_type: TestCaseType::CaseStep { data: data.into() },
       },
     }
   }
@@ -193,7 +195,7 @@ impl TestCase {
         TestCaseType::CaseMulti { steps } => FileTestCaseType::CaseMulti {
           steps: steps.iter().map(|step| step.get_file()).collect(),
         },
-        TestCaseType::CaseStep { data } => FileTestCaseType::CaseStep { data: data.clone() },
+        TestCaseType::CaseStep { data } => FileTestCaseType::CaseStep { data: data.into() },
       },
     }
   }
@@ -249,9 +251,9 @@ impl TestCase {
     }
   }
 
-  /// Creates a new [`TestCaseType::CaseStep`] with empty data and a freshly
-  /// generated id.
-  pub fn new_step(suite_id: Uuid, name: SharedString) -> Self {
+  /// Creates a new [`TestCaseType::CaseStep`] holding a delay step of 1000 ms,
+  /// with a freshly generated id.
+  pub fn new_step_delay(suite_id: Uuid, name: SharedString) -> Self {
     Self {
       meta: TestMetadata {
         path: TestPath::Case(suite_id, Uuid::new_v4()),
@@ -259,7 +261,9 @@ impl TestCase {
         description: None,
         disabled: false,
       },
-      case_type: TestCaseType::CaseStep { data: "".to_string() },
+      case_type: TestCaseType::CaseStep {
+        data: StepData::Delay(DelayStep(1000)),
+      },
     }
   }
 
@@ -347,10 +351,11 @@ impl TestCase {
 mod tests {
   use crate::error::ProjectError;
   use crate::test::TestPath;
+  use crate::test::step_delay::DelayStep;
   use crate::test::test_case::{TestCase, TestCaseType};
-  use crate::test::test_step::TestStep;
+  use crate::test::test_step::{StepData, TestStep};
   use gpui_kit::SharedString;
-  use ki_project::{FileTestCase, FileTestCaseType, FileTestMetadata, FileTestStep};
+  use ki_project::{FileDelayStep, FileStepData, FileTestCase, FileTestCaseType, FileTestMetadata, FileTestStep};
   use uuid::Uuid;
 
   /// A multi-step case holding two steps, built through [`TestCase::from_file`]
@@ -385,11 +390,11 @@ mod tests {
           steps: vec![
             FileTestStep {
               info: file_info(step_a_id, "step a"),
-              data: String::new(),
+              data: FileStepData::Delay(FileDelayStep(1000)),
             },
             FileTestStep {
               info: file_info(step_b_id, "step b"),
-              data: String::new(),
+              data: FileStepData::Delay(FileDelayStep(1000)),
             },
           ],
         },
@@ -421,7 +426,7 @@ mod tests {
       FileTestCase {
         info: file_info(case_id, "case step"),
         case_type: FileTestCaseType::CaseStep {
-          data: "payload".to_string(),
+          data: FileStepData::Delay(FileDelayStep(1000)),
         },
       },
       suite_id,
@@ -520,7 +525,7 @@ mod tests {
     assert_eq!(dup.meta.name, SharedString::new("case step copy"));
     assert_ne!(dup.meta.id(), f.case_id);
     match dup.case_type() {
-      TestCaseType::CaseStep { data } => assert_eq!(data, "payload"),
+      TestCaseType::CaseStep { data } => assert!(matches!(data, StepData::Delay(_))),
       TestCaseType::CaseMulti { .. } => panic!("expected a CaseStep"),
     }
   }
@@ -651,12 +656,12 @@ mod tests {
   }
 
   #[test]
-  fn new_case_step_creates_empty_data() {
+  fn new_case_step_delay_creates_1000_delay() {
     let suite_id = Uuid::new_v4();
-    let case = TestCase::new_step(suite_id, SharedString::new("new case step"));
+    let case = TestCase::new_step_delay(suite_id, SharedString::new("new case step"));
     assert_eq!(case.meta.name, SharedString::new("new case step"));
     assert!(matches!(case.meta.path(), TestPath::Case(suite, _) if suite == suite_id));
-    assert!(matches!(case.case_type(), TestCaseType::CaseStep { data } if data.is_empty()));
+    assert!(matches!(case.case_type(), TestCaseType::CaseStep { data } if matches!(data, StepData::Delay(DelayStep(1000)))));
     assert!(case.is_case_step());
   }
 
@@ -673,7 +678,7 @@ mod tests {
   fn from_step_promotes_a_step_to_a_case_step_keeping_its_id() {
     let suite_id = Uuid::new_v4();
     let other_suite_id = Uuid::new_v4();
-    let step = TestStep::new(suite_id, Uuid::new_v4(), SharedString::new("a step"));
+    let step = TestStep::new_delay(suite_id, Uuid::new_v4(), SharedString::new("a step"));
     let step_id = step.meta.id();
 
     let case = TestCase::from_step(step, other_suite_id);
@@ -682,7 +687,7 @@ mod tests {
     assert_eq!(case.meta.id(), step_id);
     assert_eq!(case.meta.name, SharedString::new("a step"));
     assert!(matches!(case.meta.path(), TestPath::Case(suite, id) if suite == other_suite_id && id == step_id));
-    assert!(matches!(case.case_type(), TestCaseType::CaseStep { data } if data.is_empty()));
+    assert!(matches!(case.case_type(), TestCaseType::CaseStep { data } if matches!(data, StepData::Delay(DelayStep(1000)))));
   }
 
   #[test]
@@ -756,7 +761,7 @@ mod tests {
 
     assert_eq!(steps.len(), 1);
     assert_eq!(steps[0].meta.name, SharedString::new("case step"));
-    assert_eq!(steps[0].data, "payload");
+    assert!(matches!(steps[0].data, StepData::Delay(DelayStep(1000))));
     assert_eq!(steps[0].meta.path(), TestPath::Step(f.suite_id, f.case_id, f.case_id));
   }
 }

@@ -6,7 +6,12 @@ pub use {
   error::ProjectFileError,
   ki_project::ProjectFile,
   test::{
-    FileTestMetadata, FileTestsContainer, test_case::FileTestCase, test_case::FileTestCaseType, test_step::FileTestStep,
+    FileTestMetadata, FileTestsContainer,
+    step_delay::FileDelayStep,
+    step_rest::*,
+    test_case::FileTestCase,
+    test_case::FileTestCaseType,
+    test_step::{FileStepData, FileTestStep},
     test_suite::FileTestSuite,
   },
   variable::{FileProfile, FileProjectVariables, FileVariable, FileVariableKind},

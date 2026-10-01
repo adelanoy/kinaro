@@ -8,6 +8,8 @@ use log::warn;
 use std::collections::HashSet;
 use uuid::Uuid;
 
+pub mod step_delay;
+pub mod step_rest;
 pub mod test_case;
 pub mod test_step;
 pub mod test_suite;
@@ -806,11 +808,16 @@ impl EventEmitter<TestsContainerEvent> for TestsContainer {}
 #[cfg(test)]
 mod tests {
   use crate::error::ProjectError;
+  use crate::test::step_rest::{RestBody, RestMethod, RestStep};
   use crate::test::test_case::{TestCase, TestCaseType};
+  use crate::test::test_step::StepData;
   use crate::test::test_suite::TestSuite;
   use crate::test::{TestMetadata, TestPath, TestsContainer};
   use gpui_kit::{AppContext, Entity, SharedString, TestAppContext};
-  use ki_project::{FileTestCase, FileTestCaseType, FileTestMetadata, FileTestStep, FileTestSuite};
+  use ki_project::{
+    FileDelayStep, FileRestBody, FileRestMethod, FileRestStep, FileStepData, FileTestCase, FileTestCaseType, FileTestMetadata,
+    FileTestStep, FileTestSuite,
+  };
   use ki_utils::Offset;
   use uuid::Uuid;
 
@@ -1078,6 +1085,16 @@ mod tests {
     }
   }
 
+  /// The data [`file_suite`] gives to the case step of the suite named `name`.
+  fn case_step_data(name: &str) -> StepData {
+    StepData::RestStep(RestStep {
+      method: RestMethod::Get,
+      endpoint: format!("/{name}").into(),
+      params: vec![],
+      body: RestBody::None,
+    })
+  }
+
   fn file_suite(id: Uuid, name: &str, multi_id: Uuid, step_ids: [Uuid; 2], case_step_id: Uuid) -> FileTestSuite {
     FileTestSuite {
       info: file_info(id, name),
@@ -1088,11 +1105,11 @@ mod tests {
             steps: vec![
               FileTestStep {
                 info: file_info(step_ids[0], &format!("{name} step 1")),
-                data: String::new(),
+                data: FileStepData::Delay(FileDelayStep(1000)),
               },
               FileTestStep {
                 info: file_info(step_ids[1], &format!("{name} step 2")),
-                data: String::new(),
+                data: FileStepData::Delay(FileDelayStep(1000)),
               },
             ],
           },
@@ -1100,7 +1117,12 @@ mod tests {
         FileTestCase {
           info: file_info(case_step_id, &format!("{name} case step")),
           case_type: FileTestCaseType::CaseStep {
-            data: format!("{name} case step data"),
+            data: FileStepData::RestStep(FileRestStep {
+              method: FileRestMethod::Get,
+              endpoint: format!("/{name}"),
+              params: vec![],
+              body: FileRestBody::None,
+            }),
           },
         },
       ],
@@ -1414,7 +1436,7 @@ mod tests {
     let moved = &f.container.suites[1].cases[1];
     assert!(moved.is_case_step());
     assert!(matches!(moved.meta.path(), TestPath::Case(suite, case) if suite == f.suite_b_id && case == f.case_a_step_id));
-    assert!(matches!(moved.case_type(), TestCaseType::CaseStep { data } if data == "suite a case step data"));
+    assert!(matches!(moved.case_type(), TestCaseType::CaseStep { data } if *data == case_step_data("suite a")));
   }
 
   #[gpui_kit::test]
@@ -1553,7 +1575,7 @@ mod tests {
     assert_eq!(steps.len(), 3);
     // Inserted right before step_b1 (its position in the target's step list).
     assert_eq!(steps[0].meta.name, SharedString::new("suite a case step"));
-    assert_eq!(steps[0].data, "suite a case step data");
+    assert_eq!(steps[0].data, case_step_data("suite a"));
     // Reparented under the target suite/case, keeping the case step's id.
     assert_eq!(
       steps[0].meta.path(),

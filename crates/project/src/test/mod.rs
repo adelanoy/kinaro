@@ -2,6 +2,8 @@ use crate::test::test_suite::FileTestSuite;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod step_delay;
+pub mod step_rest;
 pub mod test_case;
 pub mod test_step;
 pub mod test_suite;

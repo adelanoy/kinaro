@@ -52,7 +52,7 @@ impl TestSuite {
   pub fn add_test_step(&mut self, path: TestPath) -> ProjectResult<TestPath> {
     if path.is_suite() {
       let name = ki_utils::next_available_name("New Step", self.cases.iter().map(|case| case.meta.name.clone()));
-      let new_case = TestCase::new_step(self.meta.id(), name);
+      let new_case = TestCase::new_step_delay(self.meta.id(), name);
       let path = new_case.meta.path;
       self.cases.push(new_case);
       return Ok(path);
@@ -66,7 +66,7 @@ impl TestSuite {
 
     if path.is_case() && self.cases[ix].is_case_step() {
       let name = ki_utils::next_available_name("New Step", self.cases.iter().map(|case| case.meta.name.clone()));
-      let new_case = TestCase::new_step(self.meta.id(), name);
+      let new_case = TestCase::new_step_delay(self.meta.id(), name);
       let path = new_case.meta.path;
       self.cases.push(new_case);
       Ok(path)
@@ -211,7 +211,7 @@ mod tests {
   use crate::test::TestPath;
   use crate::test::test_suite::TestSuite;
   use gpui_kit::SharedString;
-  use ki_project::{FileTestCase, FileTestCaseType, FileTestMetadata, FileTestStep, FileTestSuite};
+  use ki_project::{FileDelayStep, FileStepData, FileTestCase, FileTestCaseType, FileTestMetadata, FileTestStep, FileTestSuite};
   use uuid::Uuid;
 
   /// A suite holding one multi-step case (with two steps) and one case step,
@@ -250,18 +250,20 @@ mod tests {
             steps: vec![
               FileTestStep {
                 info: file_info(step_a_id, "step a"),
-                data: String::new(),
+                data: FileStepData::Delay(FileDelayStep(1000)),
               },
               FileTestStep {
                 info: file_info(step_b_id, "step b"),
-                data: String::new(),
+                data: FileStepData::Delay(FileDelayStep(1000)),
               },
             ],
           },
         },
         FileTestCase {
           info: file_info(case_step_id, "case step"),
-          case_type: FileTestCaseType::CaseStep { data: String::new() },
+          case_type: FileTestCaseType::CaseStep {
+            data: FileStepData::Delay(FileDelayStep(1000)),
+          },
         },
       ],
     });

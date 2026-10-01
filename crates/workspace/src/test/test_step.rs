@@ -1,14 +1,40 @@
+use crate::test::step_delay::DelayStep;
+use crate::test::step_rest::RestStep;
 use crate::test::{TestMetadata, TestPath};
 use gpui_kit::SharedString;
-use ki_project::FileTestStep;
+use ki_project::{FileStepData, FileTestStep};
 use uuid::Uuid;
+
+#[derive(Eq, PartialEq, Clone, Debug)]
+pub enum StepData {
+  RestStep(RestStep),
+  Delay(DelayStep),
+}
+
+impl From<FileStepData> for StepData {
+  fn from(value: FileStepData) -> Self {
+    match value {
+      FileStepData::RestStep(rest_step) => StepData::RestStep(rest_step.into()),
+      FileStepData::Delay(delay_step) => StepData::Delay(delay_step.into()),
+    }
+  }
+}
+
+impl From<&StepData> for FileStepData {
+  fn from(value: &StepData) -> Self {
+    match value {
+      StepData::RestStep(rest_step) => FileStepData::RestStep(rest_step.into()),
+      StepData::Delay(delay_step) => FileStepData::Delay(delay_step.into()),
+    }
+  }
+}
 
 /// A single test step: either one of a [`TestCase`](crate::test::test_case::TestCase)'s
 /// own steps, or a case step promoted directly to case level.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestStep {
   pub meta: TestMetadata,
-  pub data: String,
+  pub data: StepData,
 }
 
 impl TestStep {
@@ -25,7 +51,7 @@ impl TestStep {
   pub fn from_file(file_test_step: FileTestStep, suite_id: Uuid, case_id: Uuid) -> TestStep {
     Self {
       meta: TestMetadata::new_step(file_test_step.info, suite_id, case_id),
-      data: file_test_step.data.clone(),
+      data: file_test_step.data.into(),
     }
   }
 
@@ -33,12 +59,12 @@ impl TestStep {
   pub fn get_file(&self) -> FileTestStep {
     FileTestStep {
       info: self.meta.to_file(),
-      data: self.data.clone(),
+      data: (&self.data).into(),
     }
   }
 
-  /// Creates a new, empty step with a freshly generated id.
-  pub fn new(suite_id: Uuid, case_id: Uuid, name: SharedString) -> Self {
+  /// Creates a new delay step of 1000 ms with a freshly generated id.
+  pub fn new_delay(suite_id: Uuid, case_id: Uuid, name: SharedString) -> Self {
     Self {
       meta: TestMetadata {
         path: TestPath::Step(suite_id, case_id, Uuid::new_v4()),
@@ -46,7 +72,7 @@ impl TestStep {
         description: None,
         disabled: false,
       },
-      data: "".to_string(),
+      data: StepData::Delay(DelayStep(1000)),
     }
   }
 
@@ -64,9 +90,10 @@ impl TestStep {
 #[cfg(test)]
 mod tests {
   use crate::test::TestPath;
-  use crate::test::test_step::TestStep;
+  use crate::test::step_delay::DelayStep;
+  use crate::test::test_step::{StepData, TestStep};
   use gpui_kit::SharedString;
-  use ki_project::{FileTestMetadata, FileTestStep};
+  use ki_project::{FileDelayStep, FileStepData, FileTestMetadata, FileTestStep};
   use uuid::Uuid;
 
   /// A step built through [`TestStep::from_file`] so that every id is known
@@ -79,7 +106,7 @@ mod tests {
     step_id: Uuid,
   }
 
-  fn file_step(id: Uuid, name: &str, data: &str) -> FileTestStep {
+  fn file_step(id: Uuid, name: &str) -> FileTestStep {
     FileTestStep {
       info: FileTestMetadata {
         id,
@@ -87,7 +114,7 @@ mod tests {
         description: vec!["a description".to_string(), "with two lines".to_string()],
         disabled: true,
       },
-      data: data.to_string(),
+      data: FileStepData::Delay(FileDelayStep(1000)),
     }
   }
 
@@ -96,7 +123,7 @@ mod tests {
     let case_id = Uuid::new_v4();
     let step_id = Uuid::new_v4();
 
-    let step = TestStep::from_file(file_step(step_id, "step a", "step data"), suite_id, case_id);
+    let step = TestStep::from_file(file_step(step_id, "step a"), suite_id, case_id);
 
     Fixture {
       step,
@@ -115,7 +142,7 @@ mod tests {
       Some(SharedString::new("a description\nwith two lines"))
     );
     assert!(f.step.meta.disabled);
-    assert_eq!(f.step.data, "step data");
+    assert_eq!(f.step.data, StepData::Delay(DelayStep(1000)));
     assert!(
       matches!(f.step.meta.path(), TestPath::Step(suite, case, step) if suite == f.suite_id && case == f.case_id && step == f.step_id)
     );
@@ -131,15 +158,15 @@ mod tests {
   }
 
   #[test]
-  fn new_creates_step_with_generated_id_and_empty_data() {
+  fn new_delay_creates_step_with_generated_id_and_1000_delay() {
     let suite_id = Uuid::new_v4();
     let case_id = Uuid::new_v4();
-    let step = TestStep::new(suite_id, case_id, SharedString::new("new step"));
+    let step = TestStep::new_delay(suite_id, case_id, SharedString::new("new step"));
 
     assert_eq!(step.meta.name, SharedString::new("new step"));
     assert_eq!(step.meta.description, None);
     assert!(!step.meta.disabled);
-    assert_eq!(step.data, "");
+    assert_eq!(step.data, StepData::Delay(DelayStep(1000)));
     assert!(matches!(step.meta.path(), TestPath::Step(suite, case, _) if suite == suite_id && case == case_id));
   }
 
@@ -188,7 +215,7 @@ mod tests {
   #[test]
   fn eq_is_false_when_only_the_id_differs() {
     let f = fixture();
-    let other_id = TestStep::new(f.suite_id, f.case_id, f.step.meta.name.clone());
+    let other_id = TestStep::new_delay(f.suite_id, f.case_id, f.step.meta.name.clone());
     assert_ne!(f.step, other_id);
   }
 
