@@ -27,7 +27,7 @@ impl IconNamed for IconAsset {
       IconAsset::Tree => "icons/tree.svg",
       IconAsset::Variable => "icons/variable.svg",
     }
-      .into()
+    .into()
   }
 }
 

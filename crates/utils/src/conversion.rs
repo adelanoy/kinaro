@@ -12,11 +12,7 @@ pub fn to_multiline(s: &str) -> Vec<String> {
 /// Rejoins lines produced by [`to_multiline`] back into a single string,
 /// or `None` if there were no lines.
 pub fn from_multiline(lines: &[String]) -> Option<String> {
-  if lines.is_empty() {
-    None
-  } else {
-    Some(lines.join("\n"))
-  }
+  if lines.is_empty() { None } else { Some(lines.join("\n")) }
 }
 
 #[cfg(test)]

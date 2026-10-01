@@ -1,4 +1,3 @@
-use crate::endpoint::WorkspaceEndpoint;
 use crate::error::{ProjectError, ProjectResult};
 use crate::test::{TestsContainer, TestsContainerEvent};
 use crate::variable::{ProjectVariables, ProjectVariablesEvent};
@@ -30,7 +29,6 @@ pub struct Project {
   created: DateTime<Local>,
   modified: DateTime<Local>,
   pub variables: Entity<ProjectVariables>,
-  pub endpoints: Vec<WorkspaceEndpoint>,
   pub tests: Entity<TestsContainer>,
   // unserialized data
   path: PathBuf,
@@ -64,7 +62,6 @@ impl Project {
 
       let variables = cx.new(|_| ProjectVariables::from_file(file_project.variables));
       let _variables_event_sub = cx.subscribe(&variables, Self::on_profiles_variables_event);
-      let endpoints = WorkspaceEndpoint::from_file(&file_project.endpoints);
       let tests = cx.new(|_| TestsContainer::from_file(file_project.tests, metadata));
       let _tests_event_sub = cx.subscribe(&tests, Self::on_tests_event);
       let active_profile = metadata
@@ -75,7 +72,6 @@ impl Project {
         created: file_project.created,
         modified: file_project.modified,
         variables,
-        endpoints,
         tests,
         _variables_event_sub,
         _tests_event_sub,
@@ -101,7 +97,6 @@ impl Project {
       created: Default::default(),
       modified: Default::default(),
       variables,
-      endpoints: vec![],
       _variables_event_sub,
       _tests_event_sub,
       tests,
@@ -185,12 +180,11 @@ impl Project {
         })
       }
     })
-      .detach();
+    .detach();
   }
 
   fn to_file(&self, cx: &App) -> ProjectFile {
     let variables = self.variables.read(cx).to_file();
-    let endpoints = self.endpoints.iter().map(|e| e.to_file()).collect();
     let tests = self.tests.read(cx).to_file();
     let modified = Local::now();
 
@@ -200,7 +194,6 @@ impl Project {
       created: self.created,
       modified,
       variables,
-      endpoints,
       tests,
     }
   }

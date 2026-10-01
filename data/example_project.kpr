@@ -1,8 +1,8 @@
 {
   "name": "example_project",
   "version": 1,
-  "created": "2026-09-13T19:43:12",
-  "modified": "2026-09-23T17:01:02",
+  "created": "2026-09-13T15:43:12",
+  "modified": "2026-10-01T11:04:28",
   "variables": {
     "variables": [
       {
@@ -12,8 +12,8 @@
         "kind": "Text",
         "value": "localhost",
         "overrides": {
-          "b929fd98-c721-44bf-9e0a-0860c732a2db": "test.example.com",
           "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "api.example.com",
+          "b929fd98-c721-44bf-9e0a-0860c732a2db": "test.example.com",
           "c4aa980a-39fe-449f-bf0d-6e0807375f09": "localhost"
         }
       },
@@ -36,8 +36,8 @@
         "value": "admin",
         "overrides": {
           "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "svc-prod",
-          "b929fd98-c721-44bf-9e0a-0860c732a2db": "svc-test",
-          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "admin"
+          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "admin",
+          "b929fd98-c721-44bf-9e0a-0860c732a2db": "svc-test"
         }
       },
       {
@@ -47,9 +47,9 @@
         "kind": "PasswordClear",
         "value": "",
         "overrides": {
-          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "dev-secret",
+          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "prod-secret",
           "b929fd98-c721-44bf-9e0a-0860c732a2db": "test-secret",
-          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "prod-secret"
+          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "dev-secret"
         }
       }
     ],
@@ -71,7 +71,6 @@
       }
     ]
   },
-  "endpoints": [],
   "tests": {
     "suites": [
       {

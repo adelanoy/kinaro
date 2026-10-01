@@ -27,9 +27,6 @@ pub mod java_date_format {
   {
     let s = String::deserialize(deserializer)?;
     let dt = NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)?;
-    Ok(DateTime::<Local>::from_naive_utc_and_offset(
-      dt,
-      *Local::now().offset(),
-    ))
+    Ok(DateTime::<Local>::from_naive_utc_and_offset(dt, *Local::now().offset()))
   }
 }

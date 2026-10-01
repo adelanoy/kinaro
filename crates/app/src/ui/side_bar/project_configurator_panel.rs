@@ -15,41 +15,30 @@ pub(super) struct ProjectConfigurator {
 
 impl ProjectConfigurator {
   #[allow(unused)]
-  pub(super) fn new(
-    project: Entity<Project>,
-    window: &mut Window,
-    cx: &mut Context<Self>,
-  ) -> Self {
-    let profile_select_state =
-      cx.new(|cx| SelectState::new(vec![], Some(IndexPath::default()), window, cx));
+  pub(super) fn new(project: Entity<Project>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    let profile_select_state = cx.new(|cx| SelectState::new(vec![], Some(IndexPath::default()), window, cx));
     cx.subscribe(&profile_select_state, {
       let project = project.clone();
       move |_, _, event: &SelectEvent<Vec<ProfileInfo>>, cx| match event {
-        SelectEvent::Confirm(value) => {
-          project.update(cx, |this, cx| this.switch_profile(value.to_owned(), cx))
-        }
+        SelectEvent::Confirm(value) => project.update(cx, |this, cx| this.switch_profile(value.to_owned(), cx)),
       }
     })
-      .detach();
+    .detach();
 
-    let _project_event_sub =
-      cx.subscribe_in(&project, window, move |this, _, event, window, cx| {
-        if let ProjectEvent::ActiveProfile(id) = event {
-          this.update_selected_profile_select_state(id, window, cx)
-        }
-      });
+    let _project_event_sub = cx.subscribe_in(&project, window, move |this, _, event, window, cx| {
+      if let ProjectEvent::ActiveProfile(id) = event {
+        this.update_selected_profile_select_state(id, window, cx)
+      }
+    });
     let project_vars = project.read(cx).variables.clone();
-    let _project_vars_event_sub = cx.subscribe_in(
-      &project_vars,
-      window,
-      move |this, project_vars, event, window, cx| {
-        if let ProjectVariablesEvent::ProfilesChanged = event {
-          let profiles = project_vars.read(cx).profile_infos();
-          this.profile_select_state
-            .update(cx, |state, cx| state.set_items(profiles, window, cx));
-        }
-      },
-    );
+    let _project_vars_event_sub = cx.subscribe_in(&project_vars, window, move |this, project_vars, event, window, cx| {
+      if let ProjectVariablesEvent::ProfilesChanged = event {
+        let profiles = project_vars.read(cx).profile_infos();
+        this
+          .profile_select_state
+          .update(cx, |state, cx| state.set_items(profiles, window, cx));
+      }
+    });
 
     let this = Self {
       focus_handle: cx.focus_handle(),
@@ -63,28 +52,20 @@ impl ProjectConfigurator {
     this
   }
 
-  fn update_profiles_select_state(
-    &self,
-    profiles: Vec<ProfileInfo>,
-    window: &mut Window,
-    cx: &mut Context<Self>,
-  ) {
-    self.profile_select_state
+  fn update_profiles_select_state(&self, profiles: Vec<ProfileInfo>, window: &mut Window, cx: &mut Context<Self>) {
+    self
+      .profile_select_state
       .update(cx, |state, cx| state.set_items(profiles, window, cx));
   }
 
-  fn update_selected_profile_select_state(
-    &self,
-    id: &Option<Uuid>,
-    window: &mut Window,
-    cx: &mut Context<Self>,
-  ) {
+  fn update_selected_profile_select_state(&self, id: &Option<Uuid>, window: &mut Window, cx: &mut Context<Self>) {
     match id {
       None => self
         .profile_select_state
         .update(cx, |state, cx| state.set_selected_index(None, window, cx)),
       Some(id) => {
-        self.profile_select_state
+        self
+          .profile_select_state
           .update(cx, |state, cx| state.set_selected_value(id, window, cx));
       }
     }

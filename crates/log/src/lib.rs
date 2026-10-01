@@ -26,7 +26,7 @@ pub fn init(config_dir: &PathBuf) -> Result<()> {
   } else {
     config_dir.to_owned()
   }
-    .join(LOG_FILE);
+  .join(LOG_FILE);
 
   let level_filer = if cfg!(debug_assertions) {
     log::LevelFilter::Debug
@@ -34,9 +34,7 @@ pub fn init(config_dir: &PathBuf) -> Result<()> {
     log::LevelFilter::Info
   };
 
-  let console_appender = ConsoleAppender::builder()
-    .encoder(Box::new(standard_encoder()))
-    .build();
+  let console_appender = ConsoleAppender::builder().encoder(Box::new(standard_encoder())).build();
   let file_appender = FileAppender::builder()
     .encoder(Box::new(standard_encoder()))
     .append(false)

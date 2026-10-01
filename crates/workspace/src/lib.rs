@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use uuid::Uuid;
 
-pub mod endpoint;
 pub mod error;
 pub mod project;
 pub mod test;

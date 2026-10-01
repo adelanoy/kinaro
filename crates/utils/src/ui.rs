@@ -1,7 +1,5 @@
 use gpui_kit::component::ActiveTheme;
-use gpui_kit::{
-  Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div, px,
-};
+use gpui_kit::{Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div, px};
 use std::sync::LazyLock;
 
 pub static EMPTY_SHARED_STRING: LazyLock<SharedString> = LazyLock::new(|| SharedString::new(""));
@@ -17,10 +15,7 @@ pub enum CellState<T> {
 /// X is incremented at each attempt
 ///
 /// If the name is available without any suffix in the collection, returns *name*
-pub fn next_available_name(
-  name: &str,
-  mut collection_it: impl Iterator<Item=SharedString> + Clone,
-) -> SharedString {
+pub fn next_available_name(name: &str, mut collection_it: impl Iterator<Item = SharedString> + Clone) -> SharedString {
   // clone the iterator so it can be used a second time after
   if collection_it.clone().find(|p| p == name).is_none() {
     return SharedString::new(name);

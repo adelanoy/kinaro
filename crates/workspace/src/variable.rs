@@ -1,4 +1,4 @@
-use crate::error::{ProjectResult, ProjectError};
+use crate::error::{ProjectError, ProjectResult};
 use gpui_kit::component::select::SelectItem;
 use gpui_kit::{Context, EventEmitter, SharedString};
 use ki_project::{FileProfile, FileProjectVariables, FileVariable, FileVariableKind};

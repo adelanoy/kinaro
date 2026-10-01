@@ -5,9 +5,7 @@ pub(crate) mod ui;
 
 use crate::ui::WorkspaceView;
 use gpui_kit::component::Root;
-use gpui_kit::{
-  App, AppContext, Size, TitlebarOptions, WindowDecorations, WindowOptions, point, px,
-};
+use gpui_kit::{App, AppContext, Size, TitlebarOptions, WindowDecorations, WindowOptions, point, px};
 use ki_assets::Assets;
 use ki_settings::app_state::AppState;
 use log::info;
@@ -16,21 +14,19 @@ use std::path::PathBuf;
 
 fn main() {
   let config_dir = dirs::config_local_dir().unwrap().join("Kinaro");
-  gpui_kit::platform::application()
-    .with_assets(Assets)
-    .run(move |cx| {
-      init_app(config_dir, cx);
+  gpui_kit::platform::application().with_assets(Assets).run(move |cx| {
+    init_app(config_dir, cx);
 
-      let options = build_window_options(cx);
-      cx.spawn(async move |cx| {
-        cx.open_window(options, |window, cx| {
-          let view = cx.new(|cx| WorkspaceView::new(window, cx));
-          cx.new(|cx| Root::new(view, window, cx))
-        })
-          .expect("Failed to open window");
+    let options = build_window_options(cx);
+    cx.spawn(async move |cx| {
+      cx.open_window(options, |window, cx| {
+        let view = cx.new(|cx| WorkspaceView::new(window, cx));
+        cx.new(|cx| Root::new(view, window, cx))
       })
-        .detach();
-    });
+      .expect("Failed to open window");
+    })
+    .detach();
+  });
 }
 
 fn init_app(config_dir: PathBuf, cx: &mut App) {

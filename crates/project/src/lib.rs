@@ -1,10 +1,8 @@
-mod endpoint;
 mod error;
 mod test;
 mod variable;
 
 pub use {
-  endpoint::{FileEndpoint, FileRestParameter, HttpMethod},
   error::ProjectFileError,
   ki_project::ProjectFile,
   test::{
@@ -15,7 +13,6 @@ pub use {
 };
 
 mod ki_project {
-  use crate::endpoint::FileEndpoint;
   use crate::error::{ProjectFileError, Result};
   use crate::test::FileTestsContainer;
   use crate::variable::FileProjectVariables;
@@ -35,7 +32,6 @@ mod ki_project {
     #[serde(with = "java_date_format")]
     pub modified: DateTime<Local>,
     pub variables: FileProjectVariables,
-    pub endpoints: Vec<FileEndpoint>,
     pub tests: FileTestsContainer,
   }
 
@@ -49,7 +45,6 @@ mod ki_project {
           created: Local::now(),
           modified: Local::now(),
           variables: FileProjectVariables::default(),
-          endpoints: vec![],
           tests: FileTestsContainer::default(),
         })
     }

@@ -1,11 +1,11 @@
 pub mod project_selector;
 
 use crate::ui::title_bar::project_selector::ProjectSelector;
-use ki_workspace::Workspace;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme, Icon, IconName, Sizable, Theme, ThemeMode, TitleBar};
 use gpui_kit::*;
 use ki_settings::app_state::AppState;
+use ki_workspace::Workspace;
 
 pub struct AppTitleBar {
   project_selector: Entity<ProjectSelector>,
@@ -26,12 +26,7 @@ impl Render for AppTitleBar {
     TitleBar::new()
       .h_10()
       .justify_between()
-      .child(
-        div()
-          .flex()
-          .items_center()
-          .child(self.project_selector.clone()),
-      )
+      .child(div().flex().items_center().child(self.project_selector.clone()))
       .child(
         div()
           .flex()
@@ -45,11 +40,7 @@ impl Render for AppTitleBar {
               .checked(is_dark_mode)
               .small()
               .on_click(|checked, _, cx| {
-                let mode = if *checked {
-                  ThemeMode::Dark
-                } else {
-                  ThemeMode::Light
-                };
+                let mode = if *checked { ThemeMode::Dark } else { ThemeMode::Light };
                 Theme::change(mode, None, cx);
                 cx.refresh_windows();
                 AppState::update(cx, |app_state, _cx| {

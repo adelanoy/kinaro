@@ -13,24 +13,9 @@ const WINDOW_FILE: &str = "state.json";
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
 enum WindowBoundsContent {
-  Windowed {
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-  },
-  Maximized {
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-  },
-  Fullscreen {
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-  },
+  Windowed { x: i32, y: i32, width: i32, height: i32 },
+  Maximized { x: i32, y: i32, width: i32, height: i32 },
+  Fullscreen { x: i32, y: i32, width: i32, height: i32 },
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -75,30 +60,15 @@ impl From<WindowBounds> for WindowBoundsContent {
 impl From<&WindowBoundsContent> for WindowBounds {
   fn from(value: &WindowBoundsContent) -> Self {
     match value {
-      WindowBoundsContent::Windowed {
-        x,
-        y,
-        width,
-        height,
-      } => WindowBounds::Windowed(Bounds {
+      WindowBoundsContent::Windowed { x, y, width, height } => WindowBounds::Windowed(Bounds {
         origin: point(px(*x as f32), px(*y as f32)),
         size: size(px(*width as f32), px(*height as f32)),
       }),
-      WindowBoundsContent::Maximized {
-        x,
-        y,
-        width,
-        height,
-      } => WindowBounds::Maximized(Bounds {
+      WindowBoundsContent::Maximized { x, y, width, height } => WindowBounds::Maximized(Bounds {
         origin: point(px(*x as f32), px(*y as f32)),
         size: size(px(*width as f32), px(*height as f32)),
       }),
-      WindowBoundsContent::Fullscreen {
-        x,
-        y,
-        width,
-        height,
-      } => WindowBounds::Fullscreen(Bounds {
+      WindowBoundsContent::Fullscreen { x, y, width, height } => WindowBounds::Fullscreen(Bounds {
         origin: point(px(*x as f32), px(*y as f32)),
         size: size(px(*width as f32), px(*height as f32)),
       }),
@@ -196,16 +166,10 @@ impl AppState {
 
   fn load_or_default(file_path: &PathBuf) -> AppState {
     if file_path.exists() {
-      debug!(
-                "Opening window settings file: {}",
-                file_path.to_string_lossy()
-            );
+      debug!("Opening window settings file: {}", file_path.to_string_lossy());
       let settings = fs::read(file_path)
         .map_err(SettingsError::Io)
-        .and_then(|file| {
-          serde_json::from_slice::<AppState>(&file)
-            .map_err(|err| SettingsError::ReadJson(err.to_string()))
-        });
+        .and_then(|file| serde_json::from_slice::<AppState>(&file).map_err(|err| SettingsError::ReadJson(err.to_string())));
       settings.unwrap_or_else(|err| {
         error!("Failed to load window settings: {err}. Reverting to default");
         AppState::default()
@@ -221,10 +185,7 @@ impl AppState {
 
     if let Err(err) = fs::File::create(file_path)
       .map_err(SettingsError::from)
-      .and_then(|file| {
-        serde_json::to_writer_pretty(file, &self)
-          .map_err(|err| SettingsError::WriteJson(err.to_string()))
-      })
+      .and_then(|file| serde_json::to_writer_pretty(file, &self).map_err(|err| SettingsError::WriteJson(err.to_string())))
     {
       error!("Error saving window settings file: {err}");
     }

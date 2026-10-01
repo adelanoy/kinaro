@@ -23,9 +23,7 @@ impl ThemeAsset {
 
 pub(crate) fn init(cx: &mut App) {
   let theme_asset = ThemeAsset::Ayu.load_theme_asset(cx);
-  if let Err(err) =
-    ThemeRegistry::global_mut(cx).load_themes_from_str(str::from_utf8(&theme_asset).unwrap())
-  {
+  if let Err(err) = ThemeRegistry::global_mut(cx).load_themes_from_str(str::from_utf8(&theme_asset).unwrap()) {
     warn!("Error while loading themes: {err}");
     return;
   }

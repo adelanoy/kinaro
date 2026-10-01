@@ -27,7 +27,6 @@ pub struct ProjectTreeNode {
 }
 
 impl ProjectTreeNode {
-
   pub fn id(&self) -> Uuid {
     self.path.id()
   }
