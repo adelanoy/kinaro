@@ -7,17 +7,14 @@ use gpui_kit::{App, AppContext, Context, Entity, EventEmitter, SharedString, Sub
 use ki_project::ProjectFile;
 use log::{debug, error};
 use std::path::PathBuf;
-use uuid::Uuid;
 
 pub const PROJECT_FILE_EXT: &str = "kpr";
 
 ///// WORKSPACE PROJECT EVENTS /////
 #[derive(Debug, PartialEq, Eq)]
 pub enum ProjectEvent {
-  /// Emitted when the active profile has been modified
-  ActiveProfile(Option<Uuid>),
-  /// Emitted when the test tree content has changed (the project file has been saved)
-  TestTreeData,
+  /// Emitted when the project content has changed (the project file has been saved)
+  ProjectDataChanged,
   /// Emitted when the project's configuration (expanded tree nodes, editor tabs...) has changed
   /// and the workspace should save itself
   ProjectConfigChanged,
@@ -34,17 +31,11 @@ pub struct Project {
   path: PathBuf,
   _variables_event_sub: Subscription,
   _tests_event_sub: Subscription,
-  active_profile: Option<Uuid>,
   /// Save throttle handle
   save_task_queued: Option<Task<()>>,
 }
 
 impl Project {
-  #[inline]
-  pub fn active_profile(&self) -> Option<Uuid> {
-    self.active_profile
-  }
-
   pub(super) fn load(metadata: &FileProjectMetadata, cx: &mut Context<Workspace>) -> ProjectResult<Entity<Self>> {
     let path = &metadata.path;
     if !path.exists() || path.extension() != Some(PROJECT_FILE_EXT.as_ref()) {
@@ -60,13 +51,10 @@ impl Project {
     let this = cx.new(|cx| {
       Self::register_quit_callback(path, cx);
 
-      let variables = cx.new(|_| ProjectVariables::from_file(file_project.variables));
+      let variables = cx.new(|_| ProjectVariables::from_file(file_project.variables, metadata));
       let _variables_event_sub = cx.subscribe(&variables, Self::on_profiles_variables_event);
       let tests = cx.new(|_| TestsContainer::from_file(file_project.tests, metadata));
       let _tests_event_sub = cx.subscribe(&tests, Self::on_tests_event);
-      let active_profile = metadata
-        .active_profile
-        .filter(|id| variables.read(cx).profiles.iter().any(|p| p.id == *id));
       Self {
         name: SharedString::new(file_project.name),
         created: file_project.created,
@@ -75,7 +63,6 @@ impl Project {
         tests,
         _variables_event_sub,
         _tests_event_sub,
-        active_profile,
         path: path.to_owned(),
         save_task_queued: None,
       }
@@ -100,7 +87,6 @@ impl Project {
       _variables_event_sub,
       _tests_event_sub,
       tests,
-      active_profile: None,
       save_task_queued: None,
     };
     this.save(cx);
@@ -116,9 +102,10 @@ impl Project {
         tests.active_editor_tab_index(),
       )
     });
+    let active_profile = self.variables.read(cx).active_profile();
     FileProjectMetadata {
       path: self.path.clone(),
-      active_profile: self.active_profile,
+      active_profile,
       opened_tree_nodes,
       editor_tabs: opened_editor_nodes,
       active_editor_tab_index: active_editor_index,
@@ -127,20 +114,19 @@ impl Project {
 
   fn on_profiles_variables_event(
     &mut self,
-    project_vars: Entity<ProjectVariables>,
-    e: &ProjectVariablesEvent,
+    _project_vars: Entity<ProjectVariables>,
+    event: &ProjectVariablesEvent,
     cx: &mut Context<Self>,
   ) {
-    // Check if the currently active profile has been deleted
-    if let ProjectVariablesEvent::ProfilesChanged = e
-      && let Some(active_profile) = self.active_profile
-      && !project_vars.read(cx).profiles.iter().any(|p| p.id == active_profile)
-    {
-      self.active_profile = None;
-      cx.emit(ProjectEvent::ActiveProfile(self.active_profile));
+    match event {
+      // Trigger project save
+      ProjectVariablesEvent::ProfilesChanged | ProjectVariablesEvent::VariablesChanged => {
+        self.save(cx);
+        cx.emit(ProjectEvent::ProjectDataChanged)
+      }
+      // Trigger workspace save
+      ProjectVariablesEvent::ActiveProfile(_) => cx.emit(ProjectEvent::ProjectConfigChanged),
     }
-
-    self.save(cx);
   }
 
   fn on_tests_event(&mut self, _tests: Entity<TestsContainer>, event: &TestsContainerEvent, cx: &mut Context<Self>) {
@@ -152,7 +138,7 @@ impl Project {
       | TestsContainerEvent::TestMoved(_, _)
       | TestsContainerEvent::TestRemoved(_) => {
         self.save(cx);
-        cx.emit(ProjectEvent::TestTreeData)
+        cx.emit(ProjectEvent::ProjectDataChanged)
       }
       // Trigger workspace save
       TestsContainerEvent::ConfigChanged
@@ -231,29 +217,6 @@ impl Project {
         this.save_task_queued.take();
       });
     }));
-  }
-
-  /// Change the currently active profile. A no-op when `profile_id` is already active or doesn't
-  /// address an existing profile.
-  ///
-  /// # Events
-  /// Emits a [`ProjectEvent::ActiveProfile`] if active profile was successfully changed
-  pub fn switch_profile(&mut self, profile_id: Option<Uuid>, cx: &mut Context<Self>) {
-    if profile_id == self.active_profile {
-      return;
-    }
-    match profile_id {
-      None => {
-        self.active_profile = None;
-        cx.emit(ProjectEvent::ActiveProfile(None));
-      }
-      Some(profile_id) => {
-        if self.variables.read(cx).profiles.iter().any(|p| p.id == profile_id) {
-          self.active_profile = Some(profile_id);
-          cx.emit(ProjectEvent::ActiveProfile(self.active_profile));
-        }
-      }
-    }
   }
 }
 

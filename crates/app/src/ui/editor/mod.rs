@@ -1,11 +1,16 @@
+mod profile_selector;
+
 use crate::ui::ProjectTestNodeKind;
-use gpui_kit::base::v_flex;
+use crate::ui::editor::profile_selector::ProfileSelector;
+use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyTitle};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{Icon, IconName, Sizable};
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window};
+use gpui_kit::{
+  AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div,
+};
 use ki_utils::TestPath;
 use ki_workspace::Project;
 use ki_workspace::test::{TestsContainer, TestsContainerEvent};
@@ -24,6 +29,7 @@ struct TabData {
 pub struct Editor {
   tests: Entity<TestsContainer>,
   tabs: Vec<TabData>,
+  profile_selector: Entity<ProfileSelector>,
   active_tab_ix: Option<usize>,
   _tests_sub: Subscription,
 }
@@ -92,13 +98,16 @@ impl Editor {
   }
 
   /// Creates the editor of `project`, restoring the tabs saved in its tests.
-  pub fn new(project: Entity<Project>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
+  pub fn new(project: Entity<Project>, window: &mut Window, cx: &mut Context<Self>) -> Self {
     let tests = project.read(cx).tests.clone();
     let _tests_sub = cx.subscribe(&tests, Self::tests_event_listener);
     let (tabs, active_tab_ix) = Self::get_tabs(&tests, cx);
+    let vars = project.read(cx).variables.clone();
+    let profile_selector = cx.new(|cx| ProfileSelector::new(vars, window, cx));
     Self {
       tests,
       tabs,
+      profile_selector,
       active_tab_ix,
       _tests_sub,
     }
@@ -202,43 +211,54 @@ impl Editor {
 
 impl Render for Editor {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-    v_flex().size_full().when_else(
-      self.tabs.is_empty(),
-      |this| {
-        this.child(
-          Empty::new().header(
-            EmptyHeader::new()
-              .title(EmptyTitle::new().child("No Tests opened"))
-              .description(EmptyDescription::new().child("Open a test from the project tree.")),
-          ),
-        )
-      },
-      |this| {
-        let selected_index = self.active_tab_ix.unwrap();
-        this
-          .child(
-            TabBar::new("editor-tabs")
-              .selected_index(selected_index)
-              .on_click(cx.listener(|this, ix, _, cx| this.select_tab(*ix, cx)))
-              .children(self.tabs.iter().enumerate().map(|(ix, tab)| {
-                let icon = tab.kind.icon();
-                Tab::new()
-                  .px_2()
-                  .prefix(Icon::new(icon))
-                  .suffix(
-                    Button::new(format!("tab-close-{ix}"))
-                      .ghost()
-                      .xsmall()
-                      .icon(IconName::Close)
-                      .on_click(cx.listener(move |this, _, _, cx| {
-                        this.close_tab(ix, cx);
-                      })),
-                  )
-                  .label(tab.name.clone())
-              })),
+    let tabs = &self.tabs;
+    v_flex()
+      .p_2()
+      .size_full()
+      .child(
+        h_flex()
+          .w_full()
+          .h_12()
+          .flex_row_reverse()
+          .justify_between()
+          .child(self.profile_selector.clone())
+          .when(!tabs.is_empty(), |this| {
+            let selected_index = self.active_tab_ix.unwrap();
+            this.child(
+              TabBar::new("editor-tabs")
+                .selected_index(selected_index)
+                .on_click(cx.listener(|this, ix, _, cx| this.select_tab(*ix, cx)))
+                .children(self.tabs.iter().enumerate().map(|(ix, tab)| {
+                  let icon = tab.kind.icon();
+                  Tab::new()
+                    .px_2()
+                    .prefix(Icon::new(icon))
+                    .suffix(
+                      Button::new(format!("tab-close-{ix}"))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Close)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                          this.close_tab(ix, cx);
+                        })),
+                    )
+                    .label(tab.name.clone())
+                })),
+            )
+          }),
+      )
+      .child(div().size_full().when_else(
+        tabs.is_empty(),
+        |this| {
+          this.child(
+            Empty::new().header(
+              EmptyHeader::new()
+                .title(EmptyTitle::new().child("No Tests opened"))
+                .description(EmptyDescription::new().child("Open a test from the project tree.")),
+            ),
           )
-          .child(Empty::new().header(EmptyHeader::new().title(EmptyTitle::new().child("WIP"))))
-      },
-    )
+        },
+        |this| this.child(Empty::new().header(EmptyHeader::new().title(EmptyTitle::new().child("WIP")))),
+      ))
   }
 }

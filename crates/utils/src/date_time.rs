@@ -1,6 +1,6 @@
 #[allow(dead_code)]
 pub mod java_date_format {
-  use chrono::{DateTime, Local, NaiveDateTime};
+  use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
   use serde::{self, Deserialize, Deserializer, Serializer};
 
   const FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
@@ -17,7 +17,9 @@ pub mod java_date_format {
     serializer.serialize_str(&s)
   }
 
-  ///Deserialize a `chrono::DateTime`
+  ///Deserialize a `chrono::DateTime`, reading the string as a local date time
+  ///
+  /// A date time that falls in a DST gap (which [`serialize`] never writes) is read as UTC
   ///
   /// # Errors
   /// If the deserialization fails
@@ -27,6 +29,10 @@ pub mod java_date_format {
   {
     let s = String::deserialize(deserializer)?;
     let dt = NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)?;
-    Ok(DateTime::<Local>::from_naive_utc_and_offset(dt, *Local::now().offset()))
+    Ok(
+      dt.and_local_timezone(Local)
+        .earliest()
+        .unwrap_or_else(|| Local.from_utc_datetime(&dt)),
+    )
   }
 }

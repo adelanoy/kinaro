@@ -1,3 +1,4 @@
+use crate::FileProjectMetadata;
 use crate::error::{ProjectError, ProjectResult};
 use gpui_kit::component::select::SelectItem;
 use gpui_kit::{Context, EventEmitter, SharedString};
@@ -64,16 +65,25 @@ pub enum ProjectVariablesEvent {
   ProfilesChanged,
   /// Emitted when the reference variables has been modified (added, removed, modified...)
   VariablesChanged,
+  /// Emitted when the active profile has been changed, carrying the new active profile id (*None* when no profile is
+  /// active). The active profile is not part of the project file: it is saved with the workspace
+  ActiveProfile(Option<Uuid>),
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProjectVariables {
   pub references: Vec<VariableReference>,
   pub profiles: Vec<Profile>,
+  active_profile: Option<Uuid>,
 }
 
 impl ProjectVariables {
   ///// PROFILES
+  /// Returns the id of the currently active profile, *None* when no profile is active
+  #[inline]
+  pub fn active_profile(&self) -> Option<Uuid> {
+    self.active_profile
+  }
 
   /// Adds a profile with the given name
   /// # Events
@@ -97,11 +107,12 @@ impl ProjectVariables {
     cx.emit(ProjectVariablesEvent::ProfilesChanged);
   }
 
-  /// Deletes a profile
+  /// Deletes a profile. If it was the active profile, no profile is active anymore
   /// # Result
   /// Returns a [`ProjectError::ProfileNotFound`] if the index is out of bound
   /// # Events
-  /// Emits a [`ProjectVariablesEvent::ProfilesChanged`] if the profile was deleted
+  /// Emits a [`ProjectVariablesEvent::ProfilesChanged`] if the profile was deleted, followed by a
+  /// [`ProjectVariablesEvent::ActiveProfile`] with *None* if it was the active profile
   pub fn delete_profile(&mut self, index: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
     if index > self.profiles.len() - 1 {
       warn!(
@@ -111,8 +122,13 @@ impl ProjectVariables {
       );
       return Err(ProjectError::ProfileNotFound);
     }
-    self.profiles.remove(index);
+    let removed_profile = self.profiles.remove(index);
     cx.emit(ProjectVariablesEvent::ProfilesChanged);
+
+    if Some(removed_profile.id) == self.active_profile {
+      self.active_profile = None;
+      cx.emit(ProjectVariablesEvent::ActiveProfile(None))
+    }
     Ok(())
   }
 
@@ -192,6 +208,29 @@ impl ProjectVariables {
       cx.emit(ProjectVariablesEvent::ProfilesChanged);
     }
     Ok(())
+  }
+
+  /// Change the currently active profile, *None* meaning no active profile. A no-op when `profile_id` is already active
+  /// or doesn't address an existing profile.
+  ///
+  /// # Events
+  /// Emits a [`ProjectVariablesEvent::ActiveProfile`] if the active profile was changed, nothing otherwise
+  pub fn switch_profile(&mut self, profile_id: Option<Uuid>, cx: &mut Context<Self>) {
+    if profile_id == self.active_profile {
+      return;
+    }
+    match profile_id {
+      None => {
+        self.active_profile = None;
+        cx.emit(ProjectVariablesEvent::ActiveProfile(None));
+      }
+      Some(profile_id) => {
+        if self.profiles.iter().any(|p| p.id == profile_id) {
+          self.active_profile = Some(profile_id);
+          cx.emit(ProjectVariablesEvent::ActiveProfile(self.active_profile));
+        }
+      }
+    }
   }
 
   ///// VARIABLES
@@ -318,7 +357,7 @@ impl ProjectVariables {
   }
 
   ///// CONVERSION
-  pub(super) fn from_file(file_vars: FileProjectVariables) -> Self {
+  pub(super) fn from_file(file_vars: FileProjectVariables, metadata: &FileProjectMetadata) -> Self {
     let profiles = file_vars.profiles.iter().map(Profile::from_file).collect::<Vec<Profile>>();
     let profile_ids: Vec<Uuid> = profiles.iter().map(|p| p.id).collect();
     let variables: Vec<VariableReference> = file_vars
@@ -326,10 +365,12 @@ impl ProjectVariables {
       .into_iter()
       .map(|file_var| VariableReference::from_file(file_var, &profile_ids))
       .collect();
+    let active_profile = metadata.active_profile.filter(|id| profiles.iter().any(|p| p.id == *id));
 
     ProjectVariables {
       references: variables,
       profiles,
+      active_profile,
     }
   }
 
