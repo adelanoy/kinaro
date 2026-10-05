@@ -33,7 +33,6 @@ Cargo workspace with `crates/app` as the only default member (binary crate name:
 - **`crates/project`** (`ki_project`) — the on-disk serialization format only: `ProjectFile` (JSON, `.kpr` extension) and its `File*` types (`FileTestSuite`, `FileTestCase`, `FileTestStep`, `FileEndpoint`, `FileProjectVariables`, ...). Has no notion of GPUI entities or live state.
 - **`crates/settings`** (`ki_settings`) — global app settings/state (`GlobalSettings`, `AppState`), persisted as JSON in the OS config dir.
 - **`crates/assets`** (`ki_assets`) — embedded assets (fonts, icons, themes) via `rust-embed`, plus GPUI `AssetSource` wiring.
-- **`crates/log`** (`ki_log`) — `log4rs` setup; filters to only `kinaro`/`ki_*` targets, logs to console + a rotating file (in `target/` for debug builds, the config dir otherwise).
 - **`crates/utils`** (`ki_utils`) — small shared helpers and types (e.g. `next_available_name` for generating unique names when duplicating/adding tree nodes, `TestPath` for addressing test tree nodes).
 
 ## The File ↔ Workspace split

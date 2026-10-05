@@ -26,7 +26,7 @@ pub fn init(config_dir: &PathBuf) -> Result<()> {
   } else {
     config_dir.to_owned()
   }
-  .join(LOG_FILE);
+    .join(LOG_FILE);
 
   let level_filer = if cfg!(debug_assertions) {
     log::LevelFilter::Debug

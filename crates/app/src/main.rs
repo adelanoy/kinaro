@@ -2,15 +2,16 @@
 
 pub(crate) mod actions;
 pub(crate) mod ui;
+pub mod log;
 
 use crate::ui::WorkspaceView;
 use gpui_kit::component::Root;
 use gpui_kit::{App, AppContext, Size, TitlebarOptions, WindowDecorations, WindowOptions, point, px};
 use ki_assets::Assets;
 use ki_settings::app_state::AppState;
-use log::info;
 use std::default::Default;
 use std::path::PathBuf;
+use ::log::info;
 
 fn main() {
   let config_dir = dirs::config_local_dir().unwrap().join("Kinaro");
@@ -33,7 +34,7 @@ fn init_app(config_dir: PathBuf, cx: &mut App) {
   if !config_dir.exists() {
     std::fs::create_dir_all(&config_dir).expect("config_dir created");
   }
-  if let Err(err) = ki_log::init(&config_dir) {
+  if let Err(err) = log::init(&config_dir) {
     eprintln!("Failed to initialize logger: {}", err);
   }
 

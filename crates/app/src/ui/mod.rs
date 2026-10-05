@@ -14,7 +14,7 @@ use gpui_kit::component::form::{field, v_form};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::resizable::{h_resizable, resizable_panel};
-use gpui_kit::component::{ActiveTheme, Disableable, Icon, IconName, Root, Sizable, Size, WindowExt, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme, Disableable, Icon, IconName, Sizable, Size, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
   App, AppContext, Axis, ClickEvent, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
@@ -354,8 +354,6 @@ impl Render for WorkspaceView {
             },
           )),
       )
-      .children(Root::render_dialog_layer(window, cx))
-      .children(Root::render_notification_layer(window, cx))
   }
 }
 

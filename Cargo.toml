@@ -11,7 +11,6 @@ members = [
     "crates/project",
     "crates/settings",
     "crates/assets",
-    "crates/log",
     "crates/utils",
     "crates/workspace",
 ]
@@ -22,11 +21,10 @@ default-members = ["crates/app"]
 ki_project = { path = "crates/project" }
 ki_settings = { path = "crates/settings" }
 ki_assets = { path = "crates/assets" }
-ki_log = { path = "crates/log" }
 ki_utils = {path = "crates/utils"}
 ki_workspace = {path = "crates/workspace"}
 
-gpui-kit = { version = "0.6", default-features = false, features = ["component"] }
+gpui-kit = { version = "0.7", default-features = false, features = ["component"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["serde", "v4"] }
