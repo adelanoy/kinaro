@@ -437,10 +437,7 @@ impl Workspace {
 
   /// Project event's handler, mostly used to serialize to file project's settings
   fn on_project_event(&mut self, _project: Entity<Project>, event: &ProjectEvent, cx: &mut Context<Self>) {
-    match event {
-      ProjectEvent::ProjectConfigChanged | ProjectEvent::ActiveProfile(_) => self.save(cx),
-      _ => {}
-    }
+    if event == &ProjectEvent::ProjectConfigChanged { self.save(cx) }
   }
 }
 

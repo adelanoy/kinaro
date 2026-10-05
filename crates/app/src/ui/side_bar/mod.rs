@@ -1,5 +1,4 @@
 mod profile_editor_tab;
-mod project_configurator_panel;
 mod project_tree_tab;
 mod var_editor_tab;
 
