@@ -7,6 +7,7 @@ use gpui_kit::{App, AppContext, Context, Entity, EventEmitter, SharedString, Sub
 use ki_project::ProjectFile;
 use log::{debug, error};
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub const PROJECT_FILE_EXT: &str = "kpr";
 
@@ -33,6 +34,8 @@ pub struct Project {
   _tests_event_sub: Subscription,
   /// Save throttle handle
   save_task_queued: Option<Task<()>>,
+  /// Whether a save was requested while the queued save was running, which may have already serialized
+  save_requested: bool,
 }
 
 impl Project {
@@ -65,6 +68,7 @@ impl Project {
         _tests_event_sub,
         path: path.to_owned(),
         save_task_queued: None,
+        save_requested: false,
       }
     });
 
@@ -88,6 +92,7 @@ impl Project {
       _tests_event_sub,
       tests,
       save_task_queued: None,
+      save_requested: false,
     };
     this.save(cx);
 
@@ -155,13 +160,14 @@ impl Project {
     cx.on_app_quit({
       let path = path.to_owned();
       move |this, cx| {
-        this.save_task_queued = None;
-        let bytes = this.to_file(cx);
+        this.save_requested = false;
+        let file = this.save_task_queued.take().map(|_| this.to_file(cx));
         cx.background_executor().spawn({
-          debug!("Save project file on quit to {}", path.to_string_lossy());
           let path = path.clone();
           async move {
-            _ = bytes.save(&path);
+            if let Some(bytes) = file {
+              _ = bytes.save(&path);
+            }
           }
         })
       }
@@ -187,10 +193,13 @@ impl Project {
   /// Saves the project to its file, asynchronously. Failures are logged.
   pub fn save(&mut self, cx: &mut Context<Self>) {
     if self.save_task_queued.is_some() {
+      // The queued could host an on-going serialization: save again once it's done
+      self.save_requested = true;
       return;
     }
     let path = self.path.clone();
     self.save_task_queued = Some(cx.spawn(async move |this, cx| {
+      cx.background_executor().timer(Duration::from_millis(200)).await;
       let file = this
         .read_with(cx, |this, cx| this.to_file(cx))
         .map_err(|e| ProjectError::Io(e.to_string()));
@@ -213,8 +222,12 @@ impl Project {
         Err(err) => error!("Error while saving project file: {:?}", err),
       }
 
-      _ = this.update(cx, |this, _| {
+      _ = this.update(cx, |this, cx| {
         this.save_task_queued.take();
+        // Save the changes made while this save was running
+        if std::mem::take(&mut this.save_requested) {
+          this.save(cx);
+        }
       });
     }));
   }

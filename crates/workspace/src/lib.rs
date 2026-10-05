@@ -80,6 +80,8 @@ pub struct Workspace {
   workspace_projects: HashMap<PathBuf, WorkspaceProject>,
   /// Save throttle handle
   save_task_queued: Option<Task<()>>,
+  /// Whether a save was requested while the queued save was running, which may have already serialized
+  save_requested: bool,
 }
 
 impl Workspace {
@@ -126,15 +128,19 @@ impl Workspace {
       },
     };
 
-    // Create a strong entity ref on the app, otherwise, the only entity is in the WorkspaceView and is dropped before this callback
+    // Create a strong entity ref on the app, otherwise, the only strong ref is in the WorkspaceView
+    // and is dropped before this callback is called
     let this = cx.entity();
     App::on_app_quit(cx, move |cx| {
+      let bytes = this.update(cx, |this, cx| {
+        this.save_requested = false;
+        this.save_task_queued.take().map(|_| this.serialize(cx))
+      });
       let config_dir = cx.read_global(|settings: &GlobalSettings, _| settings.config_dir.clone());
-      let bytes = this.read(cx).serialize(cx);
       cx.background_executor().spawn(async move {
-        _ = bytes
-          .and_then(|bytes| Self::write_to_disk(&config_dir, &bytes))
-          .map(|path| debug!("Save workspace file on quit to {}", path.to_string_lossy()));
+        if let Some(bytes) = bytes {
+          _ = bytes.and_then(|bytes| Self::write_to_disk(&config_dir, &bytes));
+        }
       })
     })
     .detach();
@@ -143,6 +149,7 @@ impl Workspace {
       active_project,
       workspace_projects,
       save_task_queued: None,
+      save_requested: false,
     }
   }
 
@@ -340,15 +347,17 @@ impl Workspace {
     self.save(cx);
   }
 
-  /// Saves the workspace file in a background thread. Saves are throttled to trigger once every 500ms in case of rapid succession of calls
+  /// Saves the workspace file in a background thread. Saves are throttled to trigger once every 200ms in case of rapid succession of calls
   fn save(&mut self, cx: &mut Context<Self>) {
     if self.save_task_queued.is_some() {
+      // The queued save may have already serialized: save again once it's done
+      self.save_requested = true;
       return;
     }
 
     let config_dir = cx.read_global(|settings: &GlobalSettings, _| settings.config_dir.clone());
     self.save_task_queued = Some(cx.spawn(async move |this, cx| {
-      cx.background_executor().timer(Duration::from_millis(500)).await;
+      cx.background_executor().timer(Duration::from_millis(200)).await;
 
       let bytes = this
         .read_with(cx, |this, cx| this.serialize(cx))
@@ -367,8 +376,12 @@ impl Workspace {
         Ok(path) => debug!("Saved workspace to {}", path.to_string_lossy()),
         Err(err) => error!("Error while saving workspace file: {:?}", err),
       }
-      _ = this.update(cx, |this, _| {
+      _ = this.update(cx, |this, cx| {
         this.save_task_queued.take();
+        // Save the changes made while this save was running
+        if std::mem::take(&mut this.save_requested) {
+          this.save(cx);
+        }
       });
     }));
   }
@@ -437,7 +450,9 @@ impl Workspace {
 
   /// Project event's handler, mostly used to serialize to file project's settings
   fn on_project_event(&mut self, _project: Entity<Project>, event: &ProjectEvent, cx: &mut Context<Self>) {
-    if event == &ProjectEvent::ProjectConfigChanged { self.save(cx) }
+    if event == &ProjectEvent::ProjectConfigChanged {
+      self.save(cx)
+    }
   }
 }
 
