@@ -23,10 +23,12 @@ pub struct TestMetadata {
 }
 
 impl TestMetadata {
+  /// Returns the id of the node, i.e. the last segment of its [`path`](Self::path).
   pub fn id(&self) -> Uuid {
     self.path.id()
   }
 
+  /// Returns the path addressing the node in the test tree.
   pub fn path(&self) -> TestPath {
     self.path
   }
@@ -119,7 +121,7 @@ pub enum TestsContainerEvent {
 
 /// The live test tree of a project, along with its UI configuration (expanded
 /// tree nodes, tabs opened in the editor and the active one).
-#[derive(Default, Clone, Debug, Eq, PartialEq)]
+#[derive(Default, Debug, Eq, PartialEq)]
 pub struct TestsContainer {
   /// The root test suites, in display order
   pub suites: Vec<TestSuite>,
@@ -705,6 +707,28 @@ impl TestsContainer {
       let old_name = test_info.name.clone();
       test_info.name = name.clone();
       cx.emit(TestsContainerEvent::TestRenamed(path, old_name, name));
+    }
+    Ok(())
+  }
+
+  /// Sets the description of the node at `path`, `None` removing it. A no-op
+  /// when the description is unchanged.
+  ///
+  /// # Errors
+  /// [`ProjectError::TestNotFound`] if `path` doesn't address an existing
+  /// node.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestsModified`] if the description changed.
+  pub fn edit_description_at(&mut self, path: TestPath, desc: Option<SharedString>, cx: &mut Context<Self>) -> ProjectResult<()> {
+    let Some(test_info) = self.info_mut_from_path(&path) else {
+      warn!("TestsContainer:edit_description_at: unknow path: {}", path);
+      return Err(ProjectError::TestNotFound(path));
+    };
+
+    if test_info.description != desc {
+      test_info.description = desc;
+      cx.emit(TestsContainerEvent::TestsModified);
     }
     Ok(())
   }

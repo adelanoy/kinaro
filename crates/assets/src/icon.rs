@@ -4,6 +4,7 @@ use gpui_kit::{App, IntoElement, RenderOnce, SharedString, Window};
 #[derive(IntoElement, Clone)]
 pub enum IconAsset {
   Ban,
+  Pencil,
   Profile,
   Refresh,
   Rename,
@@ -18,6 +19,7 @@ impl IconNamed for IconAsset {
   fn path(self) -> SharedString {
     match self {
       IconAsset::Ban => "icons/ban.svg",
+      IconAsset::Pencil => "icons/pencil.svg",
       IconAsset::Profile => "icons/profile.svg",
       IconAsset::Refresh => "icons/refresh.svg",
       IconAsset::Rename => "icons/rename.svg",

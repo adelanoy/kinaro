@@ -3,10 +3,9 @@ use crate::actions::{
   SwitchNodeActiveStatus,
 };
 use crate::ui::ProjectTestNodeKind;
+use crate::ui::components::dialog::show_rename_dialog;
 use crate::ui::components::tree::{ProjectTreeNode, Tree, TreeDelegate, TreeEvent, TreeState};
 use crate::ui::side_bar::ProjectConfigurationPanel;
-use gpui_kit::component::dialog::{DialogAction, DialogClose, DialogFooter};
-use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{
   ActiveTheme, Disableable, Icon, IconName, Sizable, WindowExt,
@@ -301,42 +300,14 @@ impl ProjectTreeDelegate {
     });
   }
 
+  /// Opens the rename dialog of the node at `path`, if it is in the tree.
   fn show_rename_dialog(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
     let Some(node) = self.tree_nodes.iter().find(|node| node.path == path) else {
       warn!("ProjectTreeDelegate:setup_rename_node: unknown path: {}", path);
       return;
     };
     let name = node.label.clone();
-    let path = node.path;
-    let input = cx.new(|cx| {
-      let mut state = InputState::new(window, cx);
-      state.set_value(name, window, cx);
-      state
-    });
-    let tests = self.tests.clone();
-    window.open_dialog(cx, move |dialog, window, cx| {
-      input.update(cx, |input, cx| {
-        input.focus(window, cx);
-      });
-      dialog
-        .title("Rename test")
-        .child(v_flex().gap_3().child("Enter the node's name:").child(Input::new(&input)))
-        .footer(
-          DialogFooter::new()
-            .child(DialogClose::new().child(Button::new("cancel").label("Cancel").outline()))
-            .child(DialogAction::new().child(Button::new("confirm").primary().label("Rename"))),
-        )
-        .on_ok({
-          let name = input.clone().read(cx).value();
-          let tests = tests.clone();
-          move |_, window, cx| {
-            if let Err(err) = tests.update(cx, |tests, cx| tests.rename_at(path, name.clone(), cx)) {
-              window.push_notification(err, cx);
-            }
-            true
-          }
-        })
-    });
+    show_rename_dialog(name, path, self.tests.clone(), window, cx);
   }
 
   fn show_delete_confirm_dialog(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {

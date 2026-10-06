@@ -1,4 +1,4 @@
-use gpui_kit::{App, KeyBinding, actions};
+use gpui_kit::{App, KeyBinding, NoAction, actions};
 pub const PROJECT_TREE_CONTEXT_KEY: &str = "ProjectTree";
 
 // SHARED
@@ -33,5 +33,9 @@ pub fn init(cx: &mut App) {
     KeyBinding::new("ctrl-o", OpenProject, None),
     // PROJECT TREE
     KeyBinding::new("ctrl-shift-d", SwitchNodeActiveStatus, Some(PROJECT_TREE_CONTEXT_KEY)),
+    // INPUT
+    // gpui-base binds space to `Confirm` in the "Popover" context, which also matches inputs nested
+    // in a popover content and closes it. Inputs being deeper, this lets the space be typed instead.
+    KeyBinding::new("space", NoAction, Some("Input")),
   ]);
 }
