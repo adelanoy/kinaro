@@ -1,7 +1,4 @@
-use crate::actions::{
-  AddTestCase, AddTestStep, AddTestSuite, Delete, Duplicate, Escape, MoveDown, MoveUp, PROJECT_TREE_CONTEXT_KEY, Rename,
-  SwitchNodeActiveStatus,
-};
+use crate::actions::{AddTestCase, AddTestStep, AddTestSuite, CopyId, Delete, Duplicate, Escape, MoveDown, MoveUp, Rename, SwitchNodeActiveStatus, PROJECT_TREE_CONTEXT_KEY, CopyPath};
 use crate::ui::ProjectTestNodeKind;
 use crate::ui::components::dialog::show_rename_dialog;
 use crate::ui::components::tree::{ProjectTreeNode, Tree, TreeDelegate, TreeEvent, TreeState};
@@ -26,6 +23,8 @@ use ki_workspace::test::test_case::TestCaseType;
 use ki_workspace::{Project, TestCase, TestSuite};
 use log::warn;
 use std::collections::HashSet;
+use gpui_kit::base::input::Copy;
+use crate::app;
 
 type ContextMenuBuilder = dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu;
 
@@ -149,6 +148,26 @@ impl ProjectTree {
 
   fn on_action_escape(&mut self, _action: &Escape, _window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree_state, cx| tree_state.clear_selection(cx));
+  }
+
+  fn on_action_copy_id(&mut self, _action: &CopyId, window: &mut Window, cx: &mut Context<Self>) {
+    self.tree_state.update(cx, |tree, cx| {
+      let Some(path) = tree.selected_path() else {
+        warn!("ProjectTree:on_action_copy_id: no tree_state selected path");
+        return;
+      };
+      app::copy_id(path, window, cx);
+    });
+  }
+
+  fn on_action_copy_path(&mut self, _action: &CopyPath, window: &mut Window, cx: &mut Context<Self>) {
+    self.tree_state.update(cx, |tree, cx| {
+      let Some(path) = tree.selected_path() else {
+        warn!("ProjectTree:on_action_copy_path: no tree_state selected path");
+        return;
+      };
+      app::copy_path(path, window, cx);
+    });
   }
 }
 
@@ -444,7 +463,11 @@ fn build_context_menu(node: &ProjectTreeNode) -> Box<ContextMenuBuilder> {
         submenu.menu_with_icon("Test Step", IconAsset::TestStep, Box::new(AddTestStep))
       })
       .separator()
-      .menu_with_icon("Duplicate", IconName::Copy, Box::new(Duplicate))
+      .menu_with_icon("Copy", IconName::Copy, Box::new(Copy))
+      .menu("Copy id", Box::new(CopyId))
+      .menu("Copy path", Box::new(CopyPath))
+      .separator()
+      .menu_with_icon("Duplicate", IconAsset::Duplicate, Box::new(Duplicate))
       .separator()
       .menu_with_check("Enabled", !disabled, Box::new(SwitchNodeActiveStatus))
       .menu_with_icon("Rename", IconAsset::Rename, Box::new(Rename))
@@ -523,6 +546,8 @@ impl Render for ProjectTree {
     v_flex()
       .id("project-tree")
       .key_context(PROJECT_TREE_CONTEXT_KEY)
+      .on_action(cx.listener(Self::on_action_copy_id))
+      .on_action(cx.listener(Self::on_action_copy_path))
       .on_action(cx.listener(Self::on_action_escape))
       .on_action(cx.listener(Self::on_action_switch_node_active_status))
       .on_action(cx.listener(Self::on_action_rename))

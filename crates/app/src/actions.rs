@@ -3,7 +3,7 @@ pub const PROJECT_TREE_CONTEXT_KEY: &str = "ProjectTree";
 
 // SHARED
 actions!([
-  Delete, Down, Duplicate, Enter, Escape, Left, MoveUp, MoveDown, MoveLeft, MoveRight, Rename, Right, Up
+  CopyId, CopyPath, Delete, Down, Duplicate, Enter, Escape, Left, MoveUp, MoveDown, MoveLeft, MoveRight, Rename, Right, Up
 ]);
 
 // WORKSPACE
@@ -15,6 +15,8 @@ actions!([AddTestSuite, AddTestCase, AddTestStep, SwitchNodeActiveStatus]);
 pub fn init(cx: &mut App) {
   cx.bind_keys([
     // SHARED
+    KeyBinding::new("ctrl-alt-i", CopyId, None),
+    KeyBinding::new("ctrl-alt-p", CopyPath, None),
     KeyBinding::new("delete", Delete, None),
     KeyBinding::new("ctrl-d", Duplicate, None),
     KeyBinding::new("escape", Escape, None),

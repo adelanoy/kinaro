@@ -1,12 +1,12 @@
+use crate::app;
 use crate::ui::components::dialog::{show_edit_desc_dialog, show_rename_dialog};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::label::Label;
-use gpui_kit::component::notification::Notification;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::text::markdown;
-use gpui_kit::component::{ActiveTheme, Colorize, Sizable, WindowExt, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme, Colorize, Sizable, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{App, ClipboardItem, Entity, IntoElement, ParentElement, RenderOnce, Styled, TextAlign, Window, div};
+use gpui_kit::{App, Entity, IntoElement, ParentElement, RenderOnce, Styled, TextAlign, Window, div};
 use ki_assets::icon::IconAsset;
 use ki_workspace::test::{TestMetadata, TestsContainer};
 
@@ -76,12 +76,7 @@ impl RenderOnce for HeaderEditor {
                   )
                   .text()
                   .compact()
-                  .on_click({
-                    move |_, window, cx| {
-                      cx.write_to_clipboard(ClipboardItem::new_string(id.to_string()));
-                      window.push_notification(Notification::info("Id copied!"), cx);
-                    }
-                  }),
+                  .on_click(move |_, window, cx| app::copy_id(path, window, cx)),
               )
               .child(
                 Button::new("path-copy")
@@ -93,10 +88,7 @@ impl RenderOnce for HeaderEditor {
                   )
                   .text()
                   .compact()
-                  .on_click(move |_, window, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(path.to_string()));
-                    window.push_notification(Notification::info("Path copied!"), cx);
-                  }),
+                  .on_click(move |_, window, cx| app::copy_path(path, window, cx)),
               ),
           )
           // Active switch

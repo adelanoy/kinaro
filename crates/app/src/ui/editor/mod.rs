@@ -14,7 +14,8 @@ use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{Icon, IconName, Sizable};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-  AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div,
+  AppContext, Context, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString, Styled,
+  Subscription, Window, div,
 };
 use ki_utils::TestPath;
 use ki_workspace::Project;
@@ -267,6 +268,13 @@ impl Render for EditorView {
                   let icon = tab.kind.icon();
                   Tab::new()
                     .px_2()
+                    .on_mouse_down(
+                      MouseButton::Middle,
+                      cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.close_tab(ix, window, cx);
+                      }),
+                    )
                     .prefix(Icon::new(icon))
                     .suffix(
                       Button::new(format!("tab-close-{ix}"))
