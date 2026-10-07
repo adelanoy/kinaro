@@ -110,11 +110,9 @@ impl TestPath {
 impl Display for TestPath {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     match self {
-      TestPath::Suite(suite_id) => f.write_fmt(format_args!("Suite:{}", suite_id)),
-      TestPath::Case(suite_id, case_id) => f.write_fmt(format_args!("Suite:{}/Case:{}", suite_id, case_id)),
-      TestPath::Step(suite_id, case_id, step_id) => {
-        f.write_fmt(format_args!("Suite:{}/Case:{}/Step:{}", suite_id, case_id, step_id))
-      }
+      TestPath::Suite(suite_id) => f.write_fmt(format_args!("/{}", suite_id)),
+      TestPath::Case(suite_id, case_id) => f.write_fmt(format_args!("/{}/{}", suite_id, case_id)),
+      TestPath::Step(suite_id, case_id, step_id) => f.write_fmt(format_args!("/{}/{}/{}", suite_id, case_id, step_id)),
     }
   }
 }
@@ -200,8 +198,8 @@ mod tests {
 
   #[test]
   fn display() {
-    assert_eq!(SUITE_PATH.to_string(), format!("Suite:{SUITE}"));
-    assert_eq!(CASE_PATH.to_string(), format!("Suite:{SUITE}/Case:{CASE}"));
-    assert_eq!(STEP_PATH.to_string(), format!("Suite:{SUITE}/Case:{CASE}/Step:{STEP}"));
+    assert_eq!(SUITE_PATH.to_string(), format!("/{SUITE}"));
+    assert_eq!(CASE_PATH.to_string(), format!("/{SUITE}/{CASE}"));
+    assert_eq!(STEP_PATH.to_string(), format!("/{SUITE}/{CASE}/{STEP}"));
   }
 }

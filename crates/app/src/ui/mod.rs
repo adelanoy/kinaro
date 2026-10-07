@@ -4,7 +4,7 @@ mod side_bar;
 mod title_bar;
 
 use crate::actions::{CreateProject, OpenProject};
-use crate::ui::editor::Editor;
+use crate::ui::editor::EditorView;
 use crate::ui::side_bar::{ProjectPanelDescriptor, ProjectSidebar};
 use crate::ui::title_bar::AppTitleBar;
 use gpui_kit::component::button::{Button, ButtonVariants, Toggle, ToggleVariants};
@@ -52,7 +52,7 @@ pub struct WorkspaceView {
   project_panel_descriptors: Vec<ProjectPanelDescriptor>,
   sidebar_collapsed: bool,
   sidebar_width: f32,
-  editor: Option<Entity<Editor>>,
+  editor: Option<Entity<EditorView>>,
   focus_handle: FocusHandle,
   _workspace_sub: Subscription,
 }
@@ -135,7 +135,7 @@ impl WorkspaceView {
     self.editor = workspace
       .read(cx)
       .active_project()
-      .map(|project| cx.new(|cx| Editor::new(project.clone(), window, cx)));
+      .map(|project| cx.new(|cx| EditorView::new(project.clone(), window, cx)));
   }
 
   fn on_action_create_project(&mut self, _: &CreateProject, window: &mut Window, cx: &mut Context<Self>) {

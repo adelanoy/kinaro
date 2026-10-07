@@ -1,17 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 pub(crate) mod actions;
-pub(crate) mod ui;
 pub mod log;
+pub(crate) mod ui;
 
 use crate::ui::WorkspaceView;
+use ::log::info;
 use gpui_kit::component::Root;
 use gpui_kit::{App, AppContext, Size, TitlebarOptions, WindowDecorations, WindowOptions, point, px};
 use ki_assets::Assets;
 use ki_settings::app_state::AppState;
 use std::default::Default;
 use std::path::PathBuf;
-use ::log::info;
 
 fn main() {
   let config_dir = dirs::config_local_dir().unwrap().join("Kinaro");

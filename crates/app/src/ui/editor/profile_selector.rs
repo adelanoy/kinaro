@@ -1,7 +1,9 @@
-use gpui_kit::base::{h_flex, IndexPath};
-use gpui_kit::component::select::{Select, SelectEvent, SelectState};
-use gpui_kit::{App, AppContext, Context, Entity, FocusHandle, Focusable, IntoElement, ParentElement, Render, Styled, Subscription, Window};
+use gpui_kit::base::{IndexPath, h_flex};
 use gpui_kit::component::Sizable;
+use gpui_kit::component::select::{Select, SelectEvent, SelectState};
+use gpui_kit::{
+  App, AppContext, Context, Entity, FocusHandle, Focusable, IntoElement, ParentElement, Render, Styled, Subscription, Window,
+};
 use ki_workspace::variable::{ProfileInfo, ProjectVariables, ProjectVariablesEvent};
 use uuid::Uuid;
 
@@ -22,16 +24,14 @@ impl ProfileSelector {
     })
     .detach();
 
-    let _vars_event_sub = cx.subscribe_in(&vars, window, move |this, vars, event, window, cx| {
-      match event {
-        ProjectVariablesEvent::ProfilesChanged => {
-          this.update_profiles_select_state(vars.read(cx).profile_infos(), window, cx);
-        }
-        ProjectVariablesEvent::ActiveProfile(id) => {
-          this.update_selected_profile_select_state(id, window, cx);
-        }
-        _ => {}
+    let _vars_event_sub = cx.subscribe_in(&vars, window, move |this, vars, event, window, cx| match event {
+      ProjectVariablesEvent::ProfilesChanged => {
+        this.update_profiles_select_state(vars.read(cx).profile_infos(), window, cx);
       }
+      ProjectVariablesEvent::ActiveProfile(id) => {
+        this.update_selected_profile_select_state(id, window, cx);
+      }
+      _ => {}
     });
 
     let this = Self {
@@ -65,7 +65,6 @@ impl ProfileSelector {
     }
   }
 }
-
 
 impl Focusable for ProfileSelector {
   fn focus_handle(&self, _cx: &App) -> FocusHandle {
