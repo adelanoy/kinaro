@@ -8,37 +8,30 @@ use gpui_kit::component::{ActiveTheme, Colorize, Sizable, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{App, Entity, IntoElement, ParentElement, RenderOnce, Styled, TextAlign, Window, div};
 use ki_assets::icon::IconAsset;
-use ki_workspace::test::{TestMetadata, TestsContainer};
+use ki_workspace::test::TestMetadataOwner;
 
 /// Header shared by the editors of every kind of test node: shows its name, id
 /// and path (both copyable), its active status and its markdown description,
 /// with controls to rename it, toggle it and edit its description.
 #[derive(IntoElement)]
-pub struct HeaderEditor {
-  /// Metadata of the edited node, as of when the header was built
-  meta: TestMetadata,
-  /// Container holding the edited node, through which edits are applied
-  tests: Entity<TestsContainer>,
+pub struct HeaderEditor<M: TestMetadataOwner + 'static> {
+  /// The edited node, read when the header is rendered
+  meta: Entity<M>,
 }
 
-impl HeaderEditor {
-  /// Creates the header of the node described by `meta`, held in `tests`.
-  pub fn new(meta: TestMetadata, tests: Entity<TestsContainer>) -> Self {
-    Self { meta, tests }
+impl<M: TestMetadataOwner> HeaderEditor<M> {
+  /// Creates the header of the node `meta`.
+  pub fn new(meta: Entity<M>) -> Self {
+    Self { meta }
   }
 }
 
-impl RenderOnce for HeaderEditor {
+impl<M: TestMetadataOwner + 'static> RenderOnce for HeaderEditor<M> {
   fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-    let path = self.meta.path();
-    let id = self.meta.id();
-    let TestMetadata {
-      name,
-      description,
-      disabled,
-      ..
-    } = self.meta;
-    let tests = self.tests.clone();
+    let (path, name, description, disabled) = self
+      .meta
+      .read_with(cx, |meta, _| (meta.path(), meta.name(), meta.description(), meta.disabled()));
+    let id = path.id();
 
     v_flex()
       .bg(cx.theme().background.darken(0.3))
@@ -59,9 +52,9 @@ impl RenderOnce for HeaderEditor {
                     .ghost()
                     .small()
                     .on_click({
-                      let tests = tests.clone();
+                      let meta = self.meta.clone();
                       move |_, window, cx| {
-                        show_rename_dialog(name.clone(), path, tests.clone(), window, cx);
+                        show_rename_dialog(name.clone(), meta.clone(), window, cx);
                       }
                     }),
                 ),
@@ -93,14 +86,14 @@ impl RenderOnce for HeaderEditor {
           )
           // Active switch
           .child(
-            div().h_full().child(
-              Switch::new("active-switch")
-                .label("Active")
-                .checked(!disabled)
-                .on_click(move |_, _, cx| {
-                  self.tests.update(cx, |tests, cx| tests.switch_node_enable_status(&path, cx));
-                }),
-            ),
+            div()
+              .h_full()
+              .child(Switch::new("active-switch").label("Active").checked(!disabled).on_click({
+                let meta_owner = self.meta.clone();
+                move |_, _, cx| {
+                  meta_owner.update(cx, |meta, cx| meta.switch_disabled(cx));
+                }
+              })),
           ),
       )
       // Description
@@ -110,8 +103,9 @@ impl RenderOnce for HeaderEditor {
           .child(h_flex().gap_x_2().child(Label::new("Description").text_xl()).child(
             Button::new("desc-trigger").icon(IconAsset::Pencil).ghost().small().on_click({
               let description = description.clone().unwrap_or_default();
+              let meta_owner = self.meta.clone();
               move |_, window, cx| {
-                show_edit_desc_dialog(description.clone(), path, tests.clone(), window, cx);
+                show_edit_desc_dialog(description.clone(), meta_owner.clone(), window, cx);
               }
             }),
           ))

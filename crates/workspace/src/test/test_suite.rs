@@ -1,8 +1,11 @@
 use crate::error::{ProjectError, ProjectResult};
-use crate::test::{TestMetadata, TestPath, test_case::TestCase};
-use gpui_kit::SharedString;
-use ki_project::FileTestSuite;
-use log::{error, warn};
+use crate::test::{TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent, test_case::TestCase};
+use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, SharedString, WeakEntity};
+use ki_project::{FileTestCase, FileTestStep, FileTestSuite};
+use ki_utils::{CASE_MULTI, CASE_STEP, Offset, STEP};
+use log::{debug, warn};
+use std::cmp::min;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use uuid::Uuid;
 
@@ -17,183 +20,210 @@ use uuid::Uuid;
 /// representation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestSuite {
+  /// The container holding this suite, notified of the changes made to the suite
+  container: WeakEntity<TestsContainer>,
   /// Metadata for the suite itself (id, name, description, disabled flag).
   ///
-  /// `info.path` is always a [`TestPath::Suite`].
+  /// `meta.path` is always a [`TestPath::Suite`].
   pub meta: TestMetadata,
   /// The suite's direct children, in display order.
-  pub cases: Vec<TestCase>,
+  pub cases: Vec<Entity<TestCase>>,
 }
 
 impl TestSuite {
-  /// Adds a new case relative to `path`: right after the case whose id
-  /// matches (or that is its parent), or appended at the end when nothing
-  /// matches.
-  pub fn add_test_case(&mut self, path: TestPath) -> TestPath {
-    let position = self.cases.iter().position(|case| case.meta.path.is_parent(&path));
-    let name = ki_utils::next_available_name("new Case", self.cases.iter().map(|case| case.meta.name.clone()));
-    let new_case = TestCase::new_multi(self.meta.id(), name);
+  /// Adds a new case step (a delay of 1000 ms) relative to `path`: right after the case `path`
+  /// points to or goes through, or appended at the end when `path` is the suite itself or no case
+  /// matches. The new case step gets a fresh id and a unique name. Returns its path.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestAdded`] on the owning container, with the path of the new case step.
+  pub fn add_new_delay_step(&mut self, path: TestPath, cx: &mut Context<Self>) -> TestPath {
+    let position = self
+      .cases
+      .iter()
+      .position(|case| case.read(cx).path().is_parent(&path))
+      .map(|pos| min(pos + 1, self.cases.len()))
+      .unwrap_or(self.cases.len());
+    let name = ki_utils::next_available_name("new Case", self.cases.iter().map(|case| case.read(cx).meta.name.clone()));
+    let new_case = TestCase::new_delay_case_step(self.meta.id(), name, self.container.clone());
     let path = new_case.meta.path;
-    match position {
-      Some(ix) => self.cases.insert(ix + 1, new_case),
-      None => self.cases.push(new_case),
-    }
+    self.cases.insert(position, cx.new(|_| new_case));
+    _ = self
+      .container
+      .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(path)));
     path
   }
 
-  /// Adds a new step relative to `path`. When `path` addresses the
-  /// suite itself, or a case whose `case_type` is a `CaseStep`, a new case
-  /// step is appended to the suite; otherwise the step is delegated to the
-  /// owning `CaseMulti`.
+  /// Adds a new, empty multi-step case relative to `path`: right after the case `path` points to
+  /// or goes through, or appended at the end when `path` is the suite itself or no case matches.
+  /// The new case gets a fresh id and a unique name. Returns its path.
   ///
-  /// # Errors
-  /// [`ProjectError::TestNotFound`] if `path` addresses a
-  /// case or step whose owning case cannot be found by id in this suite.
-  pub fn add_test_step(&mut self, path: TestPath) -> ProjectResult<TestPath> {
-    if path.is_suite() {
-      let name = ki_utils::next_available_name("New Step", self.cases.iter().map(|case| case.meta.name.clone()));
-      let new_case = TestCase::new_step_delay(self.meta.id(), name);
-      let path = new_case.meta.path;
-      self.cases.push(new_case);
-      return Ok(path);
-    }
+  /// # Events
+  /// [`TestsContainerEvent::TestAdded`] on the owning container, with the path of the new case.
+  pub fn add_new_test_case(&mut self, path: TestPath, cx: &mut Context<Self>) -> TestPath {
+    let position = self
+      .cases
+      .iter()
+      .position(|case| case.read(cx).meta.path.is_parent(&path))
+      .map(|pos| min(pos + 1, self.cases.len()))
+      .unwrap_or(self.cases.len());
+    let name = ki_utils::next_available_name("new Case", self.cases.iter().map(|case| case.read(cx).meta.name.clone()));
+    let new_case = TestCase::new_multi(self.meta.id(), name, self.container.clone());
+    let path = new_case.meta.path;
+    self.cases.insert(position, cx.new(|_| new_case));
+    _ = self
+      .container
+      .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(path)));
+    path
+  }
 
-    let case_id = path.case_id().expect("a non-Suite TestInfoId always has a case_id");
-    let Some(ix) = self.cases.iter().position(|case| case.meta.id() == case_id) else {
-      error!("TestSuite:add_test_step: unknow path: {}", path);
-      return Err(ProjectError::TestNotFound(path));
-    };
-
-    if path.is_case() && self.cases[ix].is_case_step() {
-      let name = ki_utils::next_available_name("New Step", self.cases.iter().map(|case| case.meta.name.clone()));
-      let new_case = TestCase::new_step_delay(self.meta.id(), name);
-      let path = new_case.meta.path;
-      self.cases.push(new_case);
-      Ok(path)
-    } else {
-      self.cases[ix].add_test_step(path)
-    }
+  /// Returns the path of this suite followed by the paths of all of its descendants, in display order.
+  pub fn all_paths(&self, cx: &App) -> Vec<TestPath> {
+    let mut paths = Vec::new();
+    paths.push(self.meta.path);
+    paths.extend(
+      self
+        .cases
+        .iter()
+        .flat_map(|case| case.read_with(cx, |case, cx| case.all_paths(cx))),
+    );
+    paths
   }
 
   /// Returns the case of this suite that `path` points to or goes through
   /// (the owning case of a step), or `None` when no case matches.
-  pub(crate) fn case_from_path(&self, path: &TestPath) -> Option<&TestCase> {
-    self.cases.iter().find(|case| case.meta.path.is_parent(path))
+  pub(crate) fn case_from_path(&self, path: &TestPath, cx: &App) -> Option<Entity<TestCase>> {
+    self
+      .cases
+      .iter()
+      .find(|case| case.read(cx).meta.path.is_parent(path))
+      .cloned()
   }
 
-  /// Deletes the node addressed by `path` from this suite: the whole case
-  /// when `path` addresses a case, or a single step delegated to its
-  /// owning case otherwise.
-  ///
-  /// # Errors
-  /// [`ProjectError::TestNotFound`] if no case in this suite is
-  /// (or owns) the node addressed by `path`.
-  pub(crate) fn delete_test(&mut self, path: &TestPath) -> ProjectResult<()> {
-    let Some(ix) = self.cases.iter().position(|case| case.meta.path.is_parent(path)) else {
-      warn!("TestSuite:delete_test: unknow path: {}", path);
-      return Err(ProjectError::TestNotFound(*path));
-    };
-
-    if path.is_case() {
-      self.cases.remove(ix);
-      Ok(())
-    } else {
-      self.cases[ix].delete_test(path)
-    }
-  }
-
-  /// Duplicates this suite with a new random id and the given name. All
-  /// cases (and their children) are also duplicated with new ids, but keep
-  /// their original names.
-  pub(crate) fn duplicate(&self, name: SharedString) -> Self {
+  /// Returns a deep copy of this suite named `name`. The copy and all of its descendants get fresh
+  /// ids, while the descendants keep their names.
+  pub(crate) fn duplicate(&self, name: SharedString, cx: &mut Context<Self>) -> Self {
+    let path = TestPath::Suite(Uuid::new_v4());
+    let cases = self
+      .cases
+      .iter()
+      .map(|case| {
+        let name = case.read(cx).meta.name.clone();
+        cx.new(|cx| case.update(cx, |case, cx| case.duplicate(name, path.suite_id(), cx)))
+      })
+      .collect();
     Self {
-      meta: self.meta.duplicate(name),
-      cases: self.cases.iter().map(|tc| tc.duplicate(tc.meta.name.clone())).collect(),
+      container: self.container.clone(),
+      meta: TestMetadata {
+        path,
+        name,
+        description: self.meta.description.clone(),
+        disabled: self.meta.disabled,
+      },
+      cases,
     }
   }
 
-  /// Duplicates the case (or, for a step within a `CaseMulti`, delegates to
-  /// that case) addressed by `path`, inserting the copy right after it
-  /// with a name made unique against its siblings. Returns the path of the
-  /// copy.
+  /// Duplicates the case at `path`, along with its steps, and inserts the copy right after it. The
+  /// copy gets fresh ids and a unique name. Returns the path of the copy.
   ///
   /// # Errors
-  /// - [`ProjectError::TestNotFound`] if no case in this suite is
-  ///   (or owns) the node addressed by `path`.
-  /// - [`ProjectError::OperationNotAllowed`] if `path` addresses a step
-  ///   whose owning case is a `CaseStep`.
-  pub(crate) fn duplicate_child(&mut self, path: &TestPath) -> ProjectResult<TestPath> {
-    let Some(ix) = self.cases.iter().position(|case| case.meta.path.is_parent(path)) else {
-      error!("TestSuite:duplicate_child: unknow path: {}", path);
-      return Err(ProjectError::TestNotFound(*path));
-    };
-
-    if matches!(path, TestPath::Case(_, _)) {
-      let name = ki_utils::next_available_name(
-        &self.cases[ix].meta.name,
-        self.cases.iter().map(|case| case.meta.name.clone()),
+  /// [`ProjectError::TestNotFound`] if no case of this suite is at `path`.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestAdded`] on the owning container, with the path of the copy.
+  pub fn duplicate_case(&mut self, path: &TestPath, cx: &mut Context<Self>) -> ProjectResult<TestPath> {
+    if let Some((ix, case)) = self
+      .cases
+      .iter()
+      .enumerate()
+      .find(|(_, case)| case.read(cx).meta.path() == *path)
+    {
+      let new_name = ki_utils::next_available_name(
+        &case.read(cx).meta.name,
+        self.cases.iter().map(|suite| suite.read(cx).meta.name.clone()),
       );
-      let duplicate = self.cases[ix].duplicate(name);
-      let new_path = duplicate.meta.path;
-      if ix == self.cases.len() - 1 {
-        self.cases.push(duplicate);
-      } else {
-        self.cases.insert(ix + 1, duplicate);
-      }
+      let new_case = case.update(cx, |case, cx| case.duplicate(new_name, self.meta.id(), cx));
+      let new_path = new_case.meta.path;
+      self.cases.insert(min(ix + 1, self.cases.len()), cx.new(|_| new_case));
+      _ = self
+        .container
+        .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(new_path)));
       Ok(new_path)
     } else {
-      self.cases[ix].duplicate_child(path)
+      Err(ProjectError::TestNotFound(*path))
     }
   }
 
-  /// Builds a suite from its on-disk representation, reading ids from the
-  /// file rather than generating new ones.
-  pub(crate) fn from_file(file_test_suite: FileTestSuite) -> TestSuite {
-    let id = file_test_suite.info.id;
+  /// Builds a suite from its on-disk representation. With `new_id`, the suite and all of its
+  /// descendants get freshly generated ids (e.g. when pasted); otherwise ids are read from the file.
+  pub(crate) fn from_file(
+    file_test_suite: FileTestSuite,
+    container: WeakEntity<TestsContainer>,
+    new_id: bool,
+    cx: &mut Context<Self>,
+  ) -> Self {
+    let meta = if new_id {
+      TestMetadata::new_suite_from_file(file_test_suite.info)
+    } else {
+      TestMetadata::suite_from_file(file_test_suite.info)
+    };
+    let id = meta.id();
     Self {
-      meta: TestMetadata::new_suite(file_test_suite.info),
+      container: container.clone(),
+      meta,
       cases: file_test_suite
         .cases
         .into_iter()
-        .map(|case| TestCase::from_file(case, id))
+        .map(|case| cx.new(|cx| TestCase::from_file(case, id, new_id, container.clone(), cx)))
         .collect(),
     }
   }
 
   /// Produces the serializable, on-disk representation of this suite.
-  pub(crate) fn get_file(&self) -> FileTestSuite {
+  pub fn get_file(&self, cx: &App) -> FileTestSuite {
     FileTestSuite {
       info: self.meta.to_file(),
-      cases: self.cases.iter().map(|case| case.get_file()).collect(),
+      cases: self.cases.iter().map(|case| case.read(cx).get_file(cx)).collect(),
     }
   }
 
-  /// Looks up the [`TestMetadata`] of the case or step addressed by `path`.
-  /// Always `None` when `path` addresses the suite itself, since the
-  /// suite's own info isn't reachable through this lookup.
-  #[allow(unused)]
-  pub fn info_from_path(&self, path: &TestPath) -> Option<&TestMetadata> {
-    let case = self.cases.iter().find(|case| case.meta.path.is_parent(path))?;
-    match path {
-      TestPath::Suite(_) => None,
-      TestPath::Case(_, _) => Some(&case.meta),
-      TestPath::Step(_, _, _) => case.info_from_path(path),
+  /// Inserts `case` relative to `path`: appended at the end when `path` is the suite itself,
+  /// otherwise right after the case `path` points to or goes through (or at the end when none
+  /// matches). The case, and its steps, are reparented under this suite, keeping their ids. Returns
+  /// the paths that changed, as `old path -> new path`.
+  ///
+  /// # Errors
+  /// [`ProjectError::NoOp`] if `path` isn't in this suite.
+  pub(crate) fn insert_case(
+    &mut self,
+    case: Entity<TestCase>,
+    path: &TestPath,
+    cx: &mut Context<Self>,
+  ) -> ProjectResult<HashMap<TestPath, TestPath>> {
+    if self.meta.id() != path.suite_id() {
+      return Err(ProjectError::NoOp);
     }
-  }
+    let updated_paths = case.update(cx, |case, cx| case.reparent(&self.meta.path, true, cx));
+    let ix = if matches!(path, TestPath::Suite(_)) {
+      self.cases.len()
+    } else {
+      self
+        .cases
+        .iter()
+        .position(|case| case.read(cx).path().is_parent(path))
+        .map(|ix| min(ix + 1, self.cases.len()))
+        .unwrap_or(self.cases.len())
+    };
+    self.cases.insert(ix, case);
 
-  /// Mutable counterpart to [`TestSuite::info_from_path`].
-  pub fn info_mut_from_path(&mut self, path: &TestPath) -> Option<&mut TestMetadata> {
-    let case = self.cases.iter_mut().find(|case| case.meta.path.is_parent(path))?;
-    match path {
-      TestPath::Suite(_) => None,
-      TestPath::Case(_, _) => Some(&mut case.meta),
-      TestPath::Step(_, _, _) => case.info_mut_from_path(path),
-    }
+    Ok(updated_paths)
   }
 
   /// Creates a new, empty suite with a freshly generated id.
-  pub fn new(name: SharedString) -> Self {
+  pub fn new(name: SharedString, container: WeakEntity<TestsContainer>) -> Self {
     Self {
+      container,
       meta: TestMetadata {
         path: TestPath::Suite(Uuid::new_v4()),
         name,
@@ -203,407 +233,471 @@ impl TestSuite {
       cases: vec![],
     }
   }
+
+  /// Moves the case at `path` one position down ([`Offset::Plus`]) or up ([`Offset::Minus`]). A
+  /// no-op when it is already the last, or the first, case.
+  ///
+  /// # Errors
+  /// [`ProjectError::TestNotFound`] if no case of this suite is at `path`.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestsModified`] on the owning container if the case moved.
+  pub fn offset_case(&mut self, path: TestPath, offset: Offset, cx: &mut Context<Self>) -> ProjectResult<()> {
+    if let Some(pos) = self.cases.iter().position(|case| case.read(cx).meta.path == path) {
+      let new_pos = match offset {
+        Offset::Plus => min(pos + 1, self.cases.len() - 1),
+        Offset::Minus => {
+          if pos > 0 {
+            pos - 1
+          } else {
+            pos
+          }
+        }
+      };
+      if pos != new_pos {
+        self.cases.swap(pos, new_pos);
+        _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+      }
+      Ok(())
+    } else {
+      Err(ProjectError::TestNotFound(path))
+    }
+  }
+
+  /// Pastes the case or step held in `cb_str`, as told by its metadata (a serialized case, or a
+  /// serialized step pasted as a case step), relative to `target`: appended at the end when `target`
+  /// is the suite itself, otherwise right after the case `target` points to or goes through. The
+  /// pasted node and its descendants get fresh ids. Nothing is pasted, and a warning is logged, if
+  /// `target` isn't in this suite or the clipboard doesn't hold a valid case or step.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestAdded`] on the owning container, with the path of the pasted case.
+  pub fn paste_from_clipboard(&mut self, cb_str: &ClipboardString, target: TestPath, cx: &mut Context<Self>) {
+    // Pasted on the suite itself: appended at the end, otherwise right after the targeted case
+    let ix = if target.is_suite() {
+      Some(self.cases.len())
+    } else {
+      self
+        .cases
+        .iter()
+        .position(|case| case.read(cx).meta.path.is_parent(&target))
+        .map(|ix| min(ix + 1, self.cases.len()))
+    };
+    let Some(ix) = ix else {
+      warn!("TestSuite::paste_from_clipboard: Attempted to paste on a unknown path: {target}");
+      return;
+    };
+    if let Some(case) = if cb_str.metadata.as_deref() == Some(CASE_MULTI) || cb_str.metadata.as_deref() == Some(CASE_STEP) {
+      self.paste_case(&cb_str.text, cx)
+    } else if cb_str.metadata.as_deref() == Some(STEP) {
+      self.paste_step(&cb_str.text, cx)
+    } else {
+      None
+    } {
+      let new_path = case.read(cx).meta.path;
+      self.cases.insert(ix, case);
+      _ = self
+        .container
+        .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(new_path)));
+    }
+  }
+
+  /// Builds a case of this suite, with fresh ids, from `cb_content` (a serialized case), or returns
+  /// `None` and logs a warning when it isn't one.
+  fn paste_case(&mut self, cb_content: &str, cx: &mut Context<Self>) -> Option<Entity<TestCase>> {
+    let Ok(case) = serde_json::from_str::<FileTestCase>(cb_content) else {
+      warn!("Could not paste Case: Clipboard contains invalid Json");
+      debug!("Invalid Json: {}", cb_content);
+      return None;
+    };
+    Some(cx.new(|cx| TestCase::from_file(case, self.meta.id(), true, self.container.clone(), cx)))
+  }
+
+  /// Builds a case step of this suite, with a fresh id, from `cb_content` (a serialized step), or
+  /// returns `None` and logs a warning when it isn't one.
+  fn paste_step(&mut self, cb_content: &str, cx: &mut Context<Self>) -> Option<Entity<TestCase>> {
+    let Ok(step) = serde_json::from_str::<FileTestStep>(cb_content) else {
+      warn!("Could not paste Step: Clipboard contains invalid Json");
+      debug!("Invalid Json: {}", cb_content);
+      return None;
+    };
+    Some(cx.new(|_| TestCase::from_step_file(step, self.meta.id(), self.container.clone())))
+  }
+
+  /// Removes the case at `path` and returns it, or `None` when no case of this suite is at `path`.
+  /// No event is emitted: the caller is responsible for notifying the removal.
+  pub fn remove_case(&mut self, path: &TestPath, cx: &mut Context<Self>) -> Option<Entity<TestCase>> {
+    let ix = self.cases.iter().position(|case| case.read(cx).path() == *path)?;
+    let case = self.cases.remove(ix);
+    Some(case)
+  }
+}
+
+impl TestMetadataOwner for TestSuite {
+  #[inline]
+  fn id(&self) -> Uuid {
+    self.meta.id()
+  }
+
+  #[inline]
+  fn path(&self) -> TestPath {
+    self.meta.path
+  }
+
+  #[inline]
+  fn name(&self) -> SharedString {
+    self.meta.name.clone()
+  }
+
+  fn set_name(&mut self, new_name: SharedString, cx: &mut Context<Self>) {
+    if new_name == self.meta.name {
+      return;
+    }
+    self.meta.name = new_name.clone();
+    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    cx.notify();
+  }
+
+  #[inline]
+  fn description(&self) -> Option<SharedString> {
+    self.meta.description.clone()
+  }
+
+  fn set_description(&mut self, new_description: Option<SharedString>, cx: &mut Context<Self>) {
+    if new_description == self.meta.description {
+      return;
+    }
+    self.meta.description = new_description.clone();
+    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    cx.notify();
+  }
+
+  #[inline]
+  fn disabled(&self) -> bool {
+    self.meta.disabled
+  }
+
+  fn switch_disabled(&mut self, cx: &mut Context<Self>) {
+    self.meta.disabled = !self.meta.disabled;
+    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    cx.notify();
+  }
 }
 
 #[cfg(test)]
 mod tests {
-  use crate::error::ProjectError;
-  use crate::test::TestPath;
-  use crate::test::test_suite::TestSuite;
-  use gpui_kit::SharedString;
-  use ki_project::{FileDelayStep, FileStepData, FileTestCase, FileTestCaseType, FileTestMetadata, FileTestStep, FileTestSuite};
-  use uuid::Uuid;
+  use super::*;
+  use crate::test::step_delay::DelayStep;
+  use crate::test::test_case::TestCaseType;
+  use crate::test::test_fixtures::*;
+  use crate::test::test_step::StepData;
+  use gpui_kit::TestAppContext;
+  use ki_utils::SUITE;
 
-  /// A suite holding one multi-step case (with two steps) and one case step,
-  /// built through [`TestSuite::from_file`] so that every id is known upfront.
-  struct Fixture {
-    suite: TestSuite,
-    suite_id: Uuid,
-    multi_id: Uuid,
-    step_a_id: Uuid,
-    step_b_id: Uuid,
-    case_step_id: Uuid,
+  #[gpui_kit::test]
+  fn new_suite_is_empty_and_enabled(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let suite = TestSuite::new("Suite".into(), tests.downgrade());
+    assert!(suite.path().is_suite());
+    assert_eq!(suite.name(), "Suite");
+    assert_eq!(suite.description(), None);
+    assert!(!suite.disabled());
+    assert!(suite.cases.is_empty());
+    assert_ne!(TestSuite::new("Suite".into(), tests.downgrade()).id(), suite.id());
   }
 
-  fn file_info(id: Uuid, name: &str) -> FileTestMetadata {
-    FileTestMetadata {
-      id,
-      name: name.to_string(),
-      description: vec![],
-      disabled: false,
-    }
-  }
-
-  fn fixture() -> Fixture {
-    let suite_id = Uuid::new_v4();
-    let multi_id = Uuid::new_v4();
-    let step_a_id = Uuid::new_v4();
-    let step_b_id = Uuid::new_v4();
-    let case_step_id = Uuid::new_v4();
-
-    let suite = TestSuite::from_file(FileTestSuite {
-      info: file_info(suite_id, "suite"),
-      cases: vec![
-        FileTestCase {
-          info: file_info(multi_id, "multi case"),
-          case_type: FileTestCaseType::CaseMulti {
-            steps: vec![
-              FileTestStep {
-                info: file_info(step_a_id, "step a"),
-                data: FileStepData::Delay(FileDelayStep(1000)),
-              },
-              FileTestStep {
-                info: file_info(step_b_id, "step b"),
-                data: FileStepData::Delay(FileDelayStep(1000)),
-              },
-            ],
-          },
-        },
-        FileTestCase {
-          info: file_info(case_step_id, "case step"),
-          case_type: FileTestCaseType::CaseStep {
-            data: FileStepData::Delay(FileDelayStep(1000)),
-          },
-        },
-      ],
-    });
-
-    Fixture {
-      suite,
-      suite_id,
-      multi_id,
-      step_a_id,
-      step_b_id,
-      case_step_id,
-    }
-  }
-
-  #[test]
-  fn info_from_path_suite() {
-    let f = fixture();
-    // The suite's own info is not reachable through the path lookup.
-    assert!(f.suite.info_from_path(&TestPath::Suite(f.suite_id)).is_none());
-    assert!(f.suite.info_from_path(&TestPath::Suite(Uuid::new_v4())).is_none());
-  }
-
-  #[test]
-  fn info_from_path_case_multi() {
-    let f = fixture();
-    let info = f
-      .suite
-      .info_from_path(&TestPath::Case(f.suite_id, f.multi_id))
-      .expect("multi case should be reachable");
-    assert_eq!(info.id(), f.multi_id);
-    assert_eq!(info.name, SharedString::new("multi case"));
-    assert!(matches!(info.path(), TestPath::Case(suite, case) if suite == f.suite_id && case == f.multi_id));
-  }
-
-  #[test]
-  fn info_from_path_case_multi_unknown() {
-    let f = fixture();
-    // Unknown case id, right suite.
-    assert!(f.suite.info_from_path(&TestPath::Case(f.suite_id, Uuid::new_v4())).is_none());
-    // Known case id, wrong suite.
-    assert!(f.suite.info_from_path(&TestPath::Case(Uuid::new_v4(), f.multi_id)).is_none());
-  }
-
-  #[test]
-  fn info_from_path_case_step() {
-    let f = fixture();
-    let info = f
-      .suite
-      .info_from_path(&TestPath::Case(f.suite_id, f.case_step_id))
-      .expect("case step should be reachable");
-    assert_eq!(info.id(), f.case_step_id);
-    assert_eq!(info.name, SharedString::new("case step"));
-    assert!(matches!(info.path(), TestPath::Case(suite, case) if suite == f.suite_id && case == f.case_step_id));
-  }
-
-  #[test]
-  fn info_from_path_case_step_unknown() {
-    let f = fixture();
-    // Unknown case id, right suite.
-    assert!(f.suite.info_from_path(&TestPath::Case(f.suite_id, Uuid::new_v4())).is_none());
-    // Known case id, wrong suite.
-    assert!(
-      f.suite
-        .info_from_path(&TestPath::Case(Uuid::new_v4(), f.case_step_id))
-        .is_none()
-    );
-  }
-
-  #[test]
-  fn info_from_path_step() {
-    let f = fixture();
-    let info = f
-      .suite
-      .info_from_path(&TestPath::Step(f.suite_id, f.multi_id, f.step_a_id))
-      .expect("first step should be reachable");
-    assert_eq!(info.id(), f.step_a_id);
-    assert_eq!(info.name, SharedString::new("step a"));
-
-    let info = f
-      .suite
-      .info_from_path(&TestPath::Step(f.suite_id, f.multi_id, f.step_b_id))
-      .expect("second step should be reachable");
-    assert_eq!(info.id(), f.step_b_id);
-    assert_eq!(info.name, SharedString::new("step b"));
-    assert!(
-      matches!(info.path(), TestPath::Step(suite, case, step) if suite == f.suite_id && case == f.multi_id && step == f.step_b_id)
-    );
-  }
-
-  #[test]
-  fn info_from_path_step_unknown() {
-    let f = fixture();
-    // Owning case found, unknown step id.
-    assert!(
-      f.suite
-        .info_from_path(&TestPath::Step(f.suite_id, f.multi_id, Uuid::new_v4()))
-        .is_none()
-    );
-    // Known step id, unknown case id.
-    assert!(
-      f.suite
-        .info_from_path(&TestPath::Step(f.suite_id, Uuid::new_v4(), f.step_a_id))
-        .is_none()
-    );
-    // Known step id, wrong suite.
-    assert!(
-      f.suite
-        .info_from_path(&TestPath::Step(Uuid::new_v4(), f.multi_id, f.step_a_id))
-        .is_none()
-    );
-    // A case step has no children.
-    assert!(
-      f.suite
-        .info_from_path(&TestPath::Step(f.suite_id, f.case_step_id, Uuid::new_v4()))
-        .is_none()
-    );
-  }
-
-  #[test]
-  fn info_from_path_empty_suite() {
-    let suite = TestSuite::new(SharedString::new("suite"));
-    let suite_id = suite.meta.id();
-    assert!(suite.info_from_path(&TestPath::Suite(suite_id)).is_none());
-    assert!(suite.info_from_path(&TestPath::Case(suite_id, Uuid::new_v4())).is_none());
-    assert!(
-      suite
-        .info_from_path(&TestPath::Step(suite_id, Uuid::new_v4(), Uuid::new_v4()))
-        .is_none()
-    );
-  }
-
-  #[test]
-  fn info_mut_from_path_suite() {
-    let mut f = fixture();
-    assert!(f.suite.info_mut_from_path(&TestPath::Suite(f.suite_id)).is_none());
-    assert!(f.suite.info_mut_from_path(&TestPath::Suite(Uuid::new_v4())).is_none());
-  }
-
-  #[test]
-  fn info_mut_from_path_case_multi() {
-    let mut f = fixture();
-    let path = TestPath::Case(f.suite_id, f.multi_id);
-    let info = f.suite.info_mut_from_path(&path).expect("multi case should be reachable");
-    assert_eq!(info.id(), f.multi_id);
-    info.name = SharedString::new("renamed case");
-    info.disabled = true;
-
-    let info = f.suite.info_from_path(&path).expect("multi case should be reachable");
-    assert_eq!(info.name, SharedString::new("renamed case"));
-    assert!(info.disabled);
-  }
-
-  #[test]
-  fn info_mut_from_path_case_multi_unknown() {
-    let mut f = fixture();
-    assert!(
-      f.suite
-        .info_mut_from_path(&TestPath::Case(f.suite_id, Uuid::new_v4()))
-        .is_none()
-    );
-    assert!(
-      f.suite
-        .info_mut_from_path(&TestPath::Case(Uuid::new_v4(), f.multi_id))
-        .is_none()
-    );
-  }
-
-  #[test]
-  fn info_mut_from_path_case_step() {
-    let mut f = fixture();
-    let path = TestPath::Case(f.suite_id, f.case_step_id);
-    let info = f.suite.info_mut_from_path(&path).expect("case step should be reachable");
-    assert_eq!(info.id(), f.case_step_id);
-    info.name = SharedString::new("renamed case step");
-
-    let info = f.suite.info_from_path(&path).expect("case step should be reachable");
-    assert_eq!(info.name, SharedString::new("renamed case step"));
-  }
-
-  #[test]
-  fn info_mut_from_path_case_step_unknown() {
-    let mut f = fixture();
-    assert!(
-      f.suite
-        .info_mut_from_path(&TestPath::Case(f.suite_id, Uuid::new_v4()))
-        .is_none()
-    );
-    assert!(
-      f.suite
-        .info_mut_from_path(&TestPath::Case(Uuid::new_v4(), f.case_step_id))
-        .is_none()
-    );
-  }
-
-  #[test]
-  fn info_mut_from_path_step() {
-    let mut f = fixture();
-    let path = TestPath::Step(f.suite_id, f.multi_id, f.step_b_id);
-    let info = f.suite.info_mut_from_path(&path).expect("second step should be reachable");
-    assert_eq!(info.id(), f.step_b_id);
-    info.name = SharedString::new("renamed step");
-    info.disabled = true;
-
-    let info = f.suite.info_from_path(&path).expect("second step should be reachable");
-    assert_eq!(info.name, SharedString::new("renamed step"));
-    assert!(info.disabled);
-    // The sibling step is untouched.
-    let sibling = f
-      .suite
-      .info_from_path(&TestPath::Step(f.suite_id, f.multi_id, f.step_a_id))
-      .expect("first step should be reachable");
-    assert_eq!(sibling.name, SharedString::new("step a"));
-    assert!(!sibling.disabled);
-  }
-
-  #[test]
-  fn info_mut_from_path_step_unknown() {
-    let mut f = fixture();
-    assert!(
-      f.suite
-        .info_mut_from_path(&TestPath::Step(f.suite_id, f.multi_id, Uuid::new_v4()))
-        .is_none()
-    );
-    assert!(
-      f.suite
-        .info_mut_from_path(&TestPath::Step(f.suite_id, Uuid::new_v4(), f.step_a_id))
-        .is_none()
-    );
-    assert!(
-      f.suite
-        .info_mut_from_path(&TestPath::Step(Uuid::new_v4(), f.multi_id, f.step_a_id))
-        .is_none()
-    );
-    assert!(
-      f.suite
-        .info_mut_from_path(&TestPath::Step(f.suite_id, f.case_step_id, Uuid::new_v4()))
-        .is_none()
-    );
-  }
-
-  fn case_names(suite: &TestSuite) -> Vec<String> {
-    suite.cases.iter().map(|case| case.meta.name.to_string()).collect()
-  }
-
-  #[test]
-  fn add_test_case_suite_selected_appends_at_end() {
-    let mut f = fixture();
-    f.suite.add_test_case(TestPath::Suite(f.suite_id));
-    assert_eq!(case_names(&f.suite), vec!["multi case", "case step", "new Case"]);
-  }
-
-  #[test]
-  fn add_test_case_after_case_multi() {
-    let mut f = fixture();
-    f.suite.add_test_case(TestPath::Step(f.suite_id, f.multi_id, f.step_a_id));
-    assert_eq!(case_names(&f.suite), vec!["multi case", "new Case", "case step"]);
-  }
-
-  #[test]
-  fn add_test_case_after_case_step() {
-    let mut f = fixture();
-    f.suite.add_test_case(TestPath::Case(f.suite_id, f.case_step_id));
-    assert_eq!(case_names(&f.suite), vec!["multi case", "case step", "new Case"]);
-  }
-
-  #[test]
-  fn add_test_case_unknown_path_appends_at_end() {
-    let mut f = fixture();
-    // A path for a different suite entirely: no case in this suite is its parent.
-    f.suite.add_test_case(TestPath::Case(Uuid::new_v4(), Uuid::new_v4()));
-    assert_eq!(case_names(&f.suite), vec!["multi case", "case step", "new Case"]);
-  }
-
-  #[test]
-  fn add_test_case_name_is_made_unique() {
-    let mut f = fixture();
-    f.suite.add_test_case(TestPath::Suite(f.suite_id));
-    f.suite.add_test_case(TestPath::Suite(f.suite_id));
+  #[gpui_kit::test]
+  fn all_paths_lists_the_suite_then_its_descendants(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
     assert_eq!(
-      case_names(&f.suite),
-      vec!["multi case", "case step", "new Case", "new Case_1"]
+      subtree(&tests, p.suite_a, cx),
+      vec![p.suite_a, p.case_a, p.step_a1, p.step_a2, p.case_step_a]
     );
   }
 
-  #[test]
-  fn delete_test_removes_case_multi() {
-    let mut f = fixture();
-    f.suite
-      .delete_test(&TestPath::Case(f.suite_id, f.multi_id))
-      .expect("delete_test should succeed");
-    assert_eq!(case_names(&f.suite), vec!["case step"]);
+  // Adding cases
+
+  #[gpui_kit::test]
+  fn add_new_test_case_on_the_suite_appends(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    let new_path = suite(&tests, p.suite_a, cx).update(cx, |suite, cx| suite.add_new_test_case(p.suite_a, cx));
+    assert_eq!(case_names(&tests, p.suite_a, cx), vec!["Case A", "Case step A", "new Case"]);
+    assert!(p.suite_a.is_parent(&new_path));
+    case(&tests, new_path, cx).read_with(cx, |case, _| {
+      assert!(matches!(case.case_type(), TestCaseType::CaseMulti { steps } if steps.is_empty()));
+    });
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestAdded(new_path)]);
   }
 
-  #[test]
-  fn delete_test_removes_case_step() {
-    let mut f = fixture();
-    f.suite
-      .delete_test(&TestPath::Case(f.suite_id, f.case_step_id))
-      .expect("delete_test should succeed");
-    assert_eq!(case_names(&f.suite), vec!["multi case"]);
-  }
-
-  #[test]
-  fn delete_test_removes_step_within_case_multi() {
-    let mut f = fixture();
-    f.suite
-      .delete_test(&TestPath::Step(f.suite_id, f.multi_id, f.step_a_id))
-      .expect("delete_test should succeed");
-    // The case itself is untouched; only the step below it is removed.
-    assert_eq!(case_names(&f.suite), vec!["multi case", "case step"]);
-    assert!(
-      f.suite
-        .info_from_path(&TestPath::Step(f.suite_id, f.multi_id, f.step_a_id))
-        .is_none()
+  #[gpui_kit::test]
+  fn add_new_test_case_inserts_after_the_case_of_path(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let suite = suite(&tests, p.suite_a, cx);
+    suite.update(cx, |suite, cx| suite.add_new_test_case(p.step_a2, cx));
+    assert_eq!(case_names(&tests, p.suite_a, cx), vec!["Case A", "new Case", "Case step A"]);
+    suite.update(cx, |suite, cx| suite.add_new_test_case(p.case_step_a, cx));
+    assert_eq!(
+      case_names(&tests, p.suite_a, cx),
+      vec!["Case A", "new Case", "Case step A", "new Case_1"]
     );
-    let sibling = f
-      .suite
-      .info_from_path(&TestPath::Step(f.suite_id, f.multi_id, f.step_b_id))
-      .expect("remaining step should still be reachable");
-    assert_eq!(sibling.name, SharedString::new("step b"));
   }
 
-  #[test]
-  fn delete_test_unknown_case_is_not_found() {
-    let mut f = fixture();
-    let err = f
-      .suite
-      .delete_test(&TestPath::Case(f.suite_id, Uuid::new_v4()))
-      .expect_err("an unknown case id should fail");
-    assert!(matches!(err, ProjectError::TestNotFound(_)));
-    assert_eq!(case_names(&f.suite), vec!["multi case", "case step"]);
+  #[gpui_kit::test]
+  fn add_new_delay_step_adds_a_case_step(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    let suite = suite(&tests, p.suite_a, cx);
+    let first = suite.update(cx, |suite, cx| suite.add_new_delay_step(p.case_a, cx));
+    let second = suite.update(cx, |suite, cx| suite.add_new_delay_step(p.suite_a, cx));
+    assert_eq!(
+      case_names(&tests, p.suite_a, cx),
+      vec!["Case A", "new Case", "Case step A", "new Case_1"]
+    );
+    case(&tests, first, cx).read_with(cx, |case, _| {
+      assert!(matches!(case.case_type(), TestCaseType::CaseStep { data } if *data == StepData::Delay(DelayStep(1000))));
+    });
+    assert_eq!(
+      *events.borrow(),
+      vec![TestsContainerEvent::TestAdded(first), TestsContainerEvent::TestAdded(second)]
+    );
   }
 
-  #[test]
-  fn delete_test_unknown_step_is_not_found() {
-    let mut f = fixture();
-    let err = f
-      .suite
-      .delete_test(&TestPath::Step(f.suite_id, f.multi_id, Uuid::new_v4()))
-      .expect_err("an unknown step id should fail");
-    assert!(matches!(err, ProjectError::TestNotFound(_)));
+  // Duplicating cases
+
+  #[gpui_kit::test]
+  fn duplicate_case_inserts_a_copy_after_it(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    let copy = suite(&tests, p.suite_a, cx)
+      .update(cx, |suite, cx| suite.duplicate_case(&p.case_a, cx))
+      .unwrap();
+    assert_eq!(case_names(&tests, p.suite_a, cx), vec!["Case A", "Case A_1", "Case step A"]);
+    assert_eq!(step_names(&tests, copy, cx), vec!["Step A1", "Step A2"]);
+    let copy_paths = subtree(&tests, copy, cx);
+    let original_paths = subtree(&tests, p.case_a, cx);
+    for path in &copy_paths {
+      assert!(copy.is_parent(path));
+      assert!(original_paths.iter().all(|original| original.id() != path.id()));
+    }
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestAdded(copy)]);
+  }
+
+  #[gpui_kit::test]
+  fn duplicate_case_step_keeps_its_data(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let copy = suite(&tests, p.suite_b, cx)
+      .update(cx, |suite, cx| suite.duplicate_case(&p.case_step_b, cx))
+      .unwrap();
+    assert_eq!(
+      case_names(&tests, p.suite_b, cx),
+      vec!["Case B", "Case step B", "Case step B_1"]
+    );
+    case(&tests, copy, cx).read_with(cx, |case, _| {
+      assert!(matches!(case.case_type(), TestCaseType::CaseStep { data } if *data == StepData::Delay(DelayStep(500))));
+    });
+  }
+
+  #[gpui_kit::test]
+  fn duplicate_case_requires_a_case_path(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let suite = suite(&tests, p.suite_a, cx);
+    for path in [p.step_a1, p.suite_a, TestPath::Case(p.suite_a.id(), Uuid::new_v4())] {
+      let result = suite.update(cx, |suite, cx| suite.duplicate_case(&path, cx));
+      assert!(matches!(result, Err(ProjectError::TestNotFound(not_found)) if not_found == path));
+    }
+  }
+
+  // Offsetting cases
+
+  #[gpui_kit::test]
+  fn offset_case_swaps_with_its_neighbour(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    let suite = suite(&tests, p.suite_a, cx);
+    suite
+      .update(cx, |suite, cx| suite.offset_case(p.case_a, Offset::Plus, cx))
+      .unwrap();
+    assert_eq!(case_names(&tests, p.suite_a, cx), vec!["Case step A", "Case A"]);
+    suite
+      .update(cx, |suite, cx| suite.offset_case(p.case_a, Offset::Minus, cx))
+      .unwrap();
+    assert_eq!(case_names(&tests, p.suite_a, cx), vec!["Case A", "Case step A"]);
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 2]);
+  }
+
+  #[gpui_kit::test]
+  fn offset_case_at_the_bounds_is_a_no_op(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    let suite = suite(&tests, p.suite_a, cx);
+    suite
+      .update(cx, |suite, cx| suite.offset_case(p.case_a, Offset::Minus, cx))
+      .unwrap();
+    suite
+      .update(cx, |suite, cx| suite.offset_case(p.case_step_a, Offset::Plus, cx))
+      .unwrap();
+    assert_eq!(case_names(&tests, p.suite_a, cx), vec!["Case A", "Case step A"]);
+    assert!(events.borrow().is_empty());
+  }
+
+  #[gpui_kit::test]
+  fn offset_case_unknown_is_not_found(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let result = suite(&tests, p.suite_a, cx).update(cx, |suite, cx| suite.offset_case(p.case_b, Offset::Plus, cx));
+    assert!(matches!(result, Err(ProjectError::TestNotFound(path)) if path == p.case_b));
+  }
+
+  // Removing cases
+
+  #[gpui_kit::test]
+  fn remove_case_returns_it_without_notifying(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    let suite = suite(&tests, p.suite_a, cx);
+    let case_a = case(&tests, p.case_a, cx);
+    assert_eq!(suite.update(cx, |suite, cx| suite.remove_case(&p.case_a, cx)), Some(case_a));
+    assert_eq!(case_names(&tests, p.suite_a, cx), vec!["Case step A"]);
+    assert_eq!(suite.update(cx, |suite, cx| suite.remove_case(&p.case_a, cx)), None);
+    assert!(events.borrow().is_empty());
+  }
+
+  // Inserting cases
+
+  #[gpui_kit::test]
+  fn insert_case_reparents_it_and_its_steps(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let case_a = suite(&tests, p.suite_a, cx).update(cx, |suite, cx| suite.remove_case(&p.case_a, cx).unwrap());
+    let suite_b = suite(&tests, p.suite_b, cx);
+    let updated = suite_b
+      .update(cx, |suite, cx| suite.insert_case(case_a, &p.case_b, cx))
+      .unwrap();
+    assert_eq!(case_names(&tests, p.suite_b, cx), vec!["Case B", "Case A", "Case step B"]);
+    let sb = p.suite_b.id();
+    assert_eq!(
+      updated,
+      [
+        (p.case_a, TestPath::Case(sb, p.case_a.id())),
+        (p.step_a1, TestPath::Step(sb, p.case_a.id(), p.step_a1.id())),
+        (p.step_a2, TestPath::Step(sb, p.case_a.id(), p.step_a2.id())),
+      ]
+      .into_iter()
+      .collect()
+    );
+  }
+
+  #[gpui_kit::test]
+  fn insert_case_out_of_the_suite_is_a_no_op(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let case_a = case(&tests, p.case_a, cx);
+    let result = suite(&tests, p.suite_b, cx).update(cx, |suite, cx| suite.insert_case(case_a, &p.case_a, cx));
+    assert!(matches!(result, Err(ProjectError::NoOp)));
+    assert_eq!(case_names(&tests, p.suite_b, cx), vec!["Case B", "Case step B"]);
+  }
+
+  // Pasting
+
+  fn copied_case(p: &Paths, ix: usize, metadata: &str) -> ClipboardString {
+    clipboard(serde_json::to_string(&p.file().suites[0].cases[ix]).unwrap(), metadata)
+  }
+
+  #[gpui_kit::test]
+  fn paste_multi_case_on_the_suite_appends_a_copy(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    suite(&tests, p.suite_b, cx).update(cx, |suite, cx| {
+      suite.paste_from_clipboard(&copied_case(&p, 0, CASE_MULTI), p.suite_b, cx)
+    });
+    assert_eq!(case_names(&tests, p.suite_b, cx), vec!["Case B", "Case step B", "Case A"]);
+    let pasted = subtree(&tests, p.suite_b, cx)[4..].to_vec();
+    assert_eq!(pasted.len(), 3);
+    for path in &pasted {
+      assert!(pasted[0].is_parent(path));
+      assert!(
+        ![p.case_a, p.step_a1, p.step_a2]
+          .iter()
+          .any(|original| original.id() == path.id())
+      );
+    }
+    assert_eq!(step_names(&tests, pasted[0], cx), vec!["Step A1", "Step A2"]);
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestAdded(pasted[0])]);
+  }
+
+  #[gpui_kit::test]
+  fn paste_case_step_after_the_case_of_target(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    suite(&tests, p.suite_b, cx).update(cx, |suite, cx| {
+      suite.paste_from_clipboard(&copied_case(&p, 1, CASE_STEP), p.step_b1, cx)
+    });
+    assert_eq!(
+      case_names(&tests, p.suite_b, cx),
+      vec!["Case B", "Case step A", "Case step B"]
+    );
+    let pasted = subtree(&tests, p.suite_b, cx)[3];
+    assert_ne!(pasted.id(), p.case_step_a.id());
+    case(&tests, pasted, cx).read_with(cx, |case, _| {
+      assert!(matches!(case.case_type(), TestCaseType::CaseStep { data } if *data == StepData::Delay(DelayStep(300))));
+    });
+  }
+
+  #[gpui_kit::test]
+  fn paste_step_as_a_case_step(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let step = clipboard(
+      serde_json::to_string(&file_delay_step(p.step_a2.id(), "Step A2", 200)).unwrap(),
+      STEP,
+    );
+    suite(&tests, p.suite_b, cx).update(cx, |suite, cx| suite.paste_from_clipboard(&step, p.case_b, cx));
+    assert_eq!(case_names(&tests, p.suite_b, cx), vec!["Case B", "Step A2", "Case step B"]);
+    let pasted = subtree(&tests, p.suite_b, cx)[3];
+    assert_ne!(pasted.id(), p.step_a2.id());
+    case(&tests, pasted, cx).read_with(cx, |case, _| {
+      assert!(matches!(case.case_type(), TestCaseType::CaseStep { data } if *data == StepData::Delay(DelayStep(200))));
+    });
+  }
+
+  #[gpui_kit::test]
+  fn paste_invalid_content_is_ignored(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    let suite_b = suite(&tests, p.suite_b, cx);
+    for cb in [
+      // Wrong kind, invalid json, json of another kind, unknown target
+      copied_case(&p, 0, SUITE),
+      clipboard("not json".to_string(), CASE_MULTI),
+      clipboard(serde_json::to_string(&p.file().suites[0]).unwrap(), STEP),
+    ] {
+      suite_b.update(cx, |suite, cx| suite.paste_from_clipboard(&cb, p.suite_b, cx));
+    }
+    suite_b.update(cx, |suite, cx| {
+      suite.paste_from_clipboard(&copied_case(&p, 0, CASE_MULTI), p.case_a, cx)
+    });
+    assert_eq!(case_names(&tests, p.suite_b, cx), vec!["Case B", "Case step B"]);
+    assert!(events.borrow().is_empty());
+  }
+
+  // Metadata
+
+  #[gpui_kit::test]
+  fn metadata_setters_notify_changes_only(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    let suite = suite(&tests, p.suite_a, cx);
+    suite.update(cx, |suite, cx| {
+      suite.set_name("Suite A".into(), cx);
+      suite.set_description(None, cx);
+    });
+    assert!(events.borrow().is_empty());
+    suite.update(cx, |suite, cx| {
+      suite.set_name("Renamed".into(), cx);
+      suite.set_description(Some("desc".into()), cx);
+      suite.switch_disabled(cx);
+    });
+    suite.read_with(cx, |suite, _| {
+      assert_eq!(suite.name(), "Renamed");
+      assert_eq!(suite.description().as_deref(), Some("desc"));
+      assert!(suite.disabled());
+    });
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 3]);
   }
 }

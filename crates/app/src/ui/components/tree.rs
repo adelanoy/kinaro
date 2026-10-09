@@ -12,10 +12,10 @@ use uuid::Uuid;
 
 pub const TREE_CONTEXT: &str = "Tree";
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ProjectTreeNode {
   pub path: TestPath,
-  pub node_kind: ProjectTestNodeKind,
+  pub kind: ProjectTestNodeKind,
   pub label: SharedString,
   pub disabled: bool,
   pub parent_disabled: bool,
@@ -33,7 +33,7 @@ impl ProjectTreeNode {
 
   /// Returns a label describing the type of node
   pub fn label(&self) -> SharedString {
-    match self.node_kind {
+    match self.kind {
       ProjectTestNodeKind::Suite => "Test Suite",
       ProjectTestNodeKind::Case => "Test Case",
       ProjectTestNodeKind::CaseStep | ProjectTestNodeKind::Step => "Test Step",

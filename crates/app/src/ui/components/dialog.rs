@@ -6,17 +6,14 @@ use gpui_kit::component::input::{Input, Textarea, TextareaState};
 use gpui_kit::component::{ActiveTheme, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{App, AppContext, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div};
-use ki_utils::TestPath;
-use ki_workspace::test::TestsContainer;
+use ki_workspace::test::TestMetadataOwner;
 
-/// Opens a dialog to rename the node at `path`, prefilled with `current_name`.
+/// Opens a dialog to rename the node `meta_owner`, prefilled with `current_name`.
 ///
-/// On confirmation the node is renamed in `tests`, and a notification is
-/// pushed to `window` if that fails.
-pub fn show_rename_dialog(
+/// On confirmation the node is renamed.
+pub fn show_rename_dialog<M: TestMetadataOwner>(
   current_name: SharedString,
-  path: TestPath,
-  tests: Entity<TestsContainer>,
+  meta_owner: Entity<M>,
   window: &mut Window,
   cx: &mut App,
 ) {
@@ -39,27 +36,23 @@ pub fn show_rename_dialog(
       )
       .on_ok({
         let name = input.read(cx).value();
-        let tests = tests.clone();
-        move |_, window, cx| {
-          if let Err(err) = tests.update(cx, |tests, cx| tests.rename_at(path, name.clone(), cx)) {
-            window.push_notification(err, cx);
-          }
+        let meta_owner = meta_owner.clone();
+        move |_, _, cx| {
+          meta_owner.update(cx, |meta_owner, cx| meta_owner.set_name(name.clone(), cx));
           true
         }
       })
   });
 }
 
-/// Opens a dialog to edit the description of the node at `path`, prefilled
+/// Opens a dialog to edit the description of the node `meta_owner`, prefilled
 /// with `current_desc`. The text is edited as markdown, next to a live preview
 /// of its rendering.
 ///
-/// On confirmation the description is set in `tests` (removed if left empty),
-/// and a notification is pushed to `window` if that fails.
-pub fn show_edit_desc_dialog(
+/// On confirmation the description is set on the node (removed if left empty).
+pub fn show_edit_desc_dialog<M: TestMetadataOwner>(
   current_desc: SharedString,
-  path: TestPath,
-  tests: Entity<TestsContainer>,
+  meta_owner: Entity<M>,
   window: &mut Window,
   cx: &mut App,
 ) {
@@ -110,11 +103,9 @@ pub fn show_edit_desc_dialog(
           .read(cx)
           .value()
           .map(|value| if value.is_empty() { None } else { Some(value) });
-        let tests = tests.clone();
-        move |_, window, cx| {
-          if let Err(err) = tests.update(cx, |tests, cx| tests.edit_description_at(path, desc.clone(), cx)) {
-            window.push_notification(err, cx);
-          }
+        let meta_owner = meta_owner.clone();
+        move |_, _, cx| {
+          meta_owner.update(cx, |meta, cx| meta.set_description(desc.clone(), cx));
           true
         }
       })

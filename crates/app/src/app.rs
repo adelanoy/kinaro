@@ -1,11 +1,12 @@
-use std::path::PathBuf;
-use gpui_kit::{px, App, Size, WindowOptions, TitlebarOptions, point, WindowDecorations, ClipboardItem, Window};
-use gpui_kit::component::notification::Notification;
-use gpui_kit::component::WindowExt;
-use log::info;
-use ki_settings::app_state::AppState;
-use ki_utils::TestPath;
 use crate::actions;
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::notification::Notification;
+use gpui_kit::{App, ClipboardItem, Entity, Size, TitlebarOptions, Window, WindowDecorations, WindowOptions, point, px};
+use ki_settings::app_state::AppState;
+use ki_utils::{CASE_MULTI, CASE_STEP, STEP, SUITE, TestPath};
+use ki_workspace::test::TestsContainer;
+use log::{info, warn};
+use std::path::PathBuf;
 
 pub(super) fn init_app(config_dir: PathBuf, cx: &mut App) {
   if !config_dir.exists() {
@@ -62,4 +63,55 @@ pub fn copy_id(path: TestPath, window: &mut Window, cx: &mut App) {
 pub fn copy_path(path: TestPath, window: &mut Window, cx: &mut App) {
   cx.write_to_clipboard(ClipboardItem::new_string(path.to_string()));
   window.push_notification(Notification::info("Path copied!"), cx);
+}
+
+/// Copies the node at `path` in `tests` to the clipboard, serialized as JSON, with metadata telling
+/// its kind ([`SUITE`], [`CASE_MULTI`], [`CASE_STEP`] or [`STEP`]) so it can be pasted back. Nothing
+/// is copied, and a warning is logged, if no node is at `path` or it can't be serialized.
+pub fn copy_test(path: TestPath, tests: &Entity<TestsContainer>, cx: &mut App) {
+  match path {
+    TestPath::Suite(_) => {
+      let Some(suite) = tests.read_with(cx, |tests, _| {
+        tests.suite_from_path(&path, cx).map(|suite| suite.read(cx).get_file(cx))
+      }) else {
+        warn!("copy_test: no suite from {}", path);
+        return;
+      };
+      let Ok(value) = serde_json::to_string(&suite) else {
+        warn!("Error while serializing suite: {}", path);
+        return;
+      };
+      cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(value, SUITE.to_string()));
+    }
+    TestPath::Case(_, _) => {
+      let Some(case) = tests.read_with(cx, |tests, _| {
+        tests.case_from_path(&path, cx).map(|case| case.read(cx).get_file(cx))
+      }) else {
+        warn!("copy_test: no case from {}", path);
+        return;
+      };
+      let Ok(value) = serde_json::to_string(&case) else {
+        warn!("Error while serializing case: {}", path);
+        return;
+      };
+      if case.is_case_step() {
+        cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(value, CASE_STEP.to_string()));
+      } else {
+        cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(value, CASE_MULTI.to_string()));
+      }
+    }
+    TestPath::Step(_, _, _) => {
+      let Some(step) = tests.read_with(cx, |tests, _| {
+        tests.step_from_path(&path, cx).map(|step| step.read(cx).get_file())
+      }) else {
+        warn!("copy_test: no step from {}", path);
+        return;
+      };
+      let Ok(value) = serde_json::to_string(&step) else {
+        warn!("Error while serializing step: {}", path);
+        return;
+      };
+      cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(value, STEP.to_string()));
+    }
+  }
 }
