@@ -1,5 +1,6 @@
 use ki_project::FileDelayStep;
 
+/// A step waiting for the given number of milliseconds.
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct DelayStep(pub u32);
 

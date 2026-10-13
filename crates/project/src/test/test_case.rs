@@ -16,3 +16,10 @@ pub struct FileTestCase {
   pub info: FileTestMetadata,
   pub case_type: FileTestCaseType,
 }
+
+impl FileTestCase {
+  /// Returns `true` if this case is a [`FileTestCaseType::CaseStep`].
+  pub fn is_case_step(&self) -> bool {
+    matches!(self.case_type, FileTestCaseType::CaseStep { .. })
+  }
+}

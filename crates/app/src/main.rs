@@ -1,14 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 pub(crate) mod actions;
+pub mod app;
 pub mod log;
 pub(crate) mod ui;
-pub mod app;
 
 use crate::app::{build_window_options, init_app};
 use crate::ui::WorkspaceView;
-use gpui_kit::component::Root;
 use gpui_kit::AppContext;
+use gpui_kit::component::Root;
 use ki_assets::Assets;
 
 fn main() {

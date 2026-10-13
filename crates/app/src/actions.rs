@@ -10,7 +10,7 @@ actions!([
 actions!([CreateProject, OpenProject]);
 
 // PROJECT TREE
-actions!([AddTestSuite, AddTestCase, AddTestStep, SwitchNodeActiveStatus]);
+actions!([AddTestSuite, AddTestCase, AddDelayStep, SwitchNodeActiveStatus]);
 
 pub fn init(cx: &mut App) {
   cx.bind_keys([

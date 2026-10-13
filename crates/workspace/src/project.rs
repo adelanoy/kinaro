@@ -56,7 +56,7 @@ impl Project {
 
       let variables = cx.new(|_| ProjectVariables::from_file(file_project.variables, metadata));
       let _variables_event_sub = cx.subscribe(&variables, Self::on_profiles_variables_event);
-      let tests = cx.new(|_| TestsContainer::from_file(file_project.tests, metadata));
+      let tests = cx.new(|cx| TestsContainer::from_file(file_project.tests, metadata, cx));
       let _tests_event_sub = cx.subscribe(&tests, Self::on_tests_event);
       Self {
         name: SharedString::new(file_project.name),
@@ -103,7 +103,7 @@ impl Project {
     let (opened_tree_nodes, opened_editor_nodes, active_editor_index) = self.tests.read_with(cx, |tests, _| {
       (
         tests.opened_tree_nodes().clone(),
-        tests.opened_editor_nodes().clone(),
+        tests.opened_editor_nodes().to_vec(),
         tests.active_editor_tab_index(),
       )
     });
@@ -139,7 +139,6 @@ impl Project {
       // Trigger project save
       TestsContainerEvent::TestsModified
       | TestsContainerEvent::TestAdded(_)
-      | TestsContainerEvent::TestRenamed(_, _, _)
       | TestsContainerEvent::TestMoved(_, _)
       | TestsContainerEvent::TestRemoved(_) => {
         self.save(cx);
@@ -177,7 +176,7 @@ impl Project {
 
   fn to_file(&self, cx: &App) -> ProjectFile {
     let variables = self.variables.read(cx).to_file();
-    let tests = self.tests.read(cx).to_file();
+    let tests = self.tests.read_with(cx, |tests, cx| tests.to_file(cx));
     let modified = Local::now();
 
     ProjectFile {
