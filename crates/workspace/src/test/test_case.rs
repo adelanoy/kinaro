@@ -1,8 +1,12 @@
 use crate::error::{ProjectError, ProjectResult};
 use crate::test::step_delay::DelayStep;
 use crate::test::test_step::StepData;
-use crate::test::{TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent, test_step::TestStep};
+use crate::test::{
+  StepDataProvider, TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent, test_step::TestStep,
+};
+use gpui_kit::component::Icon;
 use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, SharedString, WeakEntity};
+use ki_assets::icon::IconAsset;
 use ki_project::{FileTestCase, FileTestCaseType, FileTestStep};
 use ki_utils::{CASE_STEP, Offset, STEP};
 use log::{debug, warn};
@@ -441,9 +445,18 @@ impl TestMetadataOwner for TestCase {
   fn id(&self) -> Uuid {
     self.meta.id()
   }
+
   #[inline]
   fn path(&self) -> TestPath {
     self.meta.path
+  }
+
+  fn icon(&self) -> Icon {
+    if let TestCaseType::CaseStep { data } = &self.case_type {
+      data.icon()
+    } else {
+      IconAsset::TestCase.into()
+    }
   }
 
   #[inline]
@@ -483,6 +496,24 @@ impl TestMetadataOwner for TestCase {
     self.meta.disabled = !self.meta.disabled;
     _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
     cx.notify();
+  }
+}
+
+impl StepDataProvider for TestCase {
+  fn data(&self) -> Option<&StepData> {
+    if let TestCaseType::CaseStep { data } = &self.case_type {
+      Some(data)
+    } else {
+      None
+    }
+  }
+
+  fn data_mut(&mut self) -> Option<&mut StepData> {
+    if let TestCaseType::CaseStep { data } = &mut self.case_type {
+      Some(data)
+    } else {
+      None
+    }
   }
 }
 

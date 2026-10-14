@@ -2,8 +2,10 @@ use crate::TestCase;
 use crate::test::step_delay::DelayStep;
 use crate::test::step_rest::RestStep;
 use crate::test::test_case::TestCaseType;
-use crate::test::{TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent};
+use crate::test::{StepDataProvider, TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent};
+use gpui_kit::component::Icon;
 use gpui_kit::{App, Context, Entity, SharedString, WeakEntity};
+use ki_assets::icon::IconAsset;
 use ki_project::{FileStepData, FileTestCase, FileTestCaseType, FileTestStep};
 use uuid::Uuid;
 
@@ -14,6 +16,15 @@ pub enum StepData {
   RestStep(RestStep),
   /// Waits for a given time
   Delay(DelayStep),
+}
+
+impl StepData {
+  pub fn icon(&self) -> Icon {
+    match self {
+      StepData::RestStep(_) => IconAsset::StepRest,
+      StepData::Delay(_) => IconAsset::StepDelay,
+    }.into()
+  }
 }
 
 impl From<FileStepData> for StepData {
@@ -183,6 +194,10 @@ impl TestMetadataOwner for TestStep {
     self.meta.path
   }
 
+  fn icon(&self) -> Icon {
+    self.data.icon()
+  }
+
   #[inline]
   fn name(&self) -> SharedString {
     self.meta.name.clone()
@@ -220,6 +235,16 @@ impl TestMetadataOwner for TestStep {
     self.meta.disabled = !self.meta.disabled;
     _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
     cx.notify();
+  }
+}
+
+impl StepDataProvider for TestStep {
+  fn data(&self) -> Option<&StepData> {
+    Some(&self.data)
+  }
+
+  fn data_mut(&mut self) -> Option<&mut StepData> {
+    Some(&mut self.data)
   }
 }
 

@@ -1,6 +1,8 @@
 use crate::error::{ProjectError, ProjectResult};
 use crate::test::{TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent, test_case::TestCase};
+use gpui_kit::component::Icon;
 use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, SharedString, WeakEntity};
+use ki_assets::icon::IconAsset;
 use ki_project::{FileTestCase, FileTestStep, FileTestSuite};
 use ki_utils::{CASE_MULTI, CASE_STEP, Offset, STEP};
 use log::{debug, warn};
@@ -342,6 +344,10 @@ impl TestMetadataOwner for TestSuite {
   #[inline]
   fn path(&self) -> TestPath {
     self.meta.path
+  }
+
+  fn icon(&self) -> Icon {
+    IconAsset::TestSuite.into()
   }
 
   #[inline]

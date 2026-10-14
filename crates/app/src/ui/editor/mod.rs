@@ -3,6 +3,7 @@ mod header_editor;
 mod profile_selector;
 mod step_editor;
 mod suite_editor;
+mod steps;
 
 use crate::ui::editor::case_editor::CaseEditor;
 use crate::ui::editor::profile_selector::ProfileSelector;

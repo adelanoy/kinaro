@@ -550,6 +550,7 @@ fn get_ts_entries(suites: &[Entity<TestSuite>], opened_nodes: &HashSet<TestPath>
         path,
         kind: ProjectTestNodeKind::Suite,
         label: suite.name(),
+        icon: suite.icon(),
         disabled,
         parent_disabled: false,
         depth: 0,
@@ -584,6 +585,7 @@ fn get_tc_entries(
         path,
         kind: ProjectTestNodeKind::Case,
         label: case.name(),
+        icon: case.icon(),
         disabled,
         parent_disabled,
         depth: 1,
@@ -624,6 +626,7 @@ fn get_step_entries(steps: &[Entity<TestStep>], parent_disabled: bool, cx: &App)
         path: step.meta.path(),
         kind: ProjectTestNodeKind::Step,
         label: step.name(),
+        icon: step.icon(),
         disabled,
         parent_disabled,
         depth: 2,
@@ -699,7 +702,7 @@ impl TreeDelegate for ProjectTreeDelegate {
   fn node_render(&self, ix: usize, _selected: bool, _window: &mut Window, cx: &mut Context<TreeState<Self>>) -> impl IntoElement {
     let node = &self.tree_nodes[ix];
     let id = node.path.id();
-    let icon = node.kind.icon();
+    let icon = node.icon.clone();
 
     h_flex()
       .id(node.id())

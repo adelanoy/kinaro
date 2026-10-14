@@ -3610,6 +3610,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "gpui-kit",
+ "ki_assets",
  "ki_project",
  "ki_settings",
  "ki_utils",
