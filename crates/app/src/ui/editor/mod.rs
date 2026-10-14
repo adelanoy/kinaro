@@ -2,8 +2,8 @@ mod case_editor;
 mod header_editor;
 mod profile_selector;
 mod step_editor;
-mod suite_editor;
 mod steps;
+mod suite_editor;
 
 use crate::ui::editor::case_editor::CaseEditor;
 use crate::ui::editor::profile_selector::ProfileSelector;
@@ -213,7 +213,7 @@ impl EditorView {
     match path {
       TestPath::Suite(_) => Self::tab_from_suite_path(path, tests, window, cx),
       TestPath::Case(_, _) => Self::tab_from_case_path(path, tests, window, cx),
-      TestPath::Step(_, _, _) => Self::tab_from_step_path(path, tests, window, cx),
+      TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => Self::tab_from_step_path(path, tests, window, cx),
     }
   }
 

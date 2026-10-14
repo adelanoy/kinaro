@@ -5,7 +5,7 @@ use crate::test::{TestMetadataOwner, TestsContainer, TestsContainerEvent};
 use crate::{TestCase, TestStep, TestSuite};
 use gpui_kit::{AppContext, ClipboardString, Entity, TestAppContext};
 use ki_project::{
-  FileDelayStep, FileStepData, FileTestCase, FileTestCaseType, FileTestMetadata, FileTestStep, FileTestSuite, FileTestsContainer,
+  FileDelayStep, FileStepData, FileSuiteChild, FileTestCase, FileTestMetadata, FileTestStep, FileTestSuite, FileTestsContainer,
 };
 use ki_utils::TestPath;
 use std::cell::RefCell;
@@ -30,29 +30,24 @@ pub(crate) fn file_delay_step(id: Uuid, name: &str, ms: u32) -> FileTestStep {
   }
 }
 
-/// Builds the on-disk representation of a multi-step case.
-pub(crate) fn file_multi_case(id: Uuid, name: &str, steps: Vec<FileTestStep>) -> FileTestCase {
-  FileTestCase {
+/// Builds the on-disk representation of a case, as a child of a suite.
+pub(crate) fn file_case(id: Uuid, name: &str, steps: Vec<FileTestStep>) -> FileSuiteChild {
+  FileSuiteChild::Case(FileTestCase {
     info: file_meta(id, name),
-    case_type: FileTestCaseType::CaseMulti { steps },
-  }
+    steps,
+  })
 }
 
-/// Builds the on-disk representation of a case step delaying for `ms` milliseconds.
-pub(crate) fn file_case_step(id: Uuid, name: &str, ms: u32) -> FileTestCase {
-  FileTestCase {
-    info: file_meta(id, name),
-    case_type: FileTestCaseType::CaseStep {
-      data: FileStepData::Delay(FileDelayStep(ms)),
-    },
-  }
+/// Builds the on-disk representation of a delay step of `ms` milliseconds, as a child of a suite.
+pub(crate) fn file_suite_step(id: Uuid, name: &str, ms: u32) -> FileSuiteChild {
+  FileSuiteChild::Step(file_delay_step(id, name, ms))
 }
 
 /// Builds the on-disk representation of a suite.
-pub(crate) fn file_suite(id: Uuid, name: &str, cases: Vec<FileTestCase>) -> FileTestSuite {
+pub(crate) fn file_suite(id: Uuid, name: &str, children: Vec<FileSuiteChild>) -> FileTestSuite {
   FileTestSuite {
     info: file_meta(id, name),
-    cases,
+    children,
   }
 }
 
@@ -67,14 +62,14 @@ pub(crate) fn clipboard(text: String, metadata: &str) -> ClipboardString {
 /// Paths of the reference test tree:
 /// ```text
 /// Suite A
-/// ├── Case A        (multi-step)
+/// ├── Case A
 /// │   ├── Step A1   (delay 100)
 /// │   └── Step A2   (delay 200)
-/// └── Case step A   (delay 300)
+/// └── Suite step A  (delay 300)
 /// Suite B
-/// ├── Case B        (multi-step)
+/// ├── Case B
 /// │   └── Step B1   (delay 400)
-/// └── Case step B   (delay 500)
+/// └── Suite step B  (delay 500)
 /// ```
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Paths {
@@ -82,28 +77,28 @@ pub(crate) struct Paths {
   pub case_a: TestPath,
   pub step_a1: TestPath,
   pub step_a2: TestPath,
-  pub case_step_a: TestPath,
+  pub suite_step_a: TestPath,
   pub suite_b: TestPath,
   pub case_b: TestPath,
   pub step_b1: TestPath,
-  pub case_step_b: TestPath,
+  pub suite_step_b: TestPath,
 }
 
 impl Paths {
   /// Generates the paths of a new reference tree.
   pub(crate) fn new() -> Self {
-    let (sa, ca, csa) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
-    let (sb, cb, csb) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let (sa, ca, ssa) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let (sb, cb, ssb) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
     Self {
       suite_a: TestPath::Suite(sa),
       case_a: TestPath::Case(sa, ca),
       step_a1: TestPath::Step(sa, ca, Uuid::new_v4()),
       step_a2: TestPath::Step(sa, ca, Uuid::new_v4()),
-      case_step_a: TestPath::Case(sa, csa),
+      suite_step_a: TestPath::SuiteStep(sa, ssa),
       suite_b: TestPath::Suite(sb),
       case_b: TestPath::Case(sb, cb),
       step_b1: TestPath::Step(sb, cb, Uuid::new_v4()),
-      case_step_b: TestPath::Case(sb, csb),
+      suite_step_b: TestPath::SuiteStep(sb, ssb),
     }
   }
 
@@ -115,7 +110,7 @@ impl Paths {
           self.suite_a.id(),
           "Suite A",
           vec![
-            file_multi_case(
+            file_case(
               self.case_a.id(),
               "Case A",
               vec![
@@ -123,19 +118,19 @@ impl Paths {
                 file_delay_step(self.step_a2.id(), "Step A2", 200),
               ],
             ),
-            file_case_step(self.case_step_a.id(), "Case step A", 300),
+            file_suite_step(self.suite_step_a.id(), "Suite step A", 300),
           ],
         ),
         file_suite(
           self.suite_b.id(),
           "Suite B",
           vec![
-            file_multi_case(
+            file_case(
               self.case_b.id(),
               "Case B",
               vec![file_delay_step(self.step_b1.id(), "Step B1", 400)],
             ),
-            file_case_step(self.case_step_b.id(), "Case step B", 500),
+            file_suite_step(self.suite_step_b.id(), "Suite step B", 500),
           ],
         ),
       ],
@@ -198,18 +193,19 @@ pub(crate) fn all_paths(tests: &Entity<TestsContainer>, cx: &TestAppContext) -> 
   })
 }
 
-/// Returns the path of the node `path` points to (a suite or a case) followed by the paths of its
-/// descendants, in display order.
+/// Returns the path of the node `path` points to followed by the paths of its descendants, in
+/// display order.
 pub(crate) fn subtree(tests: &Entity<TestsContainer>, path: TestPath, cx: &TestAppContext) -> Vec<TestPath> {
   match path {
     TestPath::Suite(_) => {
       let suite = suite(tests, path, cx);
       cx.read(|cx| suite.read(cx).all_paths(cx))
     }
-    _ => {
+    TestPath::Case(_, _) => {
       let case = case(tests, path, cx);
       cx.read(|cx| case.read(cx).all_paths(cx))
     }
+    TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => vec![step(tests, path, cx).read_with(cx, |step, _| step.path())],
   }
 }
 
@@ -225,15 +221,16 @@ pub(crate) fn suite_names(tests: &Entity<TestsContainer>, cx: &TestAppContext) -
   })
 }
 
-/// Returns the names of the cases of the suite `path` goes through, in display order.
-pub(crate) fn case_names(tests: &Entity<TestsContainer>, path: TestPath, cx: &TestAppContext) -> Vec<String> {
+/// Returns the names of the children (cases and steps) of the suite `path` goes through, in display
+/// order.
+pub(crate) fn child_names(tests: &Entity<TestsContainer>, path: TestPath, cx: &TestAppContext) -> Vec<String> {
   let suite = suite(tests, path, cx);
   cx.read(|cx| {
     suite
       .read(cx)
-      .cases
+      .children
       .iter()
-      .map(|case| case.read(cx).name().to_string())
+      .map(|child| child.name(cx).to_string())
       .collect()
   })
 }
@@ -244,10 +241,9 @@ pub(crate) fn step_names(tests: &Entity<TestsContainer>, path: TestPath, cx: &Te
   cx.read(|cx| {
     case
       .read(cx)
-      .all_paths(cx)
-      .into_iter()
-      .skip(1)
-      .map(|path| case.read(cx).step_from_path(&path, cx).unwrap().read(cx).name().to_string())
+      .steps()
+      .iter()
+      .map(|step| step.read(cx).name().to_string())
       .collect()
   })
 }
@@ -259,7 +255,7 @@ pub(crate) fn name_at(tests: &Entity<TestsContainer>, path: TestPath, cx: &TestA
     let name = match path {
       TestPath::Suite(_) => tests.suite_from_path(&path, cx).map(|suite| suite.read(cx).name()),
       TestPath::Case(_, _) => tests.case_from_path(&path, cx).map(|case| case.read(cx).name()),
-      TestPath::Step(_, _, _) => tests.step_from_path(&path, cx).map(|step| step.read(cx).name()),
+      TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => tests.step_from_path(&path, cx).map(|step| step.read(cx).name()),
     };
     name.unwrap_or_else(|| panic!("no node at {path}")).to_string()
   })

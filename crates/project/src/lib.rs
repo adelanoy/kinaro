@@ -10,9 +10,8 @@ pub use {
     step_delay::FileDelayStep,
     step_rest::*,
     test_case::FileTestCase,
-    test_case::FileTestCaseType,
     test_step::{FileStepData, FileTestStep},
-    test_suite::FileTestSuite,
+    test_suite::{FileSuiteChild, FileTestSuite},
   },
   variable::{FileProfile, FileProjectVariables, FileVariable, FileVariableKind},
 };

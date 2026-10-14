@@ -3,7 +3,6 @@ use crate::actions::{
   PROJECT_TREE_CONTEXT_KEY, Rename, SwitchNodeActiveStatus,
 };
 use crate::app;
-use crate::ui::ProjectTestNodeKind;
 use crate::ui::components::dialog::show_rename_dialog;
 use crate::ui::components::tree::{ProjectTreeNode, Tree, TreeDelegate, TreeEvent, TreeState};
 use crate::ui::side_bar::ProjectConfigurationPanel;
@@ -20,12 +19,11 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
 use ki_utils::ui::MovingLabel;
-use ki_utils::{CASE_MULTI, CASE_STEP, STEP, SUITE, SidebarPanel};
+use ki_utils::{CASE, STEP, SUITE, SidebarPanel};
 use ki_utils::{Offset, TestPath};
 use ki_workspace::error::ProjectError;
-use ki_workspace::test::test_case::TestCaseType;
 use ki_workspace::test::{TestMetadataOwner, TestsContainer};
-use ki_workspace::{Project, TestCase, TestStep, TestSuite};
+use ki_workspace::{Project, TestStep, TestSuite, TestSuiteChild};
 use log::warn;
 use std::collections::HashSet;
 
@@ -265,36 +263,26 @@ impl ProjectTreeDelegate {
     }
   }
 
-  /// Adds a new delay step relative to `path`: as a case step of the suite when `path` is a suite
-  /// or a case step, as a step of the case otherwise. Returns the new step's path, or `None` after
-  /// pushing a notification if that fails.
+  /// Adds a new delay step relative to `path`: as a suite step when `path` is a suite or a suite
+  /// step, as a step of the case otherwise. Returns the new step's path, or `None` after pushing a
+  /// notification if that fails.
   fn add_delay_step(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) -> Option<TestPath> {
-    if let Some(node) = self.tree_nodes.iter().find(|node| node.path == path) {
-      match match node.kind {
-        ProjectTestNodeKind::Suite | ProjectTestNodeKind::CaseStep => self
-          .tests
-          .read(cx)
-          .suite_from_path(&path, cx)
-          .map(|suite| suite.update(cx, |suite, cx| suite.add_new_delay_step(path, cx)))
-          .ok_or(ProjectError::TestNotFound(path)),
-        _ => {
-          if let Some(case) = self.tests.read(cx).case_from_path(&path, cx) {
-            case.update(cx, |case, cx| case.add_delay_step(path, cx))
-          } else {
-            Err(ProjectError::TestNotFound(path))
-          }
-        }
-      } {
-        Ok(path) => Some(path),
-        Err(err) => {
-          window.push_notification(err, cx);
-          None
-        }
-      }
-    } else {
+    let new_path = match path {
+      TestPath::Suite(_) | TestPath::SuiteStep(_, _) => self
+        .tests
+        .read(cx)
+        .suite_from_path(&path, cx)
+        .map(|suite| suite.update(cx, |suite, cx| suite.add_new_delay_step(path, cx))),
+      TestPath::Case(_, _) | TestPath::Step(_, _, _) => self
+        .tests
+        .read(cx)
+        .case_from_path(&path, cx)
+        .map(|case| case.update(cx, |case, cx| case.add_delay_step(path, cx))),
+    };
+    if new_path.is_none() {
       window.push_notification(ProjectError::TestNotFound(path), cx);
-      None
     }
+    new_path
   }
 
   /// Adds a new test suite after the suite `path` goes through, or at the end. Returns its path.
@@ -322,9 +310,9 @@ impl ProjectTreeDelegate {
   fn duplicate_node(&mut self, path: &TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) -> Option<TestPath> {
     match match path {
       TestPath::Suite(_) => self.tests.update(cx, |tests, cx| tests.duplicate_suite(path, cx)),
-      TestPath::Case(_, _) => {
+      TestPath::Case(_, _) | TestPath::SuiteStep(_, _) => {
         if let Some(suite) = self.tests.read(cx).suite_from_path(path, cx) {
-          suite.update(cx, |suite, cx| suite.duplicate_case(path, cx))
+          suite.update(cx, |suite, cx| suite.duplicate_child(path, cx))
         } else {
           Err(ProjectError::TestNotFound(*path))
         }
@@ -349,9 +337,9 @@ impl ProjectTreeDelegate {
   fn offset_node(&mut self, path: TestPath, offset: Offset, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
     if let Err(err) = match path {
       TestPath::Suite(_) => self.tests.update(cx, |tests, cx| tests.offset_suite(path, offset, cx)),
-      TestPath::Case(_, _) => {
+      TestPath::Case(_, _) | TestPath::SuiteStep(_, _) => {
         if let Some(suite) = self.tests.read(cx).suite_from_path(&path, cx) {
-          suite.update(cx, |suite, cx| suite.offset_case(path, offset, cx))
+          suite.update(cx, |suite, cx| suite.offset_child(path, offset, cx))
         } else {
           Err(ProjectError::TestNotFound(path))
         }
@@ -410,35 +398,30 @@ impl ProjectTreeDelegate {
   }
 
   /// Pastes the clipboard's content relative to the node at `path`, when its kind can go there: a
-  /// suite after a suite, a multi-step case in the node's suite, a step or a case step in the suite
-  /// when pasted on a suite or a case step, and in the case otherwise. Otherwise nothing happens.
+  /// suite after a suite, a case in the node's suite, a step in the suite when pasted on a suite or
+  /// a suite step, and in the case otherwise. Otherwise nothing happens.
   fn paste_node(&mut self, path: TestPath, cx: &mut Context<TreeState<Self>>) {
     if let Some(cb) = cx.read_from_clipboard()
       && let Some(ClipboardEntry::String(cb_str)) = cb.entries.first()
     {
-      let Some(kind) = self.tree_nodes.iter().find(|node| node.path == path).map(|node| node.kind) else {
-        warn!("ProjectTreeDelegate:paste_node: unknown path: {}", path);
-        return;
-      };
       let metadata = cb_str.metadata.as_deref();
-      let is_step = metadata == Some(STEP) || metadata == Some(CASE_STEP);
-      match kind {
-        ProjectTestNodeKind::Suite if metadata == Some(SUITE) => {
+      match path {
+        TestPath::Suite(_) if metadata == Some(SUITE) => {
           self
             .tests
             .update(cx, |tests, cx| tests.paste_from_clipboard(cb_str, path, cx));
         }
-        _ if metadata == Some(CASE_MULTI) => {
+        _ if metadata == Some(CASE) => {
           if let Some(suite) = self.tests.read(cx).suite_from_path(&path, cx) {
             suite.update(cx, |suite, cx| suite.paste_from_clipboard(cb_str, path, cx));
           }
         }
-        ProjectTestNodeKind::Suite | ProjectTestNodeKind::CaseStep if is_step => {
+        TestPath::Suite(_) | TestPath::SuiteStep(_, _) if metadata == Some(STEP) => {
           if let Some(suite) = self.tests.read(cx).suite_from_path(&path, cx) {
             suite.update(cx, |suite, cx| suite.paste_from_clipboard(cb_str, path, cx));
           }
         }
-        ProjectTestNodeKind::Case | ProjectTestNodeKind::Step if is_step => {
+        TestPath::Case(_, _) | TestPath::Step(_, _, _) if metadata == Some(STEP) => {
           if let Some(case) = self.tests.read(cx).case_from_path(&path, cx) {
             case.update(cx, |case, cx| case.paste_from_clipboard(cb_str, path, cx));
           }
@@ -466,7 +449,7 @@ impl ProjectTreeDelegate {
           show_rename_dialog(name, case, window, cx)
         }
       }
-      TestPath::Step(_, _, _) => {
+      TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => {
         if let Some(step) = self.tests.read(cx).step_from_path(&path, cx) {
           show_rename_dialog(name, step, window, cx)
         }
@@ -515,12 +498,12 @@ impl ProjectTreeDelegate {
       }
       TestPath::Case(_, _) => {
         if let Some(case) = self.tests.read(cx).case_from_path(&path, cx) {
-          case.update(cx, |suite, cx| suite.switch_disabled(cx));
+          case.update(cx, |case, cx| case.switch_disabled(cx));
         }
       }
-      TestPath::Step(_, _, _) => {
+      TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => {
         if let Some(step) = self.tests.read(cx).step_from_path(&path, cx) {
-          step.update(cx, |suite, cx| suite.switch_disabled(cx));
+          step.update(cx, |step, cx| step.switch_disabled(cx));
         }
       }
     };
@@ -542,15 +525,14 @@ fn get_ts_entries(suites: &[Entity<TestSuite>], opened_nodes: &HashSet<TestPath>
   let last_ix = if suites.is_empty() { 0 } else { suites.len() - 1 };
   for (ix, suite) in suites.iter().enumerate() {
     suite.read_with(cx, |suite, cx| {
-      let leaf = suite.cases.is_empty();
+      let leaf = suite.children.is_empty();
       let path = suite.meta.path();
       let disabled = suite.meta.disabled;
       let expanded = opened_nodes.contains(&path);
       entries.push(ProjectTreeNode {
         path,
-        kind: ProjectTestNodeKind::Suite,
         label: suite.name(),
-        icon: suite.icon(),
+        icon: suite.icon().into(),
         disabled,
         parent_disabled: false,
         depth: 0,
@@ -560,57 +542,61 @@ fn get_ts_entries(suites: &[Entity<TestSuite>], opened_nodes: &HashSet<TestPath>
         last: ix == last_ix,
       });
       if !leaf && expanded {
-        entries.extend(get_tc_entries(&suite.cases, disabled, opened_nodes, cx));
+        entries.extend(get_child_entries(&suite.children, disabled, opened_nodes, cx));
       }
     });
   }
   entries
 }
 
-/// Builds the rows of `cases` and, for the expanded ones, of their steps. `parent_disabled` tells
-/// whether their suite is disabled.
-fn get_tc_entries(
-  cases: &[Entity<TestCase>],
+/// Builds the rows of a suite's `children` and, for the expanded cases, of their steps.
+/// `parent_disabled` tells whether their suite is disabled.
+fn get_child_entries(
+  children: &[TestSuiteChild],
   parent_disabled: bool,
   opened_nodes: &HashSet<TestPath>,
   cx: &App,
 ) -> Vec<ProjectTreeNode> {
   let mut entries = Vec::new();
-  let last_ix = cases.len() - 1;
-  for (ix, case) in cases.iter().enumerate() {
-    case.read_with(cx, |case, _| {
-      let path = case.meta.path();
-      let disabled = case.meta.disabled;
-      let mut case_tree_node = ProjectTreeNode {
-        path,
-        kind: ProjectTestNodeKind::Case,
-        label: case.name(),
-        icon: case.icon(),
-        disabled,
-        parent_disabled,
-        depth: 1,
-        leaf: true,
-        expanded: false,
-        first: ix == 0,
-        last: ix == last_ix,
-      };
-      match case.case_type() {
-        TestCaseType::CaseMulti { steps } => {
-          let is_empty = steps.is_empty();
-          let is_open = opened_nodes.contains(&path);
-          case_tree_node.leaf = is_empty;
-          case_tree_node.expanded = is_open;
-          entries.push(case_tree_node);
-          if !is_empty && is_open {
-            entries.extend(get_step_entries(steps, disabled || parent_disabled, cx));
-          }
+  let last_ix = children.len() - 1;
+  for (ix, child) in children.iter().enumerate() {
+    match child {
+      TestSuiteChild::Case(case) => case.read_with(cx, |case, cx| {
+        let path = case.meta.path();
+        let disabled = case.meta.disabled;
+        let leaf = case.steps().is_empty();
+        let expanded = opened_nodes.contains(&path);
+        entries.push(ProjectTreeNode {
+          path,
+          label: case.name(),
+          icon: case.icon().into(),
+          disabled,
+          parent_disabled,
+          depth: 1,
+          leaf,
+          expanded,
+          first: ix == 0,
+          last: ix == last_ix,
+        });
+        if !leaf && expanded {
+          entries.extend(get_step_entries(case.steps(), disabled || parent_disabled, cx));
         }
-        TestCaseType::CaseStep { .. } => {
-          case_tree_node.kind = ProjectTestNodeKind::CaseStep;
-          entries.push(case_tree_node);
-        }
-      }
-    });
+      }),
+      TestSuiteChild::Step(step) => step.read_with(cx, |step, _| {
+        entries.push(ProjectTreeNode {
+          path: step.meta.path(),
+          label: step.name(),
+          icon: step.icon().into(),
+          disabled: step.meta.disabled,
+          parent_disabled,
+          depth: 1,
+          leaf: true,
+          expanded: false,
+          first: ix == 0,
+          last: ix == last_ix,
+        });
+      }),
+    }
   }
   entries
 }
@@ -624,9 +610,8 @@ fn get_step_entries(steps: &[Entity<TestStep>], parent_disabled: bool, cx: &App)
       let disabled = step.meta.disabled;
       entries.push(ProjectTreeNode {
         path: step.meta.path(),
-        kind: ProjectTestNodeKind::Step,
         label: step.name(),
-        icon: step.icon(),
+        icon: step.icon().into(),
         disabled,
         parent_disabled,
         depth: 2,
@@ -642,7 +627,7 @@ fn get_step_entries(steps: &[Entity<TestStep>], parent_disabled: bool, cx: &App)
 
 /// Returns the builder of the context menu of `node`, offering the actions allowed on its kind.
 fn build_context_menu(node: &ProjectTreeNode) -> Box<ContextMenuBuilder> {
-  let kind = node.kind;
+  let path = node.path;
   let disabled = node.disabled;
   let first = node.first;
   let last = node.last;
@@ -650,10 +635,10 @@ fn build_context_menu(node: &ProjectTreeNode) -> Box<ContextMenuBuilder> {
     menu
       .submenu_with_icon(Some(IconName::Plus.into()), "New", window, cx, move |submenu, _, _| {
         let mut submenu = submenu;
-        if matches!(kind, ProjectTestNodeKind::Suite) {
+        if matches!(path, TestPath::Suite(_)) {
           submenu = submenu.menu_with_icon("Test Suite", IconAsset::TestSuite, Box::new(AddTestSuite));
         }
-        if matches!(kind, ProjectTestNodeKind::Suite | ProjectTestNodeKind::Case) {
+        if matches!(path, TestPath::Suite(_) | TestPath::Case(_, _)) {
           submenu = submenu.menu_with_icon("Test Case", IconAsset::TestCase, Box::new(AddTestCase));
         }
         submenu.menu_with_icon("Test Step", IconAsset::TestStep, Box::new(AddDelayStep))

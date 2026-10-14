@@ -3,7 +3,7 @@ use gpui_kit::component::WindowExt;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::{App, ClipboardItem, Entity, Size, TitlebarOptions, Window, WindowDecorations, WindowOptions, point, px};
 use ki_settings::app_state::AppState;
-use ki_utils::{CASE_MULTI, CASE_STEP, STEP, SUITE, TestPath};
+use ki_utils::{CASE, STEP, SUITE, TestPath};
 use ki_workspace::test::TestsContainer;
 use log::{info, warn};
 use std::path::PathBuf;
@@ -66,7 +66,7 @@ pub fn copy_path(path: TestPath, window: &mut Window, cx: &mut App) {
 }
 
 /// Copies the node at `path` in `tests` to the clipboard, serialized as JSON, with metadata telling
-/// its kind ([`SUITE`], [`CASE_MULTI`], [`CASE_STEP`] or [`STEP`]) so it can be pasted back. Nothing
+/// its kind ([`SUITE`], [`CASE`] or [`STEP`]) so it can be pasted back. Nothing
 /// is copied, and a warning is logged, if no node is at `path` or it can't be serialized.
 pub fn copy_test(path: TestPath, tests: &Entity<TestsContainer>, cx: &mut App) {
   match path {
@@ -94,13 +94,9 @@ pub fn copy_test(path: TestPath, tests: &Entity<TestsContainer>, cx: &mut App) {
         warn!("Error while serializing case: {}", path);
         return;
       };
-      if case.is_case_step() {
-        cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(value, CASE_STEP.to_string()));
-      } else {
-        cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(value, CASE_MULTI.to_string()));
-      }
+      cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(value, CASE.to_string()));
     }
-    TestPath::Step(_, _, _) => {
+    TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => {
       let Some(step) = tests.read_with(cx, |tests, _| {
         tests.step_from_path(&path, cx).map(|step| step.read(cx).get_file())
       }) else {

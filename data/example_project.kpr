@@ -2,7 +2,7 @@
   "name": "example_project",
   "version": 1,
   "created": "2026-09-13T07:43:12",
-  "modified": "2026-10-12T22:32:50",
+  "modified": "2026-10-14T13:37:46",
   "variables": {
     "variables": [
       {
@@ -82,108 +82,106 @@
           "- **`POST /users`** Creating a user",
           "- **`GET /users`** Retrieving user information"
         ],
-        "cases": [
+        "children": [
           {
+            "type": "Case",
             "id": "7d73b612-c8d6-489b-8402-787079ca5b5d",
             "name": "Create user",
-            "caseType": {
-              "type": "CaseMulti",
-              "steps": [
-                {
-                  "id": "500f6b3f-2bf5-4e34-ae1f-c75d4276cd28",
-                  "name": "Send POST request",
-                  "data": {
-                    "RestStep": {
-                      "method": "POST",
-                      "endpoint": "/users",
-                      "params": [
-                        {
-                          "type": "header",
-                          "name": "Accept",
-                          "value": "application/json"
-                        },
-                        {
-                          "type": "header",
-                          "name": "Authorization",
-                          "value": "Bearer {token}"
-                        }
-                      ],
-                      "body": {
-                        "type": "raw",
-                        "contentType": "application/json",
-                        "lines": [
-                          "{",
-                          "  \"name\": \"Jane Doe\",",
-                          "  \"email\": \"jane.doe@example.com\"",
-                          "}"
-                        ]
+            "description": [
+              "## Create user",
+              "This case tests the __POST__ _/user_ API"
+            ],
+            "steps": [
+              {
+                "id": "500f6b3f-2bf5-4e34-ae1f-c75d4276cd28",
+                "name": "Send POST request",
+                "data": {
+                  "RestStep": {
+                    "method": "POST",
+                    "endpoint": "/users",
+                    "params": [
+                      {
+                        "type": "header",
+                        "name": "Accept",
+                        "value": "application/json"
+                      },
+                      {
+                        "type": "header",
+                        "name": "Authorization",
+                        "value": "Bearer {token}"
                       }
-                    }
-                  }
-                },
-                {
-                  "id": "4b4b57bf-bf53-4265-887b-d5b6f8004000",
-                  "name": "Assert 201 Created",
-                  "data": {
-                    "Delay": 1000
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "id": "8ac1bc38-e62b-4325-8e20-8000803af746",
-            "name": "Get user by id",
-            "caseType": {
-              "type": "CaseMulti",
-              "steps": [
-                {
-                  "id": "81bca7f4-b16d-4e02-a2c0-8eb14bb753e3",
-                  "name": "Send GET request",
-                  "data": {
-                    "RestStep": {
-                      "method": "GET",
-                      "endpoint": "/users/{id}",
-                      "params": [
-                        {
-                          "type": "path",
-                          "name": "id",
-                          "value": "42"
-                        },
-                        {
-                          "type": "header",
-                          "name": "Accept",
-                          "value": "application/json"
-                        },
-                        {
-                          "type": "header",
-                          "name": "Authorization",
-                          "value": "Bearer {token}"
-                        }
+                    ],
+                    "body": {
+                      "type": "raw",
+                      "contentType": "application/json",
+                      "lines": [
+                        "{",
+                        "  \"name\": \"Jane Doe\",",
+                        "  \"email\": \"jane.doe@example.com\"",
+                        "}"
                       ]
                     }
                   }
-                },
-                {
-                  "id": "57eb013a-d352-4c2f-bb40-58c52313eec1",
-                  "name": "Assert response body",
-                  "data": {
-                    "Delay": 1000
-                  }
                 }
-              ]
-            }
+              },
+              {
+                "id": "4b4b57bf-bf53-4265-887b-d5b6f8004000",
+                "name": "Assert 201 Created",
+                "data": {
+                  "Delay": 1000
+                }
+              }
+            ]
           },
           {
+            "type": "Case",
+            "id": "8ac1bc38-e62b-4325-8e20-8000803af746",
+            "name": "Get user by id",
+            "steps": [
+              {
+                "id": "81bca7f4-b16d-4e02-a2c0-8eb14bb753e3",
+                "name": "Send GET request",
+                "data": {
+                  "RestStep": {
+                    "method": "GET",
+                    "endpoint": "/users/{id}",
+                    "params": [
+                      {
+                        "type": "path",
+                        "name": "id",
+                        "value": "42"
+                      },
+                      {
+                        "type": "header",
+                        "name": "Accept",
+                        "value": "application/json"
+                      },
+                      {
+                        "type": "header",
+                        "name": "Authorization",
+                        "value": "Bearer {token}"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "57eb013a-d352-4c2f-bb40-58c52313eec1",
+                "name": "Assert response body",
+                "data": {
+                  "Delay": 1000
+                }
+              }
+            ]
+          },
+          {
+            "type": "Step",
             "id": "e71aa081-8a9e-497a-9ac5-459e34c95a07",
             "name": "Health check",
-            "caseType": {
-              "type": "CaseStep",
-              "data": {
-                "RestStep": {
-                  "method": "HEAD",
-                  "endpoint": "/health"
-                }
+            "data": {
+              "RestStep": {
+                "method": "HEAD",
+                "endpoint": "/health"
               }
             }
           }
@@ -192,127 +190,121 @@
       {
         "id": "304c4ab9-5a8b-4d6a-a849-cbd1b7a90d67",
         "name": "Authentication",
-        "cases": [
+        "children": [
           {
+            "type": "Case",
             "id": "4a57cc66-a41e-4a50-a5df-3791da3c5fe3",
             "name": "Login",
-            "caseType": {
-              "type": "CaseMulti",
-              "steps": [
-                {
-                  "id": "c29a91a4-434a-43b8-9504-db1b2635c19d",
-                  "name": "Send login request",
-                  "data": {
-                    "RestStep": {
-                      "method": "POST",
-                      "endpoint": "/auth/login",
-                      "params": [
-                        {
-                          "type": "header",
-                          "name": "Accept",
-                          "value": "application/json"
-                        }
-                      ],
-                      "body": {
-                        "type": "formUrlEncoded",
-                        "fields": [
-                          {
-                            "name": "username",
-                            "value": "admin"
-                          },
-                          {
-                            "name": "password",
-                            "value": "dev-secret"
-                          },
-                          {
-                            "name": "remember_me",
-                            "value": "true",
-                            "disabled": true
-                          }
-                        ]
+            "steps": [
+              {
+                "id": "c29a91a4-434a-43b8-9504-db1b2635c19d",
+                "name": "Send login request",
+                "data": {
+                  "RestStep": {
+                    "method": "POST",
+                    "endpoint": "/auth/login",
+                    "params": [
+                      {
+                        "type": "header",
+                        "name": "Accept",
+                        "value": "application/json"
                       }
-                    }
-                  }
-                },
-                {
-                  "id": "0fae84ea-e4bb-4f2b-9bae-9048336b8858",
-                  "name": "Assert 200 OK",
-                  "data": {
-                    "Delay": 1000
-                  }
-                },
-                {
-                  "id": "93cb61d7-b26a-4ae9-b38d-4b3513a82fbc",
-                  "name": "Extract auth token",
-                  "data": {
-                    "Delay": 1000
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "id": "d44a8936-39e8-438b-acf9-c24b1f3d2ced",
-            "name": "Token refresh",
-            "caseType": {
-              "type": "CaseStep",
-              "data": {
-                "RestStep": {
-                  "method": "POST",
-                  "endpoint": "/auth/refresh",
-                  "params": [
-                    {
-                      "type": "header",
-                      "name": "Accept",
-                      "value": "application/json"
-                    },
-                    {
-                      "type": "cookie",
-                      "name": "refresh_token",
-                      "value": "{refresh_token}"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          {
-            "id": "4562fd21-29a4-4528-9bac-ed7380d3ccf4",
-            "name": "Logout",
-            "caseType": {
-              "type": "CaseMulti",
-              "steps": [
-                {
-                  "id": "dec98db3-ebaa-4a8e-9f4d-cfe2bcfedceb",
-                  "name": "Send logout request",
-                  "data": {
-                    "RestStep": {
-                      "method": "POST",
-                      "endpoint": "/auth/logout",
-                      "params": [
+                    ],
+                    "body": {
+                      "type": "formUrlEncoded",
+                      "fields": [
                         {
-                          "type": "header",
-                          "name": "Authorization",
-                          "value": "Bearer {token}"
+                          "name": "username",
+                          "value": "admin"
                         },
                         {
-                          "type": "cookie",
-                          "name": "session",
-                          "value": "{session}"
+                          "name": "password",
+                          "value": "dev-secret"
+                        },
+                        {
+                          "name": "remember_me",
+                          "value": "true",
+                          "disabled": true
                         }
                       ]
                     }
                   }
-                },
-                {
-                  "id": "8da247f6-b29f-47a2-b79f-e47c1e6730bf",
-                  "name": "Assert session invalidated",
-                  "data": {
-                    "Delay": 1000
+                }
+              },
+              {
+                "id": "0fae84ea-e4bb-4f2b-9bae-9048336b8858",
+                "name": "Assert 200 OK",
+                "data": {
+                  "Delay": 1000
+                }
+              },
+              {
+                "id": "93cb61d7-b26a-4ae9-b38d-4b3513a82fbc",
+                "name": "Extract auth token",
+                "data": {
+                  "Delay": 1000
+                }
+              }
+            ]
+          },
+          {
+            "type": "Step",
+            "id": "d44a8936-39e8-438b-acf9-c24b1f3d2ced",
+            "name": "Token refresh",
+            "data": {
+              "RestStep": {
+                "method": "POST",
+                "endpoint": "/auth/refresh",
+                "params": [
+                  {
+                    "type": "header",
+                    "name": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "type": "cookie",
+                    "name": "refresh_token",
+                    "value": "{refresh_token}"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "Case",
+            "id": "4562fd21-29a4-4528-9bac-ed7380d3ccf4",
+            "name": "Logout",
+            "steps": [
+              {
+                "id": "dec98db3-ebaa-4a8e-9f4d-cfe2bcfedceb",
+                "name": "Send logout request",
+                "data": {
+                  "RestStep": {
+                    "method": "POST",
+                    "endpoint": "/auth/logout",
+                    "params": [
+                      {
+                        "type": "header",
+                        "name": "Authorization",
+                        "value": "Bearer {token}"
+                      },
+                      {
+                        "type": "cookie",
+                        "name": "session",
+                        "value": "{session}"
+                      }
+                    ]
                   }
                 }
-              ]
-            }
+              },
+              {
+                "id": "8da247f6-b29f-47a2-b79f-e47c1e6730bf",
+                "name": "Assert session invalidated",
+                "data": {
+                  "Delay": 1000
+                }
+              }
+            ]
           }
         ]
       },
@@ -322,112 +314,106 @@
         "description": [
           "Covers listing, searching, and retrieving products."
         ],
-        "cases": [
+        "children": [
           {
+            "type": "Case",
             "id": "463ec0e0-2257-4325-b84b-99985040ab1e",
             "name": "List products",
-            "caseType": {
-              "type": "CaseMulti",
-              "steps": [
-                {
-                  "id": "64a4d27a-8999-491c-ac32-525172077647",
-                  "name": "Send GET request",
-                  "data": {
-                    "RestStep": {
-                      "method": "GET",
-                      "endpoint": "/products",
-                      "params": [
-                        {
-                          "type": "query",
-                          "name": "page",
-                          "value": "1"
-                        },
-                        {
-                          "type": "query",
-                          "name": "size",
-                          "value": "20"
-                        },
-                        {
-                          "type": "query",
-                          "name": "sort",
-                          "value": "price",
-                          "disabled": true
-                        },
-                        {
-                          "type": "header",
-                          "name": "Accept",
-                          "value": "application/json"
-                        }
-                      ]
-                    }
-                  }
-                },
-                {
-                  "id": "1181cb80-284c-41aa-a11d-58fc5d90adfe",
-                  "name": "Assert paginated response",
-                  "data": {
-                    "Delay": 1000
+            "steps": [
+              {
+                "id": "64a4d27a-8999-491c-ac32-525172077647",
+                "name": "Send GET request",
+                "data": {
+                  "RestStep": {
+                    "method": "GET",
+                    "endpoint": "/products",
+                    "params": [
+                      {
+                        "type": "query",
+                        "name": "page",
+                        "value": "1"
+                      },
+                      {
+                        "type": "query",
+                        "name": "size",
+                        "value": "20"
+                      },
+                      {
+                        "type": "query",
+                        "name": "sort",
+                        "value": "price",
+                        "disabled": true
+                      },
+                      {
+                        "type": "header",
+                        "name": "Accept",
+                        "value": "application/json"
+                      }
+                    ]
                   }
                 }
-              ]
-            }
+              },
+              {
+                "id": "1181cb80-284c-41aa-a11d-58fc5d90adfe",
+                "name": "Assert paginated response",
+                "data": {
+                  "Delay": 1000
+                }
+              }
+            ]
           },
           {
+            "type": "Case",
             "id": "ef79ddfe-37fa-41da-bd0e-e4186fcf98e5",
             "name": "Search products by name",
-            "caseType": {
-              "type": "CaseMulti",
-              "steps": [
-                {
-                  "id": "91793438-bda9-46a3-8478-41eeb3477fe4",
-                  "name": "Send GET request with query param",
-                  "data": {
-                    "RestStep": {
-                      "method": "GET",
-                      "endpoint": "/products",
-                      "params": [
-                        {
-                          "type": "query",
-                          "name": "name",
-                          "value": "lamp"
-                        },
-                        {
-                          "type": "query",
-                          "name": "tag",
-                          "value": "indoor"
-                        },
-                        {
-                          "type": "query",
-                          "name": "tag",
-                          "value": "led"
-                        },
-                        {
-                          "type": "header",
-                          "name": "Accept",
-                          "value": "application/json"
-                        }
-                      ]
-                    }
-                  }
-                },
-                {
-                  "id": "2db94f60-f850-4fc0-8520-1c7269d3f621",
-                  "name": "Assert matching results",
-                  "data": {
-                    "Delay": 1000
+            "steps": [
+              {
+                "id": "91793438-bda9-46a3-8478-41eeb3477fe4",
+                "name": "Send GET request with query param",
+                "data": {
+                  "RestStep": {
+                    "method": "GET",
+                    "endpoint": "/products",
+                    "params": [
+                      {
+                        "type": "query",
+                        "name": "name",
+                        "value": "lamp"
+                      },
+                      {
+                        "type": "query",
+                        "name": "tag",
+                        "value": "indoor"
+                      },
+                      {
+                        "type": "query",
+                        "name": "tag",
+                        "value": "led"
+                      },
+                      {
+                        "type": "header",
+                        "name": "Accept",
+                        "value": "application/json"
+                      }
+                    ]
                   }
                 }
-              ]
-            }
+              },
+              {
+                "id": "2db94f60-f850-4fc0-8520-1c7269d3f621",
+                "name": "Assert matching results",
+                "data": {
+                  "Delay": 1000
+                }
+              }
+            ]
           },
           {
+            "type": "Step",
             "id": "547e58bd-1b2b-4ffb-b91b-5e8290c1d715",
             "name": "Product count check",
-            "caseType": {
-              "type": "CaseStep",
-              "data": {
-                "Delay": 1000
-              }
+            "data": {
+              "Delay": 1000
             }
           }
         ]
