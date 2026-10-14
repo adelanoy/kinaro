@@ -10,7 +10,7 @@ use ki_workspace::test::TestMetadataOwner;
 /// Editor of a test step.
 pub struct StepEditor {
   step: Entity<TestStep>,
-  data_editor: StepDataEditor<TestStep>,
+  data_editor: StepDataEditor,
 }
 
 impl StepEditor {

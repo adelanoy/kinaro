@@ -1,5 +1,4 @@
 use crate::actions::{Down, Enter, Escape, Left, Right, Up};
-use crate::ui::ProjectTestNodeKind;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::scroll::ScrollableElement;
@@ -14,7 +13,6 @@ pub const TREE_CONTEXT: &str = "Tree";
 
 pub struct ProjectTreeNode {
   pub path: TestPath,
-  pub kind: ProjectTestNodeKind,
   pub label: SharedString,
   pub icon: Icon,
   pub disabled: bool,
@@ -33,10 +31,10 @@ impl ProjectTreeNode {
 
   /// Returns a label describing the type of node
   pub fn label(&self) -> SharedString {
-    match self.kind {
-      ProjectTestNodeKind::Suite => "Test Suite",
-      ProjectTestNodeKind::Case => "Test Case",
-      ProjectTestNodeKind::CaseStep | ProjectTestNodeKind::Step => "Test Step",
+    match self.path {
+      TestPath::Suite(_) => "Test Suite",
+      TestPath::Case(_, _) => "Test Case",
+      TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => "Test Step",
     }
     .into()
   }

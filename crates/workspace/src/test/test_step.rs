@@ -1,12 +1,10 @@
-use crate::TestCase;
 use crate::test::step_delay::DelayStep;
 use crate::test::step_rest::RestStep;
-use crate::test::test_case::TestCaseType;
-use crate::test::{StepDataProvider, TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent};
+use crate::test::{TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent};
 use gpui_kit::component::Icon;
-use gpui_kit::{App, Context, Entity, SharedString, WeakEntity};
+use gpui_kit::{Context, SharedString, WeakEntity};
 use ki_assets::icon::IconAsset;
-use ki_project::{FileStepData, FileTestCase, FileTestCaseType, FileTestStep};
+use ki_project::{FileStepData, FileTestStep};
 use uuid::Uuid;
 
 /// What a step does when run, one variant per kind of step.
@@ -19,11 +17,11 @@ pub enum StepData {
 }
 
 impl StepData {
-  pub fn icon(&self) -> Icon {
+  pub fn icon(&self) ->  impl Into<Icon> {
     match self {
       StepData::RestStep(_) => IconAsset::StepRest,
       StepData::Delay(_) => IconAsset::StepDelay,
-    }.into()
+    }
   }
 }
 
@@ -46,27 +44,38 @@ impl From<&StepData> for FileStepData {
 }
 
 /// A single test step: either one of a [`TestCase`](crate::test::test_case::TestCase)'s
-/// own steps, or a case step promoted directly to case level.
+/// own steps, or a step located directly in a [`TestSuite`](crate::test::test_suite::TestSuite).
+///
+/// Wherever a step is placed, it is given a parent path: a suite or a suite step path places it
+/// directly in that suite, a case or a step path places it in that case (see [`TestPath::new_step`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestStep {
   /// The container holding this step, notified of the changes made to the step
   container: WeakEntity<TestsContainer>,
   /// Metadata for the step itself (id, name, description, disabled flag).
   ///
-  /// `meta.path` is always a [`TestPath::Step`].
+  /// `meta.path` is always a [`TestPath::SuiteStep`] or a [`TestPath::Step`].
   pub meta: TestMetadata,
   /// What the step does when run
-  pub data: StepData,
+  pub(crate) data: StepData,
 }
 
 impl TestStep {
-  /// Returns a copy of this step named `name`, placed in the case `parent_path` goes through, with
-  /// a fresh id.
-  ///
-  /// # Panics
-  /// If `parent_path` is a suite path.
+  /// Returns what the step does when run.
+  #[inline]
+  pub fn data(&self) -> &StepData {
+    &self.data
+  }
+
+  /// Returns what the step does when run, for editing.
+  #[inline]
+  pub fn data_mut(&mut self) -> &mut StepData {
+    &mut self.data
+  }
+
+  /// Returns a copy of this step named `name`, placed where `parent_path` points, with a fresh id.
   pub(crate) fn duplicate(&self, name: SharedString, parent_path: &TestPath) -> Self {
-    let path = TestPath::Step(parent_path.suite_id(), parent_path.case_id().unwrap(), Uuid::new_v4());
+    let path = TestPath::new_step(parent_path, Uuid::new_v4());
     Self {
       container: self.container.clone(),
       meta: TestMetadata {
@@ -79,69 +88,21 @@ impl TestStep {
     }
   }
 
-  /// Demotes the case step `case` to a step of the case `parent_path` goes through, keeping the
-  /// case's id. Returns `None` if `case` is a multi-step case.
-  ///
-  /// # Panics
-  /// If `parent_path` is a suite path.
-  pub(crate) fn from_case(case: Entity<TestCase>, parent_path: &TestPath, cx: &App) -> Option<Self> {
-    case.read_with(cx, |case, _| {
-      if let TestCaseType::CaseStep { data } = &case.case_type {
-        Some(Self {
-          container: case.container.clone(),
-          meta: TestMetadata {
-            path: TestPath::Step(parent_path.suite_id(), parent_path.case_id().unwrap(), case.id()),
-            name: case.name(),
-            description: case.description(),
-            disabled: case.disabled(),
-          },
-          data: data.clone(),
-        })
-      } else {
-        None
-      }
-    })
-  }
-
-  /// Builds a step of the case at `parent_path`, with a fresh id, from the on-disk representation
-  /// of a case step. Returns `None` if `parent_path` isn't a case path or `file_case` is a
-  /// multi-step case.
-  pub(crate) fn from_case_file(
-    file_case: FileTestCase,
-    parent_path: TestPath,
-    container: WeakEntity<TestsContainer>,
-  ) -> Option<Self> {
-    if !parent_path.is_case() {
-      return None;
-    }
-    match file_case.case_type {
-      FileTestCaseType::CaseMulti { .. } => None,
-      FileTestCaseType::CaseStep { data } => Some(Self {
-        container,
-        meta: TestMetadata::new_step_from_file(file_case.info, parent_path.suite_id(), parent_path.case_id().unwrap()),
-        data: data.into(),
-      }),
-    }
-  }
-
-  /// Builds a step of the case `parent_path` goes through from its on-disk representation. With
+  /// Builds a step placed where `parent_path` points from its on-disk representation. With
   /// `new_id`, the step gets a freshly generated id (e.g. when pasted); otherwise its id is read
   /// from the file.
-  ///
-  /// # Panics
-  /// If `parent_path` is a suite path.
   pub(crate) fn from_file(
     file_step: FileTestStep,
-    parent_path: TestPath,
+    parent_path: &TestPath,
     container: WeakEntity<TestsContainer>,
     new_id: bool,
   ) -> TestStep {
     Self {
       container,
       meta: if new_id {
-        TestMetadata::new_step_from_file(file_step.info, parent_path.suite_id(), parent_path.case_id().unwrap())
+        TestMetadata::new_step_from_file(file_step.info, parent_path)
       } else {
-        TestMetadata::step_from_file(file_step.info, parent_path.suite_id(), parent_path.case_id().unwrap())
+        TestMetadata::step_from_file(file_step.info, parent_path)
       },
       data: file_step.data.into(),
     }
@@ -155,12 +116,13 @@ impl TestStep {
     }
   }
 
-  /// Creates a new delay step of 1000 ms with a freshly generated id.
-  pub fn new_delay(suite_id: Uuid, case_id: Uuid, name: SharedString, container: WeakEntity<TestsContainer>) -> Self {
+  /// Creates a new delay step of 1000 ms placed where `parent_path` points, with a freshly
+  /// generated id.
+  pub fn new_delay(parent_path: &TestPath, name: SharedString, container: WeakEntity<TestsContainer>) -> Self {
     Self {
       container,
       meta: TestMetadata {
-        path: TestPath::Step(suite_id, case_id, Uuid::new_v4()),
+        path: TestPath::new_step(parent_path, Uuid::new_v4()),
         name,
         description: None,
         disabled: false,
@@ -169,14 +131,11 @@ impl TestStep {
     }
   }
 
-  /// Moves this step under the case `parent` goes through. With `keep_id` the id is kept,
-  /// otherwise a fresh one is generated. Returns the path change, as `(old path, new path)`.
-  ///
-  /// # Panics
-  /// If `parent` is a suite path.
+  /// Moves this step where `parent` points. With `keep_id` the id is kept, otherwise a fresh one is
+  /// generated. Returns the path change, as `(old path, new path)`.
   pub(crate) fn reparent(&mut self, parent: &TestPath, keep_id: bool) -> (TestPath, TestPath) {
     let id = if keep_id { self.meta.id() } else { Uuid::new_v4() };
-    let new_path = TestPath::Step(parent.suite_id(), parent.case_id().unwrap(), id);
+    let new_path = TestPath::new_step(parent, id);
     let path_update = (self.path(), new_path);
     self.meta.path = new_path;
     path_update
@@ -194,7 +153,7 @@ impl TestMetadataOwner for TestStep {
     self.meta.path
   }
 
-  fn icon(&self) -> Icon {
+  fn icon(&self) ->  impl Into<Icon> {
     self.data.icon()
   }
 
@@ -238,16 +197,6 @@ impl TestMetadataOwner for TestStep {
   }
 }
 
-impl StepDataProvider for TestStep {
-  fn data(&self) -> Option<&StepData> {
-    Some(&self.data)
-  }
-
-  fn data_mut(&mut self) -> Option<&mut StepData> {
-    Some(&mut self.data)
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -260,28 +209,31 @@ mod tests {
   fn new_delay_has_a_fresh_id(cx: &mut TestAppContext) {
     let tests = load(Default::default(), Default::default(), cx);
     let (suite_id, case_id) = (Uuid::new_v4(), Uuid::new_v4());
-    let step = TestStep::new_delay(suite_id, case_id, "Delay".into(), tests.downgrade());
+    let step = TestStep::new_delay(&TestPath::Case(suite_id, case_id), "Delay".into(), tests.downgrade());
     assert!(matches!(step.path(), TestPath::Step(suite, case, _) if suite == suite_id && case == case_id));
     assert_eq!(step.name(), "Delay");
     assert_eq!(step.data, StepData::Delay(DelayStep(1000)));
-    assert_ne!(
-      TestStep::new_delay(suite_id, case_id, "Delay".into(), tests.downgrade()).id(),
-      step.id()
-    );
+    let suite_step = TestStep::new_delay(&TestPath::Suite(suite_id), "Delay".into(), tests.downgrade());
+    assert!(matches!(suite_step.path(), TestPath::SuiteStep(suite, _) if suite == suite_id));
+    assert_ne!(suite_step.id(), step.id());
   }
 
   #[gpui_kit::test]
   fn from_file_keeps_or_renews_the_id(cx: &mut TestAppContext) {
     let tests = load(Default::default(), Default::default(), cx);
-    let parent = TestPath::Case(Uuid::new_v4(), Uuid::new_v4());
     let step_id = Uuid::new_v4();
     let file = file_delay_step(step_id, "Step", 10);
-    let kept = TestStep::from_file(file.clone(), parent, tests.downgrade(), false);
-    assert_eq!(kept.path(), TestPath::Step(parent.suite_id(), parent.id(), step_id));
-    assert_eq!(kept.data, StepData::Delay(DelayStep(10)));
-    let renewed = TestStep::from_file(file, parent, tests.downgrade(), true);
-    assert!(parent.is_parent(&renewed.path()));
-    assert_ne!(renewed.id(), step_id);
+    for parent in [
+      TestPath::Case(Uuid::new_v4(), Uuid::new_v4()),
+      TestPath::Suite(Uuid::new_v4()),
+    ] {
+      let kept = TestStep::from_file(file.clone(), &parent, tests.downgrade(), false);
+      assert_eq!(kept.path(), TestPath::new_step(&parent, step_id));
+      assert_eq!(kept.data, StepData::Delay(DelayStep(10)));
+      let renewed = TestStep::from_file(file.clone(), &parent, tests.downgrade(), true);
+      assert!(parent.is_parent(&renewed.path()));
+      assert_ne!(renewed.id(), step_id);
+    }
   }
 
   #[gpui_kit::test]
@@ -300,7 +252,7 @@ mod tests {
       }),
     };
     let parent = TestPath::Case(Uuid::new_v4(), Uuid::new_v4());
-    let step = TestStep::from_file(file.clone(), parent, tests.downgrade(), false);
+    let step = TestStep::from_file(file.clone(), &parent, tests.downgrade(), false);
     let StepData::RestStep(rest) = &step.data else {
       panic!("should be a rest step");
     };
@@ -320,6 +272,8 @@ mod tests {
     assert!(p.case_b.is_parent(&copy.path()));
     assert_ne!(copy.id(), p.step_a1.id());
     assert_eq!(copy.data, StepData::Delay(DelayStep(100)));
+    let copy = step(&tests, p.step_a1, cx).read_with(cx, |step, _| step.duplicate("Copy".into(), &p.suite_b));
+    assert!(matches!(copy.path(), TestPath::SuiteStep(suite, _) if suite == p.suite_b.id()));
   }
 
   #[gpui_kit::test]
@@ -339,30 +293,15 @@ mod tests {
   }
 
   #[gpui_kit::test]
-  fn from_case_demotes_a_case_step_keeping_its_id(cx: &mut TestAppContext) {
+  fn reparent_in_a_suite_makes_a_suite_step(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let case_step = case(&tests, p.case_step_a, cx);
-    let step = cx.read(|cx| TestStep::from_case(case_step, &p.case_b, cx)).unwrap();
-    assert_eq!(step.path(), TestPath::Step(p.suite_b.id(), p.case_b.id(), p.case_step_a.id()));
-    assert_eq!(step.name(), "Case step A");
-    assert_eq!(step.data, StepData::Delay(DelayStep(300)));
-
-    let multi_case = case(&tests, p.case_a, cx);
-    assert!(cx.read(|cx| TestStep::from_case(multi_case, &p.case_b, cx)).is_none());
-  }
-
-  #[gpui_kit::test]
-  fn from_case_file_accepts_case_steps_in_cases_only(cx: &mut TestAppContext) {
-    let (p, tests) = fixture(cx);
-    let file = p.file();
-    let case_step = file.suites[0].cases[1].clone();
-    let step = TestStep::from_case_file(case_step.clone(), p.case_b, tests.downgrade()).unwrap();
-    assert!(p.case_b.is_parent(&step.path()));
-    assert_ne!(step.id(), p.case_step_a.id());
-    assert_eq!(step.data, StepData::Delay(DelayStep(300)));
-
-    assert!(TestStep::from_case_file(case_step, p.suite_b, tests.downgrade()).is_none());
-    assert!(TestStep::from_case_file(file.suites[0].cases[0].clone(), p.case_b, tests.downgrade()).is_none());
+    let step_a1 = step(&tests, p.step_a1, cx);
+    let (_, new) = step_a1.update(cx, |step, _| step.reparent(&p.suite_b, true));
+    assert_eq!(new, TestPath::SuiteStep(p.suite_b.id(), p.step_a1.id()));
+    let (_, new) = step_a1.update(cx, |step, _| step.reparent(&p.suite_step_a, true));
+    assert_eq!(new, TestPath::SuiteStep(p.suite_a.id(), p.step_a1.id()));
+    let (_, new) = step_a1.update(cx, |step, _| step.reparent(&p.case_a, true));
+    assert_eq!(new, p.step_a1);
   }
 
   #[gpui_kit::test]

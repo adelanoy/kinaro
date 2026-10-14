@@ -20,7 +20,7 @@ pub use project::Project;
 pub use project::ProjectEvent;
 pub use test::test_case::TestCase;
 pub use test::test_step::TestStep;
-pub use test::test_suite::TestSuite;
+pub use test::test_suite::{TestSuite, TestSuiteChild};
 
 const WORKSPACES_FILENAME: &str = "workspace.json";
 

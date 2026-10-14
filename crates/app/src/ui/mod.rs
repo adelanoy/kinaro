@@ -25,15 +25,6 @@ use ki_workspace::project::PROJECT_FILE_EXT;
 use ki_workspace::{Workspace, WorkspaceEvent};
 use std::path::PathBuf;
 
-/// The display-relevant shape of a [`ProjectTreeNode`]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProjectTestNodeKind {
-  Suite,
-  Case,
-  CaseStep,
-  Step,
-}
-
 pub struct WorkspaceView {
   workspace: Entity<Workspace>,
   title_bar: Entity<AppTitleBar>,
