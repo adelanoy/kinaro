@@ -2,7 +2,6 @@ use crate::ui::editor::header_editor::HeaderEditor;
 use gpui_kit::component::Icon;
 use gpui_kit::component::separator::Separator;
 use gpui_kit::{App, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, div};
-use ki_assets::icon::IconAsset;
 use ki_workspace::TestSuite;
 use ki_workspace::test::TestMetadataOwner;
 
@@ -23,8 +22,8 @@ impl SuiteEditor {
   }
 
   /// Returns the icon of the editor's tab.
-  pub fn icon(&self, _cx: &App) -> impl Into<Icon> {
-    IconAsset::TestSuite
+  pub fn icon(&self, cx: &App) -> impl Into<Icon> {
+    self.suite.read(cx).icon()
   }
 }
 

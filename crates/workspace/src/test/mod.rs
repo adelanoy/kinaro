@@ -1,5 +1,7 @@
 use crate::error::{ProjectError, ProjectResult};
+use crate::test::test_step::StepData;
 use crate::{FileProjectMetadata, TestCase, TestStep, TestSuite};
+use gpui_kit::component::Icon;
 use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, EventEmitter, SharedString};
 use ki_project::{FileTestMetadata, FileTestSuite, FileTestsContainer};
 use ki_utils::{Offset, TestPath};
@@ -24,7 +26,7 @@ pub struct TestMetadata {
   path: TestPath,
   /// Display name of the node
   pub(crate) name: SharedString,
-  /// Optional markdown description of the node
+  /// Optional Markdown description of the node
   pub description: Option<SharedString>,
   /// Whether the node is excluded from runs
   pub disabled: bool,
@@ -121,13 +123,15 @@ impl TestMetadata {
   }
 }
 
-/// A node of the test tree holding a [`TestMetadata`]: gives a uniform access to the metadata of
+/// A node of the test tree holding a [`TestMetadata`]: gives uniform access to the metadata of
 /// suites, cases and steps, so they can be renamed, described and enabled the same way.
 pub trait TestMetadataOwner: Clone + 'static {
   /// Returns the id of the node, i.e. the last segment of its path.
   fn id(&self) -> Uuid;
   /// Returns the path addressing the node in the test tree.
   fn path(&self) -> TestPath;
+  /// Returns the path addressing the node in the test tree.
+  fn icon(&self) -> Icon;
   /// Returns the display name of the node.
   fn name(&self) -> SharedString;
   /// Renames the node. A no-op when `new_name` is its current name.
@@ -137,7 +141,7 @@ pub trait TestMetadataOwner: Clone + 'static {
   fn set_name(&mut self, new_name: SharedString, cx: &mut Context<Self>)
   where
     Self: Sized;
-  /// Returns the markdown description of the node, if any.
+  /// Returns the Markdown description of the node, if any.
   fn description(&self) -> Option<SharedString>;
   /// Sets (or removes, with `None`) the description of the node. A no-op when it is unchanged.
   ///
@@ -157,12 +161,12 @@ pub trait TestMetadataOwner: Clone + 'static {
     Self: Sized;
 }
 
+pub trait StepDataProvider: 'static {
+  fn data(&self) -> Option<&StepData>; 
+  fn data_mut(&mut self) -> Option<&mut StepData>; 
+}
+
 /// Events raised by the [`TestsContainer`] entity.
-///
-/// Test data events (`TestsModified`, `TestAdded`, `TestMoved`, `TestRemoved`)
-/// mean the project file must be saved; configuration events
-/// (`ConfigChanged`, `TestOpenInEditor`, `TestClosedInEditor`,
-/// `EditorActiveTabIndex`) mean the workspace file must be saved.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TestsContainerEvent {
   /// The content of the tests was modified (reordered, renamed, enabled/disabled, ...)

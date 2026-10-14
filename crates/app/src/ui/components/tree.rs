@@ -12,11 +12,11 @@ use uuid::Uuid;
 
 pub const TREE_CONTEXT: &str = "Tree";
 
-#[derive(Debug)]
 pub struct ProjectTreeNode {
   pub path: TestPath,
   pub kind: ProjectTestNodeKind,
   pub label: SharedString,
+  pub icon: Icon,
   pub disabled: bool,
   pub parent_disabled: bool,
   pub depth: usize,

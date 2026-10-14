@@ -20,7 +20,6 @@ use gpui_kit::{
   App, AppContext, Axis, ClickEvent, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
   PathPromptOptions, Render, SharedString, Styled, Subscription, Window, div, px,
 };
-use ki_assets::icon::IconAsset;
 use ki_settings::app_state::AppState;
 use ki_workspace::project::PROJECT_FILE_EXT;
 use ki_workspace::{Workspace, WorkspaceEvent};
@@ -33,16 +32,6 @@ pub enum ProjectTestNodeKind {
   Case,
   CaseStep,
   Step,
-}
-
-impl ProjectTestNodeKind {
-  pub fn icon(&self) -> Icon {
-    match self {
-      ProjectTestNodeKind::Suite => Icon::new(IconAsset::TestSuite),
-      ProjectTestNodeKind::Case => Icon::new(IconAsset::TestCase),
-      ProjectTestNodeKind::CaseStep | ProjectTestNodeKind::Step => Icon::new(IconAsset::TestStep),
-    }
-  }
 }
 
 pub struct WorkspaceView {
