@@ -1,17 +1,29 @@
 use ki_project::FileDelayStep;
+use ki_utils::time::TimeUnit;
 
-/// A step waiting for the given number of milliseconds.
+/// A step waiting for `duration` expressed in `unit` (e.g. 3 seconds).
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub struct DelayStep(pub u32);
+pub struct DelayData {
+  /// How long to wait, in `unit`
+  pub duration: u32,
+  /// The time unit `duration` is expressed in
+  pub unit: TimeUnit,
+}
 
-impl From<FileDelayStep> for DelayStep {
+impl From<FileDelayStep> for DelayData {
   fn from(value: FileDelayStep) -> Self {
-    Self(value.0)
+    Self {
+      duration: value.duration,
+      unit: value.unit,
+    }
   }
 }
 
-impl From<&DelayStep> for FileDelayStep {
-  fn from(value: &DelayStep) -> Self {
-    Self(value.0)
+impl From<&DelayData> for FileDelayStep {
+  fn from(value: &DelayData) -> Self {
+    Self {
+      duration: value.duration,
+      unit: value.unit,
+    }
   }
 }

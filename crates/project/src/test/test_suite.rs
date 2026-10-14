@@ -25,6 +25,7 @@ mod tests {
   use super::*;
   use crate::test::step_delay::FileDelayStep;
   use crate::test::test_step::FileStepData;
+  use ki_utils::time::TimeUnit;
   use serde_json::json;
   use uuid::Uuid;
 
@@ -42,7 +43,7 @@ mod tests {
     let (suite_id, case_id, step_id) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
     let step = |id| FileTestStep {
       info: meta(id, "Step"),
-      data: FileStepData::Delay(FileDelayStep(10)),
+      data: FileStepData::Delay(FileDelayStep {duration: 10, unit: TimeUnit::Second }),
     };
     let suite = FileTestSuite {
       info: meta(suite_id, "Suite"),
@@ -57,7 +58,7 @@ mod tests {
 
     let value = serde_json::to_value(&suite).unwrap();
 
-    let step_value = json!({ "id": step_id, "name": "Step", "data": { "Delay": 10 } });
+    let step_value = json!({ "id": step_id, "name": "Step", "data": { "Delay": { "duration": 10, "unit": "Second" } } });
     assert_eq!(
       value,
       json!({
@@ -65,7 +66,7 @@ mod tests {
         "name": "Suite",
         "children": [
           { "type": "Case", "id": case_id, "name": "Case", "steps": [step_value] },
-          { "type": "Step", "id": step_id, "name": "Step", "data": { "Delay": 10 } },
+          { "type": "Step", "id": step_id, "name": "Step", "data": { "Delay": { "duration": 10, "unit": "Second" } } },
         ]
       })
     );

@@ -1,25 +1,27 @@
-use crate::test::step_delay::DelayStep;
-use crate::test::step_rest::RestStep;
+use crate::test::step_delay::DelayData;
+use crate::test::step_rest::RestData;
 use crate::test::{TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent};
 use gpui_kit::component::Icon;
 use gpui_kit::{Context, SharedString, WeakEntity};
 use ki_assets::icon::IconAsset;
 use ki_project::{FileStepData, FileTestStep};
+use ki_utils::time::TimeUnit;
 use uuid::Uuid;
 
 /// What a step does when run, one variant per kind of step.
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub enum StepData {
   /// Sends a REST request
-  RestStep(RestStep),
+  Rest(RestData),
   /// Waits for a given time
-  Delay(DelayStep),
+  Delay(DelayData),
 }
 
 impl StepData {
-  pub fn icon(&self) ->  impl Into<Icon> {
+  /// Returns the icon of this kind of step.
+  pub fn icon(&self) -> impl Into<Icon> {
     match self {
-      StepData::RestStep(_) => IconAsset::StepRest,
+      StepData::Rest(_) => IconAsset::StepRest,
       StepData::Delay(_) => IconAsset::StepDelay,
     }
   }
@@ -28,7 +30,7 @@ impl StepData {
 impl From<FileStepData> for StepData {
   fn from(value: FileStepData) -> Self {
     match value {
-      FileStepData::RestStep(rest_step) => StepData::RestStep(rest_step.into()),
+      FileStepData::RestStep(rest_step) => StepData::Rest(rest_step.into()),
       FileStepData::Delay(delay_step) => StepData::Delay(delay_step.into()),
     }
   }
@@ -37,7 +39,7 @@ impl From<FileStepData> for StepData {
 impl From<&StepData> for FileStepData {
   fn from(value: &StepData) -> Self {
     match value {
-      StepData::RestStep(rest_step) => FileStepData::RestStep(rest_step.into()),
+      StepData::Rest(rest_step) => FileStepData::RestStep(rest_step.into()),
       StepData::Delay(delay_step) => FileStepData::Delay(delay_step.into()),
     }
   }
@@ -67,10 +69,15 @@ impl TestStep {
     &self.data
   }
 
-  /// Returns what the step does when run, for editing.
-  #[inline]
-  pub fn data_mut(&mut self) -> &mut StepData {
-    &mut self.data
+  /// Edits what the step does when run: `f` is given the step data and returns whether it
+  /// changed it.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestsModified`] on the owning container if `f` returned `true`.
+  pub fn update_data(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut StepData) -> bool) {
+    if f(&mut self.data) {
+      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    }
   }
 
   /// Returns a copy of this step named `name`, placed where `parent_path` points, with a fresh id.
@@ -127,7 +134,10 @@ impl TestStep {
         description: None,
         disabled: false,
       },
-      data: StepData::Delay(DelayStep(1000)),
+      data: StepData::Delay(DelayData {
+        duration: 1000,
+        unit: TimeUnit::Millisecond,
+      }),
     }
   }
 
@@ -153,7 +163,7 @@ impl TestMetadataOwner for TestStep {
     self.meta.path
   }
 
-  fn icon(&self) ->  impl Into<Icon> {
+  fn icon(&self) -> impl Into<Icon> {
     self.data.icon()
   }
 
@@ -203,7 +213,7 @@ mod tests {
   use crate::test::step_rest::{RestBody, RestMethod};
   use crate::test::test_fixtures::*;
   use gpui_kit::TestAppContext;
-  use ki_project::{FileRestBody, FileRestMethod, FileRestStep};
+  use ki_project::{FileDelayStep, FileRestBody, FileRestMethod, FileRestStep};
 
   #[gpui_kit::test]
   fn new_delay_has_a_fresh_id(cx: &mut TestAppContext) {
@@ -212,7 +222,13 @@ mod tests {
     let step = TestStep::new_delay(&TestPath::Case(suite_id, case_id), "Delay".into(), tests.downgrade());
     assert!(matches!(step.path(), TestPath::Step(suite, case, _) if suite == suite_id && case == case_id));
     assert_eq!(step.name(), "Delay");
-    assert_eq!(step.data, StepData::Delay(DelayStep(1000)));
+    assert_eq!(
+      step.data,
+      StepData::Delay(DelayData {
+        duration: 1000,
+        unit: TimeUnit::Millisecond
+      })
+    );
     let suite_step = TestStep::new_delay(&TestPath::Suite(suite_id), "Delay".into(), tests.downgrade());
     assert!(matches!(suite_step.path(), TestPath::SuiteStep(suite, _) if suite == suite_id));
     assert_ne!(suite_step.id(), step.id());
@@ -229,7 +245,13 @@ mod tests {
     ] {
       let kept = TestStep::from_file(file.clone(), &parent, tests.downgrade(), false);
       assert_eq!(kept.path(), TestPath::new_step(&parent, step_id));
-      assert_eq!(kept.data, StepData::Delay(DelayStep(10)));
+      assert_eq!(
+        kept.data,
+        StepData::Delay(DelayData {
+          duration: 10,
+          unit: TimeUnit::Millisecond
+        })
+      );
       let renewed = TestStep::from_file(file.clone(), &parent, tests.downgrade(), true);
       assert!(parent.is_parent(&renewed.path()));
       assert_ne!(renewed.id(), step_id);
@@ -253,7 +275,7 @@ mod tests {
     };
     let parent = TestPath::Case(Uuid::new_v4(), Uuid::new_v4());
     let step = TestStep::from_file(file.clone(), &parent, tests.downgrade(), false);
-    let StepData::RestStep(rest) = &step.data else {
+    let StepData::Rest(rest) = &step.data else {
       panic!("should be a rest step");
     };
     assert_eq!(rest.method, RestMethod::Post);
@@ -265,13 +287,66 @@ mod tests {
   }
 
   #[gpui_kit::test]
+  fn get_file_round_trips_a_delay_step(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let file = FileTestStep {
+      info: file_meta(Uuid::new_v4(), "Delay"),
+      data: FileStepData::Delay(FileDelayStep {
+        duration: 3,
+        unit: TimeUnit::Second,
+      }),
+    };
+    let step = TestStep::from_file(file.clone(), &TestPath::Suite(Uuid::new_v4()), tests.downgrade(), false);
+    assert_eq!(
+      step.data,
+      StepData::Delay(DelayData {
+        duration: 3,
+        unit: TimeUnit::Second
+      })
+    );
+    assert_eq!(
+      serde_json::to_value(step.get_file()).unwrap(),
+      serde_json::to_value(file).unwrap()
+    );
+  }
+
+  #[gpui_kit::test]
+  fn update_data_notifies_changes_only(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    let step = step(&tests, p.step_a1, cx);
+    let minute = DelayData {
+      duration: 2,
+      unit: TimeUnit::Minute,
+    };
+    let original = step.read_with(cx, |step, _| step.data().clone());
+    step.update(cx, |step, cx| step.update_data(cx, |_| false));
+    assert_eq!(step.read_with(cx, |step, _| step.data().clone()), original);
+    assert!(events.borrow().is_empty());
+    step.update(cx, |step, cx| {
+      step.update_data(cx, |data| {
+        *data = StepData::Delay(minute.clone());
+        true
+      })
+    });
+    assert_eq!(step.read_with(cx, |step, _| step.data().clone()), StepData::Delay(minute));
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified]);
+  }
+
+  #[gpui_kit::test]
   fn duplicate_gives_a_fresh_id_in_the_parent(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
     let copy = step(&tests, p.step_a1, cx).read_with(cx, |step, _| step.duplicate("Copy".into(), &p.case_b));
     assert_eq!(copy.name(), "Copy");
     assert!(p.case_b.is_parent(&copy.path()));
     assert_ne!(copy.id(), p.step_a1.id());
-    assert_eq!(copy.data, StepData::Delay(DelayStep(100)));
+    assert_eq!(
+      copy.data,
+      StepData::Delay(DelayData {
+        duration: 100,
+        unit: TimeUnit::Millisecond
+      })
+    );
     let copy = step(&tests, p.step_a1, cx).read_with(cx, |step, _| step.duplicate("Copy".into(), &p.suite_b));
     assert!(matches!(copy.path(), TestPath::SuiteStep(suite, _) if suite == p.suite_b.id()));
   }

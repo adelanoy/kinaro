@@ -684,13 +684,13 @@ impl EventEmitter<TestsContainerEvent> for TestsContainer {}
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::test::step_delay::DelayStep;
+  use crate::test::step_delay::DelayData;
   use crate::test::test_fixtures::*;
   use crate::test::test_step::StepData;
   use gpui_kit::TestAppContext;
   use ki_project::FileSuiteChild;
   use ki_utils::SUITE;
-
+  use ki_utils::time::TimeUnit;
   // TestMetadata
 
   #[test]
@@ -1338,7 +1338,11 @@ mod tests {
     let new_step = TestPath::Step(p.suite_b.id(), p.case_b.id(), p.suite_step_a.id());
     assert_eq!(child_names(&tests, p.suite_a, cx), vec!["Case A"]);
     assert_eq!(step_names(&tests, p.case_b, cx), vec!["Step B1", "Suite step A"]);
-    assert!(step(&tests, new_step, cx).read_with(cx, |step, _| step.data == StepData::Delay(DelayStep(300))));
+    assert!(step(&tests, new_step, cx).read_with(cx, |step, _| step.data
+      == StepData::Delay(DelayData {
+        duration: 300,
+        unit: TimeUnit::Millisecond
+      })));
     assert_eq!(
       events,
       vec![
@@ -1354,7 +1358,11 @@ mod tests {
       vec!["Case B", "Suite step B", "Suite step A"]
     );
     let back = step(&tests, TestPath::SuiteStep(p.suite_b.id(), p.suite_step_a.id()), cx);
-    assert!(back.read_with(cx, |step, _| step.data == StepData::Delay(DelayStep(300))));
+    assert!(back.read_with(cx, |step, _| step.data
+      == StepData::Delay(DelayData {
+        duration: 300,
+        unit: TimeUnit::Millisecond
+      })));
   }
 
   #[gpui_kit::test]
@@ -1392,7 +1400,11 @@ mod tests {
     let new_step = TestPath::SuiteStep(p.suite_b.id(), p.step_a1.id());
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A2"]);
     assert_eq!(child_names(&tests, p.suite_b, cx), vec!["Case B", "Suite step B", "Step A1"]);
-    assert!(step(&tests, new_step, cx).read_with(cx, |step, _| step.data == StepData::Delay(DelayStep(100))));
+    assert!(step(&tests, new_step, cx).read_with(cx, |step, _| step.data
+      == StepData::Delay(DelayData {
+        duration: 100,
+        unit: TimeUnit::Millisecond
+      })));
     assert_eq!(
       events,
       vec![

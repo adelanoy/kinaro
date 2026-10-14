@@ -447,11 +447,12 @@ impl TestMetadataOwner for TestSuite {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::test::step_delay::DelayStep;
+  use crate::test::step_delay::DelayData;
   use crate::test::test_fixtures::*;
   use crate::test::test_step::StepData;
   use gpui_kit::TestAppContext;
   use ki_utils::SUITE;
+  use ki_utils::time::TimeUnit;
 
   #[gpui_kit::test]
   fn new_suite_is_empty_and_enabled(cx: &mut TestAppContext) {
@@ -523,7 +524,11 @@ mod tests {
       vec!["Case A", "new Delay", "Suite step A", "new Delay_1"]
     );
     assert!(matches!(first, TestPath::SuiteStep(suite, _) if suite == p.suite_a.id()));
-    assert!(step(&tests, first, cx).read_with(cx, |step, _| step.data == StepData::Delay(DelayStep(1000))));
+    assert!(step(&tests, first, cx).read_with(cx, |step, _| step.data
+      == StepData::Delay(DelayData {
+        duration: 1000,
+        unit: TimeUnit::Millisecond
+      })));
     assert_eq!(
       *events.borrow(),
       vec![TestsContainerEvent::TestAdded(first), TestsContainerEvent::TestAdded(second)]
@@ -561,7 +566,11 @@ mod tests {
       vec!["Case B", "Suite step B", "Suite step B_1"]
     );
     assert!(matches!(copy, TestPath::SuiteStep(suite, step) if suite == p.suite_b.id() && step != p.suite_step_b.id()));
-    assert!(step(&tests, copy, cx).read_with(cx, |step, _| step.data == StepData::Delay(DelayStep(500))));
+    assert!(step(&tests, copy, cx).read_with(cx, |step, _| step.data
+      == StepData::Delay(DelayData {
+        duration: 500,
+        unit: TimeUnit::Millisecond
+      })));
   }
 
   #[gpui_kit::test]
@@ -743,7 +752,11 @@ mod tests {
     assert_eq!(child_names(&tests, p.suite_b, cx), vec!["Case B", "Step A2", "Suite step B"]);
     let pasted = subtree(&tests, p.suite_b, cx)[3];
     assert!(matches!(pasted, TestPath::SuiteStep(suite, step) if suite == p.suite_b.id() && step != p.step_a2.id()));
-    assert!(step(&tests, pasted, cx).read_with(cx, |step, _| step.data == StepData::Delay(DelayStep(200))));
+    assert!(step(&tests, pasted, cx).read_with(cx, |step, _| step.data
+      == StepData::Delay(DelayData {
+        duration: 200,
+        unit: TimeUnit::Millisecond
+      })));
   }
 
   #[gpui_kit::test]

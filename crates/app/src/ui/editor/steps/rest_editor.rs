@@ -1,23 +1,29 @@
 use gpui_kit::base::v_flex;
 use gpui_kit::component::label::Label;
-use gpui_kit::{Context, Entity, IntoElement, ParentElement, Render, Styled, Window};
-use ki_workspace::TestStep;
+use gpui_kit::{Context, EventEmitter, IntoElement, ParentElement, Render, Styled, Window};
+use ki_workspace::test::step_rest::RestData;
+
+#[allow(unused)]
+pub enum RestEditorEvent {
+  ValueChanged,
+}
 
 pub struct RestEditor {
-  step: Entity<TestStep>,
+  _rest_data: RestData,
 }
 
 impl RestEditor {
-  pub(super) fn new(step: Entity<TestStep>) -> Self {
+  pub fn new(rest_data: RestData, _window: &mut Window, _cx: &mut Context<RestEditor>) -> Self {
     Self{
-      step
+      _rest_data: rest_data,
     }
   }
 }
 
+impl EventEmitter<RestEditorEvent> for RestEditor {}
+
 impl Render for RestEditor {
-  fn render(&mut self, _window: &mut Window, cx: &mut Context<RestEditor>) -> impl IntoElement {
-    let _data = self.step.read(cx).data();
+  fn render(&mut self, _window: &mut Window, _cx: &mut Context<RestEditor>) -> impl IntoElement {
     v_flex().size_full()
       .child(Label::new("Rest").text_lg())
   }

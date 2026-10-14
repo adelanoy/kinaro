@@ -21,7 +21,7 @@ mod ki_project {
   use crate::test::FileTestsContainer;
   use crate::variable::FileProjectVariables;
   use chrono::{DateTime, Local};
-  use ki_utils::java_date_format;
+  use ki_utils::serial_date_format;
   use serde::{Deserialize, Serialize};
   use std::fs;
   use std::path::{Path, PathBuf};
@@ -31,9 +31,9 @@ mod ki_project {
   pub struct ProjectFile {
     pub name: String,
     pub version: u16,
-    #[serde(with = "java_date_format")]
+    #[serde(with = "serial_date_format")]
     pub created: DateTime<Local>,
-    #[serde(with = "java_date_format")]
+    #[serde(with = "serial_date_format")]
     pub modified: DateTime<Local>,
     pub variables: FileProjectVariables,
     pub tests: FileTestsContainer,

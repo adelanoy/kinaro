@@ -287,7 +287,7 @@ impl TestMetadataOwner for TestCase {
     self.meta.path
   }
 
-  fn icon(&self) ->  impl Into<Icon> {
+  fn icon(&self) -> impl Into<Icon> {
     IconAsset::TestCase
   }
 
@@ -334,12 +334,13 @@ impl TestMetadataOwner for TestCase {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::test::step_delay::DelayStep;
+  use crate::test::step_delay::DelayData;
   use crate::test::test_fixtures::*;
   use crate::test::test_step::StepData;
   use gpui_kit::TestAppContext;
   use ki_project::FileSuiteChild;
   use ki_utils::CASE;
+  use ki_utils::time::TimeUnit;
 
   /// Returns the on-disk representation of the case `ix` of the suite `suite_ix` of the reference tree.
   fn file_case_at(p: &Paths, suite_ix: usize, ix: usize) -> FileTestCase {
@@ -413,7 +414,11 @@ mod tests {
     let new_path = case(&tests, p.case_a, cx).update(cx, |case, cx| case.add_delay_step(p.case_a, cx));
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Step A2", "new Delay"]);
     assert!(p.case_a.is_parent(&new_path));
-    assert!(step(&tests, new_path, cx).read_with(cx, |step, _| step.data == StepData::Delay(DelayStep(1000))));
+    assert!(step(&tests, new_path, cx).read_with(cx, |step, _| step.data
+      == StepData::Delay(DelayData {
+        duration: 1000,
+        unit: TimeUnit::Millisecond
+      })));
     assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestAdded(new_path)]);
   }
 
@@ -441,7 +446,11 @@ mod tests {
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Step A1_1", "Step A2"]);
     assert!(p.case_a.is_parent(&copy));
     assert_ne!(copy, p.step_a1);
-    assert!(step(&tests, copy, cx).read_with(cx, |step, _| step.data == StepData::Delay(DelayStep(100))));
+    assert!(step(&tests, copy, cx).read_with(cx, |step, _| step.data
+      == StepData::Delay(DelayData {
+        duration: 100,
+        unit: TimeUnit::Millisecond
+      })));
     assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestAdded(copy)]);
   }
 
@@ -587,7 +596,11 @@ mod tests {
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Suite step A", "Step A2"]);
     let pasted = subtree(&tests, p.case_a, cx)[2];
     assert_ne!(pasted.id(), p.suite_step_a.id());
-    assert!(step(&tests, pasted, cx).read_with(cx, |step, _| step.data == StepData::Delay(DelayStep(300))));
+    assert!(step(&tests, pasted, cx).read_with(cx, |step, _| step.data
+      == StepData::Delay(DelayData {
+        duration: 300,
+        unit: TimeUnit::Millisecond
+      })));
   }
 
   #[gpui_kit::test]
