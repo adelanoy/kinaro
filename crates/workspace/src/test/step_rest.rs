@@ -265,14 +265,14 @@ impl From<&RestBody> for FileRestBody {
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub struct RestStep {
+pub struct RestData {
   pub method: RestMethod,
   pub endpoint: SharedString,
   pub params: Vec<RestParam>,
   pub body: RestBody,
 }
 
-impl From<FileRestStep> for RestStep {
+impl From<FileRestStep> for RestData {
   fn from(step: FileRestStep) -> Self {
     let FileRestStep {
       method,
@@ -280,7 +280,7 @@ impl From<FileRestStep> for RestStep {
       params,
       body,
     } = step;
-    RestStep {
+    RestData {
       method: method.into(),
       endpoint: endpoint.into(),
       params: params.into_iter().map(Into::into).collect(),
@@ -289,9 +289,9 @@ impl From<FileRestStep> for RestStep {
   }
 }
 
-impl From<&RestStep> for FileRestStep {
-  fn from(step: &RestStep) -> Self {
-    let RestStep {
+impl From<&RestData> for FileRestStep {
+  fn from(step: &RestData) -> Self {
+    let RestData {
       method,
       endpoint,
       params,

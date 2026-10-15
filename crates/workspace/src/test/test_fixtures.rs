@@ -8,6 +8,7 @@ use ki_project::{
   FileDelayStep, FileStepData, FileSuiteChild, FileTestCase, FileTestMetadata, FileTestStep, FileTestSuite, FileTestsContainer,
 };
 use ki_utils::TestPath;
+use ki_utils::time::TimeUnit;
 use std::cell::RefCell;
 use std::rc::Rc;
 use uuid::Uuid;
@@ -26,7 +27,7 @@ pub(crate) fn file_meta(id: Uuid, name: &str) -> FileTestMetadata {
 pub(crate) fn file_delay_step(id: Uuid, name: &str, ms: u32) -> FileTestStep {
   FileTestStep {
     info: file_meta(id, name),
-    data: FileStepData::Delay(FileDelayStep(ms)),
+    data: FileStepData::Delay(FileDelayStep{duration:ms, unit: TimeUnit::Millisecond}),
   }
 }
 

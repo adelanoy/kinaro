@@ -1,5 +1,5 @@
 #[allow(dead_code)]
-pub mod java_date_format {
+pub mod serial_date_format {
   use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
   use serde::{self, Deserialize, Deserializer, Serializer};
 
@@ -34,5 +34,45 @@ pub mod java_date_format {
         .earliest()
         .unwrap_or_else(|| Local.from_utc_datetime(&dt)),
     )
+  }
+}
+
+/// Time units, used to express durations (e.g. of a delay step).
+pub mod time {
+  use gpui_kit::SharedString;
+  use gpui_kit::component::select::SelectItem;
+  use serde::{Deserialize, Serialize};
+
+  /// A unit of time, serialized by its variant name.
+  #[derive(Deserialize, Serialize, Eq, PartialEq, Copy, Clone, Debug)]
+  pub enum TimeUnit {
+    /// A thousandth of a second
+    Millisecond,
+    /// A second
+    Second,
+    /// Sixty seconds
+    Minute,
+  }
+
+  impl TimeUnit {
+    /// Every unit, from the smallest to the largest.
+    pub const ALL: [TimeUnit; 3] = [TimeUnit::Millisecond, TimeUnit::Second, TimeUnit::Minute];
+  }
+
+  impl SelectItem for TimeUnit {
+    type Value = TimeUnit;
+
+    fn title(&self) -> SharedString {
+      match self {
+        TimeUnit::Millisecond => "Millisecond",
+        TimeUnit::Second => "Second",
+        TimeUnit::Minute => "Minute",
+      }
+      .into()
+    }
+
+    fn value(&self) -> &Self::Value {
+      self
+    }
   }
 }
