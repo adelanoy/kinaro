@@ -21,6 +21,7 @@ pub enum StepDataEditor {
 /// Editor of a test step.
 pub struct StepEditor {
   step: Entity<TestStep>,
+  icon: Icon,
   data_editor: StepDataEditor,
   _data_editor_sub: Subscription,
 }
@@ -31,6 +32,7 @@ impl StepEditor {
     let (data_editor, _data_editor_sub) = Self::data_editor(&step, window, cx);
     Self {
       step: step.clone(),
+      icon: step.read(cx).icon(),
       data_editor,
       _data_editor_sub,
     }
@@ -57,8 +59,8 @@ impl StepEditor {
   }
 
   /// Returns the icon of the editor's tab.
-  pub fn icon(&self, cx: &App) -> impl Into<Icon> {
-    self.step.read(cx).icon()
+  pub fn icon(&self, _cx: &App) -> Icon {
+    self.icon.clone()
   }
 
   fn handle_delay_editor_event(&mut self, event: &DelayEditorEvent, cx: &mut Context<StepEditor>) {

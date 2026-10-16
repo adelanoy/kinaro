@@ -131,7 +131,7 @@ pub trait TestMetadataOwner: Clone + 'static {
   /// Returns the path addressing the node in the test tree.
   fn path(&self) -> TestPath;
   /// Returns the path addressing the node in the test tree.
-  fn icon(&self) -> impl Into<Icon>;
+  fn icon(&self) -> Icon;
   /// Returns the display name of the node.
   fn name(&self) -> SharedString;
   /// Renames the node. A no-op when `new_name` is its current name.

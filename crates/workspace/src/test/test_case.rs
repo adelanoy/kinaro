@@ -287,8 +287,8 @@ impl TestMetadataOwner for TestCase {
     self.meta.path
   }
 
-  fn icon(&self) -> impl Into<Icon> {
-    IconAsset::TestCase
+  fn icon(&self) -> Icon {
+    IconAsset::TestCase.into()
   }
 
   #[inline]

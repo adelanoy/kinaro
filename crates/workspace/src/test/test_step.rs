@@ -2,7 +2,7 @@ use crate::test::step_delay::DelayData;
 use crate::test::step_rest::RestData;
 use crate::test::{TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent};
 use gpui_kit::component::Icon;
-use gpui_kit::{Context, SharedString, WeakEntity};
+use gpui_kit::{Context, Rgba, SharedString, Styled, WeakEntity};
 use ki_assets::icon::IconAsset;
 use ki_project::{FileStepData, FileTestStep};
 use ki_utils::time::TimeUnit;
@@ -19,10 +19,10 @@ pub enum StepData {
 
 impl StepData {
   /// Returns the icon of this kind of step.
-  pub fn icon(&self) -> impl Into<Icon> {
+  pub fn icon(&self) -> Icon {
     match self {
-      StepData::Rest(_) => IconAsset::StepRest,
-      StepData::Delay(_) => IconAsset::StepDelay,
+      StepData::Rest(_) => Icon::new(IconAsset::StepRest).text_color(Rgba::try_from("#38bdf8").unwrap()),
+      StepData::Delay(_) => Icon::new(IconAsset::StepDelay).text_color(Rgba::try_from("#f59e0b").unwrap()),
     }
   }
 }
@@ -163,7 +163,7 @@ impl TestMetadataOwner for TestStep {
     self.meta.path
   }
 
-  fn icon(&self) -> impl Into<Icon> {
+  fn icon(&self) -> Icon {
     self.data.icon()
   }
 

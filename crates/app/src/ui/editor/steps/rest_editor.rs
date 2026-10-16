@@ -14,9 +14,7 @@ pub struct RestEditor {
 
 impl RestEditor {
   pub fn new(rest_data: RestData, _window: &mut Window, _cx: &mut Context<RestEditor>) -> Self {
-    Self{
-      _rest_data: rest_data,
-    }
+    Self { _rest_data: rest_data }
   }
 }
 
@@ -24,7 +22,6 @@ impl EventEmitter<RestEditorEvent> for RestEditor {}
 
 impl Render for RestEditor {
   fn render(&mut self, _window: &mut Window, _cx: &mut Context<RestEditor>) -> impl IntoElement {
-    v_flex().size_full()
-      .child(Label::new("Rest").text_lg())
+    v_flex().size_full().child(Label::new("Rest").text_lg())
   }
 }

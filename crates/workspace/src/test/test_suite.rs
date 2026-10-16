@@ -400,8 +400,8 @@ impl TestMetadataOwner for TestSuite {
     self.meta.path
   }
 
-  fn icon(&self) -> impl Into<Icon> {
-    IconAsset::TestSuite
+  fn icon(&self) -> Icon {
+    IconAsset::TestSuite.into()
   }
 
   #[inline]

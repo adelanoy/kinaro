@@ -27,7 +27,10 @@ pub(crate) fn file_meta(id: Uuid, name: &str) -> FileTestMetadata {
 pub(crate) fn file_delay_step(id: Uuid, name: &str, ms: u32) -> FileTestStep {
   FileTestStep {
     info: file_meta(id, name),
-    data: FileStepData::Delay(FileDelayStep{duration:ms, unit: TimeUnit::Millisecond}),
+    data: FileStepData::Delay(FileDelayStep {
+      duration: ms,
+      unit: TimeUnit::Millisecond,
+    }),
   }
 }
 

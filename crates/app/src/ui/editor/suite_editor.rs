@@ -22,7 +22,7 @@ impl SuiteEditor {
   }
 
   /// Returns the icon of the editor's tab.
-  pub fn icon(&self, cx: &App) -> impl Into<Icon> {
+  pub fn icon(&self, cx: &App) -> Icon {
     self.suite.read(cx).icon()
   }
 }

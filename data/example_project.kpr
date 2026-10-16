@@ -2,7 +2,7 @@
   "name": "example_project",
   "version": 1,
   "created": "2026-09-13T07:43:12",
-  "modified": "2026-10-14T17:18:00",
+  "modified": "2026-10-15T14:43:03",
   "variables": {
     "variables": [
       {
@@ -129,7 +129,7 @@
                 "name": "Assert 201 Created",
                 "data": {
                   "Delay": {
-                    "duration": 97,
+                    "duration": 10000,
                     "unit": "Millisecond"
                   }
                 }

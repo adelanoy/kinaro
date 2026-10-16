@@ -22,22 +22,17 @@ pub struct DelayEditor {
 impl DelayEditor {
   pub fn new(delay: DelayData, window: &mut Window, cx: &mut Context<Self>) -> Self {
     let unit_pos = TimeUnit::ALL.iter().position(|tu| *tu == delay.unit);
-    let unit_select_state = cx.new(|cx| {
-      SelectState::new(
-        TimeUnit::ALL.to_vec(),
-        unit_pos.map(IndexPath::new),
-        window,
-        cx,
-      )
-    });
+    let unit_select_state = cx.new(|cx| SelectState::new(TimeUnit::ALL.to_vec(), unit_pos.map(IndexPath::new), window, cx));
     let duration_input_state = cx.new(|cx| InputState::new(window, cx).default_value(delay.duration.to_string()));
 
     let _subs = vec![
       cx.subscribe(&unit_select_state, |this, _, _: &SelectEvent<Vec<TimeUnit>>, cx| {
-        Self::input_changed(this, cx)
+        Self::input_changed(this, cx);
       }),
       cx.subscribe(&duration_input_state, |this, _, e: &InputEvent, cx| {
-        if matches!(e, InputEvent::Change) { Self::input_changed(this, cx) }
+        if matches!(e, InputEvent::Blur | InputEvent::PressEnter { secondary: _, shift: _ }) {
+          Self::input_changed(this, cx);
+        }
       }),
     ];
 

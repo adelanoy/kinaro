@@ -43,7 +43,10 @@ mod tests {
     let (suite_id, case_id, step_id) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
     let step = |id| FileTestStep {
       info: meta(id, "Step"),
-      data: FileStepData::Delay(FileDelayStep {duration: 10, unit: TimeUnit::Second }),
+      data: FileStepData::Delay(FileDelayStep {
+        duration: 10,
+        unit: TimeUnit::Second,
+      }),
     };
     let suite = FileTestSuite {
       info: meta(suite_id, "Suite"),

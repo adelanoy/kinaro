@@ -41,11 +41,7 @@ pub fn init(config_dir: &PathBuf) -> Result<()> {
     .build(file_path)?;
 
   let config = Config::builder()
-    .appender(
-      Appender::builder()
-        .filter(Box::new(KinaroFilter))
-        .build("console", Box::new(console_appender)),
-    )
+    .appender(Appender::builder().build("console", Box::new(console_appender)))
     .appender(
       Appender::builder()
         .filter(Box::new(KinaroFilter))

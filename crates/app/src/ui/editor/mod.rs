@@ -52,9 +52,9 @@ impl TestEditor {
   /// Returns the icon of the tab, telling the kind of the edited node.
   fn icon(&self, cx: &App) -> Icon {
     match &self {
-      TestEditor::Suite(suite_editor) => Icon::new(suite_editor.read(cx).icon(cx)),
-      TestEditor::Case(case_editor) => Icon::new(case_editor.read(cx).icon(cx)),
-      TestEditor::Step(step_editor) => Icon::new(step_editor.read(cx).icon(cx)),
+      TestEditor::Suite(suite_editor) => suite_editor.read(cx).icon(cx),
+      TestEditor::Case(case_editor) => case_editor.read(cx).icon(cx),
+      TestEditor::Step(step_editor) => step_editor.read(cx).icon(cx),
     }
   }
 }

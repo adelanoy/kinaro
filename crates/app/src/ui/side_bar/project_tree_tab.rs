@@ -532,7 +532,7 @@ fn get_ts_entries(suites: &[Entity<TestSuite>], opened_nodes: &HashSet<TestPath>
       entries.push(ProjectTreeNode {
         path,
         label: suite.name(),
-        icon: suite.icon().into(),
+        icon: suite.icon(),
         disabled,
         parent_disabled: false,
         depth: 0,
@@ -569,7 +569,7 @@ fn get_child_entries(
         entries.push(ProjectTreeNode {
           path,
           label: case.name(),
-          icon: case.icon().into(),
+          icon: case.icon(),
           disabled,
           parent_disabled,
           depth: 1,
@@ -586,7 +586,7 @@ fn get_child_entries(
         entries.push(ProjectTreeNode {
           path: step.meta.path(),
           label: step.name(),
-          icon: step.icon().into(),
+          icon: step.icon(),
           disabled: step.meta.disabled,
           parent_disabled,
           depth: 1,
@@ -611,7 +611,7 @@ fn get_step_entries(steps: &[Entity<TestStep>], parent_disabled: bool, cx: &App)
       entries.push(ProjectTreeNode {
         path: step.meta.path(),
         label: step.name(),
-        icon: step.icon().into(),
+        icon: step.icon(),
         disabled,
         parent_disabled,
         depth: 2,
