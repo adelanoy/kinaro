@@ -2,7 +2,7 @@
   "name": "example_project",
   "version": 1,
   "created": "2026-09-13T07:43:12",
-  "modified": "2026-10-15T14:43:03",
+  "modified": "2026-10-19T15:00:54",
   "variables": {
     "variables": [
       {
@@ -98,7 +98,7 @@
                 "data": {
                   "RestStep": {
                     "method": "POST",
-                    "endpoint": "/users",
+                    "endpoint": "",
                     "params": [
                       {
                         "type": "header",
@@ -265,7 +265,7 @@
             "name": "Token refresh",
             "data": {
               "RestStep": {
-                "method": "POST",
+                "method": "DELETE",
                 "endpoint": "/auth/refresh",
                 "params": [
                   {
@@ -292,7 +292,7 @@
                 "name": "Send logout request",
                 "data": {
                   "RestStep": {
-                    "method": "POST",
+                    "method": "PUT",
                     "endpoint": "/auth/logout",
                     "params": [
                       {
@@ -340,7 +340,7 @@
                 "name": "Send GET request",
                 "data": {
                   "RestStep": {
-                    "method": "GET",
+                    "method": "HEAD",
                     "endpoint": "/products",
                     "params": [
                       {

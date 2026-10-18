@@ -1,8 +1,21 @@
-use gpui_kit::SharedString;
+use crate::test::{TestsContainer, TestsContainerEvent};
+use gpui_kit::component::Icon;
+use gpui_kit::component::label::Label;
+use gpui_kit::component::select::SelectItem;
+use gpui_kit::{App, Context, Hsla, IntoElement, Rgba, SharedString, Styled, WeakEntity, Window};
+use ki_assets::icon::IconAsset;
 use ki_project::{
-  FileFormField, FileMultipartPart, FileRestBody, FileRestMethod, FileRestParam, FileRestParamType, FileRestStep,
+  FileFormField, FileMultipartPart, FileRestBody, FileRestData, FileRestMethod, FileRestParam, FileRestParamType,
 };
 use std::path::PathBuf;
+
+const REST_GET_COLOR: &str = "#38bdf8";
+const REST_POST_COLOR: &str = "#fcd34d";
+const REST_PUT_COLOR: &str = "#b45309";
+const REST_DELETE_COLOR: &str = "#ef4444";
+const REST_PATCH_COLOR: &str = "#9333ea";
+const REST_OPTIONS_COLOR: &str = "#4ade80";
+const REST_HEAD_COLOR: &str = "#ec4899";
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub enum RestMethod {
@@ -13,6 +26,61 @@ pub enum RestMethod {
   Patch,
   Head,
   Options,
+}
+
+impl RestMethod {
+  pub const ALL: &'static [RestMethod] = &[
+    RestMethod::Get,
+    RestMethod::Post,
+    RestMethod::Put,
+    RestMethod::Delete,
+    RestMethod::Patch,
+  ];
+
+  pub fn color(&self) -> impl Into<Hsla> {
+    let hex_str = match self {
+      RestMethod::Get => REST_GET_COLOR,
+      RestMethod::Post => REST_POST_COLOR,
+      RestMethod::Put => REST_PUT_COLOR,
+      RestMethod::Delete => REST_DELETE_COLOR,
+      RestMethod::Patch => REST_PATCH_COLOR,
+      RestMethod::Head => REST_OPTIONS_COLOR,
+      RestMethod::Options => REST_HEAD_COLOR,
+    };
+    Rgba::try_from(hex_str).unwrap()
+  }
+}
+
+impl SelectItem for RestMethod {
+  type Value = RestMethod;
+
+  fn title(&self) -> SharedString {
+    match self {
+      RestMethod::Get => "Get".into(),
+      RestMethod::Post => "Post".into(),
+      RestMethod::Put => "Put".into(),
+      RestMethod::Delete => "Delete".into(),
+      RestMethod::Patch => "Patch".into(),
+      RestMethod::Head => "Head".into(),
+      RestMethod::Options => "Options".into(),
+    }
+  }
+
+  fn render(&self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    Label::new(self.title()).text_color(self.color())
+  }
+
+  fn value(&self) -> &Self::Value {
+    match self {
+      RestMethod::Get => &RestMethod::Get,
+      RestMethod::Post => &RestMethod::Post,
+      RestMethod::Put => &RestMethod::Put,
+      RestMethod::Delete => &RestMethod::Delete,
+      RestMethod::Patch => &RestMethod::Patch,
+      RestMethod::Head => &RestMethod::Head,
+      RestMethod::Options => &RestMethod::Options,
+    }
+  }
 }
 
 impl From<FileRestMethod> for RestMethod {
@@ -266,42 +334,77 @@ impl From<&RestBody> for FileRestBody {
 
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct RestData {
-  pub method: RestMethod,
-  pub endpoint: SharedString,
-  pub params: Vec<RestParam>,
-  pub body: RestBody,
+  /// The container holding this step, notified of the changes made to the step
+  pub(crate) container: WeakEntity<TestsContainer>,
+  pub(crate) method: RestMethod,
+  pub(crate) endpoint: SharedString,
+  pub(crate) params: Vec<RestParam>,
+  pub(crate) body: RestBody,
 }
 
-impl From<FileRestStep> for RestData {
-  fn from(step: FileRestStep) -> Self {
-    let FileRestStep {
+impl RestData {
+  #[inline]
+  pub fn endpoint(&self) -> SharedString {
+    self.endpoint.clone()
+  }
+
+  pub fn icon(&self) -> Icon {
+    let color = self.method.color();
+    match self.method {
+      RestMethod::Get => Icon::new(IconAsset::StepRestGet).text_color(color),
+      RestMethod::Post => Icon::new(IconAsset::StepRestPost).text_color(color),
+      RestMethod::Put => Icon::new(IconAsset::StepRestPut).text_color(color),
+      RestMethod::Delete => Icon::new(IconAsset::StepRestDelete).text_color(color),
+      RestMethod::Patch => Icon::new(IconAsset::StepRestPatch).text_color(color),
+      RestMethod::Head => Icon::new(IconAsset::StepRestHead).text_color(color),
+      RestMethod::Options => Icon::new(IconAsset::StepRestOptions).text_color(color),
+    }
+  }
+
+  pub fn from_file(step: FileRestData, container: WeakEntity<TestsContainer>) -> Self {
+    let FileRestData {
       method,
       endpoint,
       params,
       body,
     } = step;
     RestData {
+      container,
       method: method.into(),
       endpoint: endpoint.into(),
       params: params.into_iter().map(Into::into).collect(),
       body: body.into(),
     }
   }
-}
 
-impl From<&RestData> for FileRestStep {
-  fn from(step: &RestData) -> Self {
-    let RestData {
-      method,
-      endpoint,
-      params,
-      body,
-    } = step;
-    FileRestStep {
-      method: method.into(),
-      endpoint: endpoint.to_string(),
-      params: params.iter().map(Into::into).collect(),
-      body: body.into(),
+  pub fn get_file(&self) -> FileRestData {
+    FileRestData {
+      method: (&self.method).into(),
+      endpoint: self.endpoint.to_string(),
+      params: self.params.iter().map(Into::into).collect(),
+      body: (&self.body).into(),
+    }
+  }
+
+  #[inline]
+  pub fn method(&self) -> RestMethod {
+    self.method
+  }
+
+  pub fn set_endpoint(&mut self, endpoint: SharedString, cx: &mut Context<Self>) {
+    if self.endpoint != endpoint {
+      self.endpoint = endpoint;
+      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    }
+  }
+
+  pub fn set_method(&mut self, method: RestMethod, cx: &mut Context<Self>) -> bool {
+    if self.method != method {
+      self.method = method;
+      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+      true
+    } else {
+      false
     }
   }
 }

@@ -131,7 +131,7 @@ pub trait TestMetadataOwner: Clone + 'static {
   /// Returns the path addressing the node in the test tree.
   fn path(&self) -> TestPath;
   /// Returns the path addressing the node in the test tree.
-  fn icon(&self) -> Icon;
+  fn icon(&self, cx: &App) -> Icon;
   /// Returns the display name of the node.
   fn name(&self) -> SharedString;
   /// Renames the node. A no-op when `new_name` is its current name.
@@ -684,9 +684,7 @@ impl EventEmitter<TestsContainerEvent> for TestsContainer {}
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::test::step_delay::DelayData;
   use crate::test::test_fixtures::*;
-  use crate::test::test_step::StepData;
   use gpui_kit::TestAppContext;
   use ki_project::FileSuiteChild;
   use ki_utils::SUITE;
@@ -1338,11 +1336,7 @@ mod tests {
     let new_step = TestPath::Step(p.suite_b.id(), p.case_b.id(), p.suite_step_a.id());
     assert_eq!(child_names(&tests, p.suite_a, cx), vec!["Case A"]);
     assert_eq!(step_names(&tests, p.case_b, cx), vec!["Step B1", "Suite step A"]);
-    assert!(step(&tests, new_step, cx).read_with(cx, |step, _| step.data
-      == StepData::Delay(DelayData {
-        duration: 300,
-        unit: TimeUnit::Millisecond
-      })));
+    assert_eq!(delay_of(&step(&tests, new_step, cx), cx), (300, TimeUnit::Millisecond));
     assert_eq!(
       events,
       vec![
@@ -1358,11 +1352,7 @@ mod tests {
       vec!["Case B", "Suite step B", "Suite step A"]
     );
     let back = step(&tests, TestPath::SuiteStep(p.suite_b.id(), p.suite_step_a.id()), cx);
-    assert!(back.read_with(cx, |step, _| step.data
-      == StepData::Delay(DelayData {
-        duration: 300,
-        unit: TimeUnit::Millisecond
-      })));
+    assert_eq!(delay_of(&back, cx), (300, TimeUnit::Millisecond));
   }
 
   #[gpui_kit::test]
@@ -1400,11 +1390,7 @@ mod tests {
     let new_step = TestPath::SuiteStep(p.suite_b.id(), p.step_a1.id());
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A2"]);
     assert_eq!(child_names(&tests, p.suite_b, cx), vec!["Case B", "Suite step B", "Step A1"]);
-    assert!(step(&tests, new_step, cx).read_with(cx, |step, _| step.data
-      == StepData::Delay(DelayData {
-        duration: 100,
-        unit: TimeUnit::Millisecond
-      })));
+    assert_eq!(delay_of(&step(&tests, new_step, cx), cx), (100, TimeUnit::Millisecond));
     assert_eq!(
       events,
       vec![

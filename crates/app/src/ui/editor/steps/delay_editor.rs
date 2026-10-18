@@ -2,28 +2,23 @@ use gpui_kit::base::input::InputEvent;
 use gpui_kit::base::{IndexPath, h_flex, v_flex};
 use gpui_kit::component::input::{InputState, NumberInput};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
-use gpui_kit::{
-  AppContext, Context, Entity, EventEmitter, IntoElement, ParentElement, Render, Styled, Subscription, Window, div,
-};
+use gpui_kit::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window, div};
 use ki_utils::time::TimeUnit;
 use ki_workspace::test::step_delay::DelayData;
 use log::warn;
 
-pub enum DelayEditorEvent {
-  DelayChanged(u32, TimeUnit),
-}
-
 pub struct DelayEditor {
+  delay: Entity<DelayData>,
   duration_input_state: Entity<InputState>,
   unit_select_state: Entity<SelectState<Vec<TimeUnit>>>,
   _subs: Vec<Subscription>,
 }
 
 impl DelayEditor {
-  pub fn new(delay: DelayData, window: &mut Window, cx: &mut Context<Self>) -> Self {
-    let unit_pos = TimeUnit::ALL.iter().position(|tu| *tu == delay.unit);
+  pub fn new(delay: Entity<DelayData>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    let unit_pos = TimeUnit::ALL.iter().position(|tu| *tu == delay.read(cx).unit());
     let unit_select_state = cx.new(|cx| SelectState::new(TimeUnit::ALL.to_vec(), unit_pos.map(IndexPath::new), window, cx));
-    let duration_input_state = cx.new(|cx| InputState::new(window, cx).default_value(delay.duration.to_string()));
+    let duration_input_state = cx.new(|cx| InputState::new(window, cx).default_value(delay.read(cx).duration().to_string()));
 
     let _subs = vec![
       cx.subscribe(&unit_select_state, |this, _, _: &SelectEvent<Vec<TimeUnit>>, cx| {
@@ -37,6 +32,7 @@ impl DelayEditor {
     ];
 
     Self {
+      delay,
       duration_input_state,
       unit_select_state,
       _subs,
@@ -49,11 +45,9 @@ impl DelayEditor {
       return;
     };
     let unit = *self.unit_select_state.read(cx).selected_value().unwrap();
-    cx.emit(DelayEditorEvent::DelayChanged(duration, unit))
+    self.delay.update(cx, |delay, cx| delay.update(duration, unit, cx));
   }
 }
-
-impl EventEmitter<DelayEditorEvent> for DelayEditor {}
 
 impl Render for DelayEditor {
   fn render(&mut self, _window: &mut Window, _cx: &mut Context<DelayEditor>) -> impl IntoElement {

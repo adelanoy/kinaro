@@ -40,9 +40,9 @@ impl TestCase {
       .map(|pos| min(pos + 1, self.steps.len()))
       .unwrap_or(self.steps.len());
     let name = ki_utils::next_available_name("new Delay", self.steps.iter().map(|step| step.read(cx).meta.name.clone()));
-    let new_step = TestStep::new_delay(&self.meta.path, name, self.container.clone());
-    let path = new_step.meta.path;
-    self.steps.insert(position, cx.new(|_| new_step));
+    let new_step = cx.new(|cx| TestStep::new_delay(&self.meta.path, name, self.container.clone(), cx));
+    let path = new_step.read(cx).meta.path;
+    self.steps.insert(position, new_step);
     _ = self
       .container
       .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(path)));
@@ -66,7 +66,7 @@ impl TestCase {
       .iter()
       .map(|step| {
         let name = step.read(cx).meta.name.clone();
-        cx.new(|cx| step.update(cx, |step, _| step.duplicate(name, &path)))
+        cx.new(|cx| step.update(cx, |step, cx| step.duplicate(name, &path, cx)))
       })
       .collect();
     Self {
@@ -102,7 +102,7 @@ impl TestCase {
       &step.read(cx).meta.name,
       self.steps.iter().map(|step| step.read(cx).meta.name.clone()),
     );
-    let new_step = step.update(cx, |step, _| step.duplicate(new_name, &self.meta.path));
+    let new_step = step.update(cx, |step, cx| step.duplicate(new_name, &self.meta.path, cx));
     let new_path = new_step.meta.path;
     self.steps.insert(min(ix + 1, self.steps.len()), cx.new(|_| new_step));
     _ = self
@@ -133,7 +133,7 @@ impl TestCase {
       steps: file_test_case
         .steps
         .into_iter()
-        .map(|step| cx.new(|_| TestStep::from_file(step, &path, container.clone(), new_id)))
+        .map(|step| cx.new(|cx| TestStep::from_file(step, &path, container.clone(), new_id, cx)))
         .collect(),
     }
   }
@@ -142,7 +142,7 @@ impl TestCase {
   pub fn get_file(&self, cx: &App) -> FileTestCase {
     FileTestCase {
       info: self.meta.to_file(),
-      steps: self.steps.iter().map(|step| step.read(cx).get_file()).collect(),
+      steps: self.steps.iter().map(|step| step.read(cx).get_file(cx)).collect(),
     }
   }
 
@@ -233,9 +233,9 @@ impl TestCase {
       debug!("Invalid Json: {}", cb_str.text());
       return;
     };
-    let step = TestStep::from_file(file_step, &self.meta.path, self.container.clone(), true);
-    let new_path = step.meta.path;
-    self.steps.insert(ix, cx.new(|_| step));
+    let step = cx.new(|cx| TestStep::from_file(file_step, &self.meta.path, self.container.clone(), true, cx));
+    let new_path = step.read(cx).meta.path;
+    self.steps.insert(ix, step);
     _ = self
       .container
       .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(new_path)));
@@ -287,7 +287,7 @@ impl TestMetadataOwner for TestCase {
     self.meta.path
   }
 
-  fn icon(&self) -> Icon {
+  fn icon(&self, _cx: &App) -> Icon {
     IconAsset::TestCase.into()
   }
 
@@ -334,9 +334,7 @@ impl TestMetadataOwner for TestCase {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::test::step_delay::DelayData;
   use crate::test::test_fixtures::*;
-  use crate::test::test_step::StepData;
   use gpui_kit::TestAppContext;
   use ki_project::FileSuiteChild;
   use ki_utils::CASE;
@@ -414,11 +412,7 @@ mod tests {
     let new_path = case(&tests, p.case_a, cx).update(cx, |case, cx| case.add_delay_step(p.case_a, cx));
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Step A2", "new Delay"]);
     assert!(p.case_a.is_parent(&new_path));
-    assert!(step(&tests, new_path, cx).read_with(cx, |step, _| step.data
-      == StepData::Delay(DelayData {
-        duration: 1000,
-        unit: TimeUnit::Millisecond
-      })));
+    assert_eq!(delay_of(&step(&tests, new_path, cx), cx), (1000, TimeUnit::Millisecond));
     assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestAdded(new_path)]);
   }
 
@@ -446,11 +440,7 @@ mod tests {
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Step A1_1", "Step A2"]);
     assert!(p.case_a.is_parent(&copy));
     assert_ne!(copy, p.step_a1);
-    assert!(step(&tests, copy, cx).read_with(cx, |step, _| step.data
-      == StepData::Delay(DelayData {
-        duration: 100,
-        unit: TimeUnit::Millisecond
-      })));
+    assert_eq!(delay_of(&step(&tests, copy, cx), cx), (100, TimeUnit::Millisecond));
     assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestAdded(copy)]);
   }
 
@@ -590,17 +580,13 @@ mod tests {
   #[gpui_kit::test]
   fn paste_suite_step_after_the_target_step(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let suite_step = step(&tests, p.suite_step_a, cx).read_with(cx, |step, _| step.get_file());
+    let suite_step = step(&tests, p.suite_step_a, cx).read_with(cx, |step, cx| step.get_file(cx));
     let cb = clipboard(serde_json::to_string(&suite_step).unwrap(), STEP);
     case(&tests, p.case_a, cx).update(cx, |case, cx| case.paste_from_clipboard(&cb, p.step_a1, cx));
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Suite step A", "Step A2"]);
     let pasted = subtree(&tests, p.case_a, cx)[2];
     assert_ne!(pasted.id(), p.suite_step_a.id());
-    assert!(step(&tests, pasted, cx).read_with(cx, |step, _| step.data
-      == StepData::Delay(DelayData {
-        duration: 300,
-        unit: TimeUnit::Millisecond
-      })));
+    assert_eq!(delay_of(&step(&tests, pasted, cx), cx), (300, TimeUnit::Millisecond));
   }
 
   #[gpui_kit::test]

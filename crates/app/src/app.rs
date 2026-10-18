@@ -16,6 +16,7 @@ pub(super) fn init_app(config_dir: PathBuf, cx: &mut App) {
     eprintln!("Failed to initialize logger: {}", err);
   }
 
+  cx.set_app_identity("com.kinaro.kinaro", "Kinaro");
   ki_settings::init(config_dir, cx);
 
   info!("Initializing component lib");
@@ -97,8 +98,8 @@ pub fn copy_test(path: TestPath, tests: &Entity<TestsContainer>, cx: &mut App) {
       cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(value, CASE.to_string()));
     }
     TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => {
-      let Some(step) = tests.read_with(cx, |tests, _| {
-        tests.step_from_path(&path, cx).map(|step| step.read(cx).get_file())
+      let Some(step) = tests.read_with(cx, |tests, cx| {
+        tests.step_from_path(&path, cx).map(|step| step.read(cx).get_file(cx))
       }) else {
         warn!("copy_test: no step from {}", path);
         return;

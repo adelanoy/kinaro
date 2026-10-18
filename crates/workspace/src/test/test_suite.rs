@@ -40,7 +40,9 @@ impl TestSuiteChild {
         TestSuiteChild::Case(cx.new(|_| copy))
       }
       TestSuiteChild::Step(step) => {
-        let copy = step.read(cx).duplicate(name, &TestPath::Suite(suite_path.suite_id()));
+        let copy = step.update(cx, |step, cx| {
+          step.duplicate(name, &TestPath::Suite(suite_path.suite_id()), cx)
+        });
         TestSuiteChild::Step(cx.new(|_| copy))
       }
     }
@@ -58,7 +60,7 @@ impl TestSuiteChild {
     match file_child {
       FileSuiteChild::Case(case) => TestSuiteChild::Case(cx.new(|cx| TestCase::from_file(case, suite_id, new_id, container, cx))),
       FileSuiteChild::Step(step) => {
-        TestSuiteChild::Step(cx.new(|_| TestStep::from_file(step, &TestPath::Suite(suite_id), container, new_id)))
+        TestSuiteChild::Step(cx.new(|cx| TestStep::from_file(step, &TestPath::Suite(suite_id), container, new_id, cx)))
       }
     }
   }
@@ -67,7 +69,7 @@ impl TestSuiteChild {
   fn get_file(&self, cx: &App) -> FileSuiteChild {
     match self {
       TestSuiteChild::Case(case) => FileSuiteChild::Case(case.read(cx).get_file(cx)),
-      TestSuiteChild::Step(step) => FileSuiteChild::Step(step.read(cx).get_file()),
+      TestSuiteChild::Step(step) => FileSuiteChild::Step(step.read(cx).get_file(cx)),
     }
   }
 
@@ -132,9 +134,9 @@ impl TestSuite {
   pub fn add_new_delay_step(&mut self, path: TestPath, cx: &mut Context<Self>) -> TestPath {
     let position = self.position_after(&path, cx).unwrap_or(self.children.len());
     let name = ki_utils::next_available_name("new Delay", self.children.iter().map(|child| child.name(cx)));
-    let new_step = TestStep::new_delay(&self.meta.path, name, self.container.clone());
-    let path = new_step.meta.path;
-    self.children.insert(position, TestSuiteChild::Step(cx.new(|_| new_step)));
+    let new_step = cx.new(|cx| TestStep::new_delay(&self.meta.path, name, self.container.clone(), cx));
+    let path = new_step.read(cx).meta.path;
+    self.children.insert(position, TestSuiteChild::Step(new_step));
     _ = self
       .container
       .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(path)));
@@ -400,7 +402,7 @@ impl TestMetadataOwner for TestSuite {
     self.meta.path
   }
 
-  fn icon(&self) -> Icon {
+  fn icon(&self, _cx: &App) -> Icon {
     IconAsset::TestSuite.into()
   }
 
@@ -447,9 +449,7 @@ impl TestMetadataOwner for TestSuite {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::test::step_delay::DelayData;
   use crate::test::test_fixtures::*;
-  use crate::test::test_step::StepData;
   use gpui_kit::TestAppContext;
   use ki_utils::SUITE;
   use ki_utils::time::TimeUnit;
@@ -524,11 +524,7 @@ mod tests {
       vec!["Case A", "new Delay", "Suite step A", "new Delay_1"]
     );
     assert!(matches!(first, TestPath::SuiteStep(suite, _) if suite == p.suite_a.id()));
-    assert!(step(&tests, first, cx).read_with(cx, |step, _| step.data
-      == StepData::Delay(DelayData {
-        duration: 1000,
-        unit: TimeUnit::Millisecond
-      })));
+    assert_eq!(delay_of(&step(&tests, first, cx), cx), (1000, TimeUnit::Millisecond));
     assert_eq!(
       *events.borrow(),
       vec![TestsContainerEvent::TestAdded(first), TestsContainerEvent::TestAdded(second)]
@@ -566,11 +562,7 @@ mod tests {
       vec!["Case B", "Suite step B", "Suite step B_1"]
     );
     assert!(matches!(copy, TestPath::SuiteStep(suite, step) if suite == p.suite_b.id() && step != p.suite_step_b.id()));
-    assert!(step(&tests, copy, cx).read_with(cx, |step, _| step.data
-      == StepData::Delay(DelayData {
-        duration: 500,
-        unit: TimeUnit::Millisecond
-      })));
+    assert_eq!(delay_of(&step(&tests, copy, cx), cx), (500, TimeUnit::Millisecond));
   }
 
   #[gpui_kit::test]
@@ -752,11 +744,7 @@ mod tests {
     assert_eq!(child_names(&tests, p.suite_b, cx), vec!["Case B", "Step A2", "Suite step B"]);
     let pasted = subtree(&tests, p.suite_b, cx)[3];
     assert!(matches!(pasted, TestPath::SuiteStep(suite, step) if suite == p.suite_b.id() && step != p.step_a2.id()));
-    assert!(step(&tests, pasted, cx).read_with(cx, |step, _| step.data
-      == StepData::Delay(DelayData {
-        duration: 200,
-        unit: TimeUnit::Millisecond
-      })));
+    assert_eq!(delay_of(&step(&tests, pasted, cx), cx), (200, TimeUnit::Millisecond));
   }
 
   #[gpui_kit::test]
