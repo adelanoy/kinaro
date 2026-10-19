@@ -20,3 +20,36 @@ pub enum Offset {
   Plus,
   Minus,
 }
+
+/// Returns the index where the item at `ix` ends up once the item at `from` is moved to `to`, the
+/// items in between shifting by one to fill the gap.
+pub fn moved_index(ix: usize, from: usize, to: usize) -> usize {
+  match ix {
+    _ if ix == from => to,
+    _ if from < ix && ix <= to => ix - 1,
+    _ if to <= ix && ix < from => ix + 1,
+    _ => ix,
+  }
+}
+
+#[cfg(test)]
+mod test {
+  use crate::moved_index;
+
+  #[test]
+  fn moved_index_forward() {
+    // [a, b, c, d] moving b (1) to 3 gives [a, c, d, b]
+    assert_eq!([0, 1, 2, 3].map(|ix| moved_index(ix, 1, 3)), [0, 3, 1, 2]);
+  }
+
+  #[test]
+  fn moved_index_backward() {
+    // [a, b, c, d] moving d (3) to 1 gives [a, d, b, c]
+    assert_eq!([0, 1, 2, 3].map(|ix| moved_index(ix, 3, 1)), [0, 2, 3, 1]);
+  }
+
+  #[test]
+  fn moved_index_in_place() {
+    assert_eq!([0, 1, 2].map(|ix| moved_index(ix, 1, 1)), [0, 1, 2]);
+  }
+}

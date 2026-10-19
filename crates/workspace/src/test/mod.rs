@@ -542,6 +542,16 @@ impl TestsContainer {
     }
   }
 
+  /// Sets all editors tab configuration at once, opened tabs and active one.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::ConfigChanged`] if the tab was moved.
+  pub fn set_editor_tabs(&mut self, active_editor_tab_index: Option<usize>, editor_tabs: Vec<TestPath>, cx: &mut Context<Self>) {
+    self.editor_tabs = editor_tabs;
+    self.active_editor_tab_index = active_editor_tab_index;
+    cx.emit(TestsContainerEvent::ConfigChanged);
+  }
+
   /// Returns the paths of the nodes expanded in the project tree.
   #[inline]
   pub fn opened_tree_nodes(&self) -> &HashSet<TestPath> {

@@ -13,13 +13,14 @@ use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyTitle};
 use gpui_kit::component::tab::{Tab, TabBar};
-use gpui_kit::component::{Icon, IconName, Sizable};
+use gpui_kit::component::{ActiveTheme, Icon, IconName, Sizable};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-  App, AppContext, Context, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString, Styled,
-  Subscription, Window, div,
+  App, AppContext, Context, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString,
+  StatefulInteractiveElement, Styled, Subscription, Window, div,
 };
-use ki_utils::TestPath;
+use ki_utils::ui::MovingLabel;
+use ki_utils::{TestPath, moved_index};
 use ki_workspace::Project;
 use ki_workspace::test::{TestsContainer, TestsContainerEvent};
 use log::warn;
@@ -181,6 +182,20 @@ impl EditorView {
     }
   }
 
+  /// Moves the tab at `from` to `to`, keeping the same tab active, and saves the new order in the
+  /// tests.
+  fn move_tab(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
+    if from == to || from >= self.tabs.len() || to >= self.tabs.len() {
+      return;
+    }
+    let tab = self.tabs.remove(from);
+    self.tabs.insert(to, tab);
+    self.active_tab = self.active_tab.map(|ix| moved_index(ix, from, to));
+    let paths = self.tabs.iter().map(|tab| tab.path).collect();
+    self.tests.update(cx, |tests, cx| tests.set_editor_tabs(self.active_tab, paths, cx));
+    cx.notify();
+  }
+
   /// Makes the tab at `ix` the active one (no tab with `None`), saving it in the tests.
   fn select_tab(&mut self, ix: Option<usize>, cx: &mut Context<Self>) {
     if ix != self.active_tab {
@@ -264,6 +279,26 @@ impl Render for EditorView {
                 .children(self.tabs.iter().enumerate().map(|(ix, tab)| {
                   Tab::new()
                     .px_2()
+                    .on_drag(
+                      MovingLabel {
+                        label: tab.editor.label(cx),
+                        data: ix,
+                      },
+                      |drag, _, _, cx| {
+                        cx.stop_propagation();
+                        cx.new(|_| drag.clone())
+                      },
+                    )
+                    .drag_over(move |style, drag: &MovingLabel<usize>, _, cx| {
+                      if drag.data < ix {
+                        style.border_r_2().border_color(cx.theme().primary)
+                      } else if drag.data > ix {
+                        style.border_l_2().border_color(cx.theme().primary)
+                      } else {
+                        style
+                      }
+                    })
+                    .on_drop(cx.listener(move |this, drag: &MovingLabel<usize>, _, cx| this.move_tab(drag.data, ix, cx)))
                     .on_mouse_down(
                       MouseButton::Middle,
                       cx.listener(move |this, _, window, cx| {
