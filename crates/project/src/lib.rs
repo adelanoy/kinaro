@@ -7,7 +7,7 @@ pub use {
   ki_project::ProjectFile,
   test::{
     FileTestMetadata, FileTestsContainer,
-    step_delay::FileDelayStep,
+    step_delay::FileDelayData,
     step_rest::*,
     test_case::FileTestCase,
     test_step::{FileStepData, FileTestStep},

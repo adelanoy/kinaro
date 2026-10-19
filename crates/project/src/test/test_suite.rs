@@ -23,7 +23,7 @@ pub struct FileTestSuite {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::test::step_delay::FileDelayStep;
+  use crate::test::step_delay::FileDelayData;
   use crate::test::test_step::FileStepData;
   use ki_utils::time::TimeUnit;
   use serde_json::json;
@@ -43,7 +43,7 @@ mod tests {
     let (suite_id, case_id, step_id) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
     let step = |id| FileTestStep {
       info: meta(id, "Step"),
-      data: FileStepData::Delay(FileDelayStep {
+      data: FileStepData::Delay(FileDelayData {
         duration: 10,
         unit: TimeUnit::Second,
       }),

@@ -1,11 +1,12 @@
 //! Fixtures shared by the unit tests of the test tree.
 
 use crate::FileProjectMetadata;
+use crate::test::test_step::StepData;
 use crate::test::{TestMetadataOwner, TestsContainer, TestsContainerEvent};
 use crate::{TestCase, TestStep, TestSuite};
 use gpui_kit::{AppContext, ClipboardString, Entity, TestAppContext};
 use ki_project::{
-  FileDelayStep, FileStepData, FileSuiteChild, FileTestCase, FileTestMetadata, FileTestStep, FileTestSuite, FileTestsContainer,
+  FileDelayData, FileStepData, FileSuiteChild, FileTestCase, FileTestMetadata, FileTestStep, FileTestSuite, FileTestsContainer,
 };
 use ki_utils::TestPath;
 use ki_utils::time::TimeUnit;
@@ -27,7 +28,7 @@ pub(crate) fn file_meta(id: Uuid, name: &str) -> FileTestMetadata {
 pub(crate) fn file_delay_step(id: Uuid, name: &str, ms: u32) -> FileTestStep {
   FileTestStep {
     info: file_meta(id, name),
-    data: FileStepData::Delay(FileDelayStep {
+    data: FileStepData::Delay(FileDelayData {
       duration: ms,
       unit: TimeUnit::Millisecond,
     }),
@@ -262,5 +263,16 @@ pub(crate) fn name_at(tests: &Entity<TestsContainer>, path: TestPath, cx: &TestA
       TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => tests.step_from_path(&path, cx).map(|step| step.read(cx).name()),
     };
     name.unwrap_or_else(|| panic!("no node at {path}")).to_string()
+  })
+}
+
+/// Returns the duration and unit of the delay step `step`.
+pub(crate) fn delay_of(step: &Entity<TestStep>, cx: &TestAppContext) -> (u32, TimeUnit) {
+  cx.read(|cx| match step.read(cx).data() {
+    StepData::Delay(delay) => {
+      let delay = delay.read(cx);
+      (delay.duration(), delay.unit())
+    }
+    StepData::Rest(_) => panic!("should be a delay step"),
   })
 }

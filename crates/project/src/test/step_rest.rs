@@ -98,7 +98,7 @@ impl FileRestBody {
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct FileRestStep {
+pub struct FileRestData {
   pub method: FileRestMethod,
   pub endpoint: String,
   #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -121,13 +121,13 @@ mod tests {
     }
   }
 
-  fn roundtrip(step: &FileRestStep) -> FileRestStep {
+  fn roundtrip(step: &FileRestData) -> FileRestData {
     serde_json::from_value(serde_json::to_value(step).unwrap()).unwrap()
   }
 
   #[test]
   fn minimal_step_omits_params_and_body() {
-    let step = FileRestStep {
+    let step = FileRestData {
       method: FileRestMethod::Get,
       endpoint: "/users".into(),
       params: vec![],
@@ -137,14 +137,14 @@ mod tests {
     let value = serde_json::to_value(&step).unwrap();
 
     assert_eq!(value, json!({ "method": "GET", "endpoint": "/users" }));
-    assert_eq!(serde_json::from_value::<FileRestStep>(value).unwrap(), step);
+    assert_eq!(serde_json::from_value::<FileRestData>(value).unwrap(), step);
   }
 
   #[test]
   fn params_serialize_with_type_and_skip_disabled_when_false() {
     let mut disabled = param(FileRestParamType::Header, "X-Trace", "1");
     disabled.disabled = true;
-    let step = FileRestStep {
+    let step = FileRestData {
       method: FileRestMethod::Get,
       endpoint: "/users/{id}".into(),
       params: vec![param(FileRestParamType::Path, "id", "42"), disabled],
@@ -165,7 +165,7 @@ mod tests {
 
   #[test]
   fn raw_body_is_tagged_and_stored_by_line() {
-    let step = FileRestStep {
+    let step = FileRestData {
       method: FileRestMethod::Post,
       endpoint: "/users".into(),
       params: vec![],
@@ -213,7 +213,7 @@ mod tests {
         path: "data/blob.bin".into(),
       },
     ] {
-      let step = FileRestStep {
+      let step = FileRestData {
         method: FileRestMethod::Put,
         endpoint: "/upload".into(),
         params: vec![],

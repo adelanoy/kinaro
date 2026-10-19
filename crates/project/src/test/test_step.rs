@@ -1,12 +1,12 @@
 use crate::test::FileTestMetadata;
-use crate::test::step_delay::FileDelayStep;
-use crate::test::step_rest::FileRestStep;
+use crate::test::step_delay::FileDelayData;
+use crate::test::step_rest::FileRestData;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum FileStepData {
-  RestStep(FileRestStep),
-  Delay(FileDelayStep),
+  RestStep(FileRestData),
+  Delay(FileDelayData),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
