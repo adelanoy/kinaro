@@ -4,7 +4,7 @@ use crate::{FileProjectMetadata, TestCase, TestStep, TestSuite};
 use gpui_kit::component::Icon;
 use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, EventEmitter, SharedString};
 use ki_project::{FileTestMetadata, FileTestSuite, FileTestsContainer};
-use ki_utils::{Offset, TestPath};
+use ki_utils::{DropPosition, Offset, TestPath};
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use std::cmp::min;
@@ -159,6 +159,42 @@ pub trait TestMetadataOwner: Clone + 'static {
   fn switch_disabled(&mut self, cx: &mut Context<Self>)
   where
     Self: Sized;
+}
+
+/// The level of the tree a node is moved to.
+enum MoveLevel {
+  /// Among the suites
+  Root,
+  /// Among the children of a suite
+  Suite,
+  /// Among the steps of a case
+  Case,
+}
+
+impl MoveLevel {
+  /// Returns the level the node at `from` is moved to when placed where `position` says relative
+  /// to the node at `to`, or `None` when it can't be placed there.
+  fn of(from: TestPath, to: TestPath, position: DropPosition) -> Option<Self> {
+    use DropPosition::{After, Before, Into};
+    use TestPath::{Case, Step, Suite, SuiteStep};
+    if from == to {
+      return None;
+    }
+    match (from, to, position) {
+      (Suite(_), Suite(_), Before | After) => Some(MoveLevel::Root),
+      (Case(..) | SuiteStep(..) | Step(..), Suite(_), Into) => Some(MoveLevel::Suite),
+      (Case(..) | SuiteStep(..) | Step(..), Case(..) | SuiteStep(..), Before | After) => Some(MoveLevel::Suite),
+      (SuiteStep(..) | Step(..), Case(..), Into) => Some(MoveLevel::Case),
+      (SuiteStep(..) | Step(..), Step(..), Before | After) => Some(MoveLevel::Case),
+      _ => None,
+    }
+  }
+}
+
+/// Returns whether the node at `from` can be placed where `position` says relative to the node at
+/// `to` (see [`TestsContainer::move_test`]), regardless of whether these nodes exist.
+pub fn can_move(from: TestPath, to: TestPath, position: DropPosition) -> bool {
+  MoveLevel::of(from, to, position).is_some()
 }
 
 /// Events raised by the [`TestsContainer`] entity.
@@ -343,28 +379,27 @@ impl TestsContainer {
     this
   }
 
-  /// Moves the node at `from` relative to the node at `to` (drag and drop in the project tree):
-  /// - a suite takes the index the suite `to` had (so it lands after `to` when moved down, and
-  ///   before it when moved up);
-  /// - dropped on a suite, a case or a step is appended to that suite (a step becoming a suite step);
-  /// - dropped on a suite step, a case or a step is placed after it (a step becoming a suite step);
-  /// - dropped on a case, a case is placed after it, while a step is appended to its steps;
-  /// - dropped on a step of a case, a step is placed after it in that case.
+  /// Moves the node at `from` where `position` says relative to the node at `to` (drag and drop in
+  /// the project tree):
+  /// - [`DropPosition::Before`] / [`DropPosition::After`]: `from` becomes the previous / next sibling
+  ///   of `to`. A suite can only be placed next to a suite, a case next to a case or a suite step,
+  ///   and a step next to anything but a suite (becoming a suite step next to a case or a suite step);
+  /// - [`DropPosition::Into`]: `from` is appended to the children of `to`. A case or a step can be
+  ///   moved into a suite (a step becoming a suite step), and a step into a case.
   ///
   /// Ids are kept, so only the paths of the moved node and its descendants change. Expanded tree
   /// nodes and editor tabs follow the moved nodes.
   ///
   /// # Errors
-  /// - [`ProjectError::NoOp`] if `from` and `to` are the same, if a suite is dropped on anything but
-  ///   a suite, or if a case is dropped on a step of a case.
+  /// - [`ProjectError::NoOp`] if `from` and `to` are the same, or if `from` can't be placed there.
   /// - [`ProjectError::TestNotFound`] if `from` or `to` doesn't address an existing node.
   ///
   /// # Events
   /// - [`TestsContainerEvent::ConfigChanged`] if an expanded tree node or an editor tab was moved.
   /// - [`TestsContainerEvent::TestMoved`] for each node whose path changed.
   /// - [`TestsContainerEvent::TestsModified`].
-  pub fn move_test(&mut self, from: TestPath, to: TestPath, cx: &mut Context<Self>) -> ProjectResult<()> {
-    if from == to || from.is_suite() && !to.is_suite() {
+  pub fn move_test(&mut self, from: TestPath, to: TestPath, position: DropPosition, cx: &mut Context<Self>) -> ProjectResult<()> {
+    if from == to {
       return Err(ProjectError::NoOp);
     }
     if !self.path_exists(&from, cx) {
@@ -373,23 +408,15 @@ impl TestsContainer {
     if !self.path_exists(&to, cx) {
       return Err(ProjectError::TestNotFound(to));
     }
-    let to_suite_level = match (from, to) {
-      // Suites can only be moved among suites (checked above)
-      (TestPath::Suite(_), _) => true,
-      // Anything dropped on a suite or a suite step stays at (or is moved to) suite level
-      (_, TestPath::Suite(_) | TestPath::SuiteStep(_, _)) => true,
-      // Dropped on a case: a case is placed after it, a step goes into it
-      (TestPath::Case(_, _), TestPath::Case(_, _)) => true,
-      (_, TestPath::Case(_, _)) => false,
-      // Dropped on a step of a case: a case can't be nested in a case
-      (TestPath::Case(_, _), TestPath::Step(_, _, _)) => return Err(ProjectError::NoOp),
-      (_, TestPath::Step(_, _, _)) => false,
-    };
+    let level = MoveLevel::of(from, to, position).ok_or(ProjectError::NoOp)?;
 
-    let updated_paths = if to_suite_level {
-      self.move_to_suite(from, to, cx)?
-    } else {
-      self.move_to_case(from, to, cx)?
+    let updated_paths = match level {
+      MoveLevel::Root => {
+        self.move_suite(from, to, position, cx);
+        HashMap::new()
+      }
+      MoveLevel::Suite => self.move_to_suite(from, to, position, cx)?,
+      MoveLevel::Case => self.move_to_case(from, to, position, cx)?,
     }
     .into_iter()
     .filter(|(old, new)| old != new)
@@ -424,8 +451,17 @@ impl TestsContainer {
     Ok(())
   }
 
-  /// Moves `from` to the suite level, relative to `to`. Expects both paths to exist and `from` not
-  /// to be a suite unless `to` is one. Returns the paths that changed, as `old path -> new path`.
+  /// Moves the suite `from` right before or after the suite `to`. Expects both suites to exist.
+  fn move_suite(&mut self, from: TestPath, to: TestPath, position: DropPosition, cx: &mut Context<Self>) {
+    let suite = self.remove_suite(&from, cx).unwrap();
+    let to_ix = self.suites.iter().position(|suite| suite.read(cx).path() == to).unwrap();
+    let ix = if position == DropPosition::After { to_ix + 1 } else { to_ix };
+    self.suites.insert(ix, suite);
+  }
+
+  /// Moves `from` (a case or a step) to the suite level, where `position` says relative to `to` (a
+  /// suite with [`DropPosition::Into`], a child of a suite otherwise). Expects both paths to exist.
+  /// Returns the paths that changed, as `old path -> new path`.
   ///
   /// # Errors
   /// [`ProjectError::NoOp`] if the moved node can't be inserted in the suite of `to`.
@@ -433,19 +469,11 @@ impl TestsContainer {
     &mut self,
     from: TestPath,
     to: TestPath,
+    position: DropPosition,
     cx: &mut Context<Self>,
   ) -> ProjectResult<HashMap<TestPath, TestPath>> {
-    let to_suite_ix = self
-      .suites
-      .iter()
-      .position(|suite| suite.read(cx).path().is_parent(&to))
-      .unwrap();
     let child = match from {
-      TestPath::Suite(_) => {
-        let suite = self.remove_suite(&from, cx).unwrap();
-        self.suites.insert(to_suite_ix, suite);
-        return Ok(HashMap::new());
-      }
+      TestPath::Suite(_) => return Err(ProjectError::NoOp),
       TestPath::Case(_, _) | TestPath::SuiteStep(_, _) => self
         .suite_from_path(&from, cx)
         .unwrap()
@@ -460,16 +488,23 @@ impl TestsContainer {
     self
       .suite_from_path(&to, cx)
       .unwrap()
-      .update(cx, |suite, cx| suite.insert_child(child, &to, cx))
+      .update(cx, |suite, cx| suite.insert_child(child, &to, position, cx))
   }
 
-  /// Moves the step `from` (a suite step or a step of a case) into the case `to` goes through,
-  /// relative to `to`. Expects both paths to exist. Returns the paths that changed, as
+  /// Moves the step `from` (a suite step or a step of a case) into the case `to` goes through, where
+  /// `position` says relative to `to` (the case with [`DropPosition::Into`], one of its steps
+  /// otherwise). Expects both paths to exist. Returns the paths that changed, as
   /// `old path -> new path`.
   ///
   /// # Errors
   /// [`ProjectError::NoOp`] if `from` isn't a step.
-  fn move_to_case(&mut self, from: TestPath, to: TestPath, cx: &mut Context<Self>) -> ProjectResult<HashMap<TestPath, TestPath>> {
+  fn move_to_case(
+    &mut self,
+    from: TestPath,
+    to: TestPath,
+    position: DropPosition,
+    cx: &mut Context<Self>,
+  ) -> ProjectResult<HashMap<TestPath, TestPath>> {
     let step = match from {
       TestPath::Suite(_) | TestPath::Case(_, _) => return Err(ProjectError::NoOp),
       TestPath::SuiteStep(_, _) => {
@@ -490,7 +525,7 @@ impl TestsContainer {
     let new_path = self
       .case_from_path(&to, cx)
       .unwrap()
-      .update(cx, |case, cx| case.insert_step(step, &to, cx));
+      .update(cx, |case, cx| case.insert_step(step, &to, position, cx));
     Ok(HashMap::from([(from, new_path)]))
   }
 
@@ -1233,58 +1268,69 @@ mod tests {
 
   // Moving
 
-  /// Moves `from` to `to`, returning the result and the emitted events.
+  /// Moves `from` where `position` says relative to `to`, returning the result and the emitted
+  /// events.
   fn move_test(
     tests: &Entity<TestsContainer>,
     from: TestPath,
     to: TestPath,
+    position: DropPosition,
     cx: &mut TestAppContext,
   ) -> (ProjectResult<()>, Vec<TestsContainerEvent>) {
     let events = record_events(tests, cx);
-    let result = tests.update(cx, |tests, cx| tests.move_test(from, to, cx));
+    let result = tests.update(cx, |tests, cx| tests.move_test(from, to, position, cx));
     let events = events.borrow().clone();
     (result, events)
   }
 
   #[gpui_kit::test]
   fn move_test_rejects_invalid_moves(cx: &mut TestAppContext) {
+    use DropPosition::{After, Before, Into};
     let (p, tests) = fixture(cx);
     let before = all_paths(&tests, cx);
     let unknown = TestPath::Case(p.suite_a.id(), Uuid::new_v4());
-    for (from, to) in [
-      (p.case_a, p.case_a),
-      (p.suite_a, p.case_b),
-      (p.suite_a, p.suite_step_b),
-      (p.suite_a, p.step_b1),
-      (p.case_a, p.step_b1),
+    for (from, to, position) in [
+      (p.case_a, p.case_a, Before),
+      (p.suite_a, p.suite_b, Into),
+      (p.suite_a, p.case_b, After),
+      (p.suite_a, p.suite_step_b, Before),
+      (p.suite_a, p.step_b1, After),
+      (p.case_a, p.suite_b, Before),
+      (p.case_a, p.case_b, Into),
+      (p.case_a, p.step_b1, After),
+      (p.suite_step_a, p.suite_b, After),
+      (p.step_a1, p.suite_step_b, Into),
+      (p.step_a1, p.step_b1, Into),
     ] {
-      let (result, events) = move_test(&tests, from, to, cx);
-      assert!(matches!(result, Err(ProjectError::NoOp)), "{from} -> {to}");
+      let (result, events) = move_test(&tests, from, to, position, cx);
+      assert!(matches!(result, Err(ProjectError::NoOp)), "{from} -> {position:?} {to}");
       assert!(events.is_empty());
     }
-    let (result, _) = move_test(&tests, unknown, p.case_b, cx);
+    let (result, _) = move_test(&tests, unknown, p.case_b, After, cx);
     assert!(matches!(result, Err(ProjectError::TestNotFound(path)) if path == unknown));
-    let (result, _) = move_test(&tests, p.case_b, unknown, cx);
+    let (result, _) = move_test(&tests, p.case_b, unknown, After, cx);
     assert!(matches!(result, Err(ProjectError::TestNotFound(path)) if path == unknown));
     assert_eq!(all_paths(&tests, cx), before);
   }
 
   #[gpui_kit::test]
-  fn move_suite_takes_the_index_of_the_target(cx: &mut TestAppContext) {
+  fn move_suite_before_or_after_a_suite(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    tests.update(cx, |tests, cx| tests.add_test_suite(None, cx));
-    let (result, events) = move_test(&tests, p.suite_a, p.suite_b, cx);
+    let new_suite = tests.update(cx, |tests, cx| tests.add_test_suite(None, cx));
+    let (result, events) = move_test(&tests, p.suite_a, p.suite_b, DropPosition::After, cx);
     result.unwrap();
     assert_eq!(suite_names(&tests, cx), vec!["Suite B", "Suite A", "New Suite"]);
     // Paths of suites don't depend on their position
     assert_eq!(events, vec![TestsContainerEvent::TestsModified]);
 
-    move_test(&tests, p.suite_a, p.suite_b, cx).0.unwrap();
+    move_test(&tests, p.suite_a, p.suite_b, DropPosition::Before, cx).0.unwrap();
     assert_eq!(suite_names(&tests, cx), vec!["Suite A", "Suite B", "New Suite"]);
+    move_test(&tests, new_suite, p.suite_a, DropPosition::Before, cx).0.unwrap();
+    assert_eq!(suite_names(&tests, cx), vec!["New Suite", "Suite A", "Suite B"]);
   }
 
   #[gpui_kit::test]
-  fn move_case_on_a_suite_appends_it_with_its_steps(cx: &mut TestAppContext) {
+  fn move_case_into_a_suite_appends_it_with_its_steps(cx: &mut TestAppContext) {
     let p = Paths::new();
     let config = FileProjectMetadata {
       opened_tree_nodes: [p.case_a].into_iter().collect(),
@@ -1292,7 +1338,7 @@ mod tests {
       ..Default::default()
     };
     let tests = load(p.file(), config, cx);
-    let (result, events) = move_test(&tests, p.case_a, p.suite_b, cx);
+    let (result, events) = move_test(&tests, p.case_a, p.suite_b, DropPosition::Into, cx);
     result.unwrap();
 
     let sb = p.suite_b.id();
@@ -1322,27 +1368,30 @@ mod tests {
   }
 
   #[gpui_kit::test]
-  fn move_case_on_a_case_places_it_after(cx: &mut TestAppContext) {
+  fn move_case_before_or_after_a_case(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    move_test(&tests, p.case_a, p.case_b, cx).0.unwrap();
+    move_test(&tests, p.case_a, p.case_b, DropPosition::After, cx).0.unwrap();
     assert_eq!(child_names(&tests, p.suite_b, cx), vec!["Case B", "Case A", "Suite step B"]);
+    let case_a = TestPath::Case(p.suite_b.id(), p.case_a.id());
+    move_test(&tests, case_a, p.case_b, DropPosition::Before, cx).0.unwrap();
+    assert_eq!(child_names(&tests, p.suite_b, cx), vec!["Case A", "Case B", "Suite step B"]);
   }
 
   #[gpui_kit::test]
   fn move_case_within_its_suite_keeps_its_path(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let (result, events) = move_test(&tests, p.case_a, p.suite_step_a, cx);
+    let (result, events) = move_test(&tests, p.case_a, p.suite_step_a, DropPosition::After, cx);
     result.unwrap();
     assert_eq!(child_names(&tests, p.suite_a, cx), vec!["Suite step A", "Case A"]);
     assert_eq!(events, vec![TestsContainerEvent::TestsModified]);
   }
 
   #[gpui_kit::test]
-  fn move_suite_step_on_a_case_appends_it_then_back_on_a_suite_step(cx: &mut TestAppContext) {
+  fn move_suite_step_into_a_case_appends_it_then_back_after_a_suite_step(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let (result, events) = move_test(&tests, p.suite_step_a, p.case_b, cx);
+    let (result, events) = move_test(&tests, p.suite_step_a, p.case_b, DropPosition::Into, cx);
     result.unwrap();
-    // Dropped on a case: becomes its last step, keeping its id
+    // Moved into a case: becomes its last step, keeping its id
     let new_step = TestPath::Step(p.suite_b.id(), p.case_b.id(), p.suite_step_a.id());
     assert_eq!(child_names(&tests, p.suite_a, cx), vec!["Case A"]);
     assert_eq!(step_names(&tests, p.case_b, cx), vec!["Step B1", "Suite step A"]);
@@ -1355,8 +1404,10 @@ mod tests {
       ]
     );
 
-    move_test(&tests, new_step, p.suite_step_b, cx).0.unwrap();
-    // Dropped on a suite step: becomes a suite step again, right after it
+    move_test(&tests, new_step, p.suite_step_b, DropPosition::After, cx)
+      .0
+      .unwrap();
+    // Placed next to a suite step: becomes a suite step again
     assert_eq!(
       child_names(&tests, p.suite_b, cx),
       vec!["Case B", "Suite step B", "Suite step A"]
@@ -1366,14 +1417,14 @@ mod tests {
   }
 
   #[gpui_kit::test]
-  fn move_suite_step_on_a_suite_step_of_another_suite(cx: &mut TestAppContext) {
+  fn move_suite_step_before_a_suite_step_of_another_suite(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let (result, events) = move_test(&tests, p.suite_step_a, p.suite_step_b, cx);
+    let (result, events) = move_test(&tests, p.suite_step_a, p.suite_step_b, DropPosition::Before, cx);
     result.unwrap();
     let new_step = TestPath::SuiteStep(p.suite_b.id(), p.suite_step_a.id());
     assert_eq!(
       child_names(&tests, p.suite_b, cx),
-      vec!["Case B", "Suite step B", "Suite step A"]
+      vec!["Case B", "Suite step A", "Suite step B"]
     );
     assert_eq!(
       events,
@@ -1385,17 +1436,19 @@ mod tests {
   }
 
   #[gpui_kit::test]
-  fn move_suite_step_on_a_step_places_it_after(cx: &mut TestAppContext) {
+  fn move_suite_step_before_a_step_makes_it_the_first_step(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    move_test(&tests, p.suite_step_b, p.step_a1, cx).0.unwrap();
-    assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Suite step B", "Step A2"]);
+    move_test(&tests, p.suite_step_b, p.step_a1, DropPosition::Before, cx)
+      .0
+      .unwrap();
+    assert_eq!(step_names(&tests, p.case_a, cx), vec!["Suite step B", "Step A1", "Step A2"]);
     assert_eq!(child_names(&tests, p.suite_b, cx), vec!["Case B"]);
   }
 
   #[gpui_kit::test]
-  fn move_step_on_a_suite_makes_it_a_suite_step(cx: &mut TestAppContext) {
+  fn move_step_into_a_suite_makes_it_a_suite_step(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let (result, events) = move_test(&tests, p.step_a1, p.suite_b, cx);
+    let (result, events) = move_test(&tests, p.step_a1, p.suite_b, DropPosition::Into, cx);
     result.unwrap();
     let new_step = TestPath::SuiteStep(p.suite_b.id(), p.step_a1.id());
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A2"]);
@@ -1411,17 +1464,24 @@ mod tests {
   }
 
   #[gpui_kit::test]
-  fn move_step_on_a_suite_step_places_it_after(cx: &mut TestAppContext) {
+  fn move_step_next_to_a_child_of_a_suite_makes_it_a_suite_step(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    move_test(&tests, p.step_b1, p.suite_step_a, cx).0.unwrap();
+    move_test(&tests, p.step_b1, p.suite_step_a, DropPosition::After, cx)
+      .0
+      .unwrap();
     assert_eq!(child_names(&tests, p.suite_a, cx), vec!["Case A", "Suite step A", "Step B1"]);
     assert!(step_names(&tests, p.case_b, cx).is_empty());
+    move_test(&tests, p.step_a1, p.case_a, DropPosition::Before, cx).0.unwrap();
+    assert_eq!(
+      child_names(&tests, p.suite_a, cx),
+      vec!["Step A1", "Case A", "Suite step A", "Step B1"]
+    );
   }
 
   #[gpui_kit::test]
-  fn move_step_on_a_case_appends_it(cx: &mut TestAppContext) {
+  fn move_step_into_a_case_appends_it(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let (result, events) = move_test(&tests, p.step_a1, p.case_b, cx);
+    let (result, events) = move_test(&tests, p.step_a1, p.case_b, DropPosition::Into, cx);
     result.unwrap();
     let new_step = TestPath::Step(p.suite_b.id(), p.case_b.id(), p.step_a1.id());
     assert_eq!(step_names(&tests, p.case_b, cx), vec!["Step B1", "Step A1"]);
@@ -1435,18 +1495,18 @@ mod tests {
   }
 
   #[gpui_kit::test]
-  fn move_step_on_a_step_places_it_after(cx: &mut TestAppContext) {
+  fn move_step_before_or_after_a_step(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let (result, events) = move_test(&tests, p.step_a2, p.step_a1, cx);
+    let (result, events) = move_test(&tests, p.step_a2, p.step_a1, DropPosition::After, cx);
     result.unwrap();
     // Already right after the target
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Step A2"]);
     assert_eq!(events, vec![TestsContainerEvent::TestsModified]);
 
-    move_test(&tests, p.step_a1, p.step_a2, cx).0.unwrap();
+    move_test(&tests, p.step_a2, p.step_a1, DropPosition::Before, cx).0.unwrap();
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A2", "Step A1"]);
 
-    move_test(&tests, p.step_b1, p.step_a2, cx).0.unwrap();
+    move_test(&tests, p.step_b1, p.step_a1, DropPosition::Before, cx).0.unwrap();
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A2", "Step B1", "Step A1"]);
   }
 
@@ -1456,10 +1516,14 @@ mod tests {
     let case_a = case(&tests, p.case_a, cx);
     let step_b1 = step(&tests, p.step_b1, cx);
     let suite_step_b = step(&tests, p.suite_step_b, cx);
-    move_test(&tests, p.case_a, p.suite_b, cx).0.unwrap();
+    move_test(&tests, p.case_a, p.suite_b, DropPosition::Into, cx).0.unwrap();
     let moved_step_a1 = TestPath::Step(p.suite_b.id(), p.case_a.id(), p.step_a1.id());
-    move_test(&tests, p.step_b1, moved_step_a1, cx).0.unwrap();
-    move_test(&tests, p.suite_step_b, p.suite_a, cx).0.unwrap();
+    move_test(&tests, p.step_b1, moved_step_a1, DropPosition::After, cx)
+      .0
+      .unwrap();
+    move_test(&tests, p.suite_step_b, p.suite_a, DropPosition::Into, cx)
+      .0
+      .unwrap();
     assert_eq!(case(&tests, TestPath::Case(p.suite_b.id(), p.case_a.id()), cx), case_a);
     let moved_step = TestPath::Step(p.suite_b.id(), p.case_a.id(), p.step_b1.id());
     assert_eq!(step(&tests, moved_step, cx), step_b1);
@@ -1471,7 +1535,7 @@ mod tests {
   #[gpui_kit::test]
   fn saved_tree_follows_moves(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    move_test(&tests, p.suite_step_a, p.case_b, cx).0.unwrap();
+    move_test(&tests, p.suite_step_a, p.case_b, DropPosition::Into, cx).0.unwrap();
     let file = cx.read(|cx| tests.read(cx).to_file(cx));
     assert_eq!(file.suites[0].children.len(), 1);
     let FileSuiteChild::Case(case_b) = &file.suites[1].children[0] else {

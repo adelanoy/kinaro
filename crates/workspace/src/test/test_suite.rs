@@ -1,6 +1,7 @@
 use crate::error::{ProjectError, ProjectResult};
 use crate::test::{
-  TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent, test_case::TestCase, test_step::TestStep,
+  DropPosition, TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent, test_case::TestCase,
+  test_step::TestStep,
 };
 use gpui_kit::component::Icon;
 use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, SharedString, WeakEntity};
@@ -258,28 +259,34 @@ impl TestSuite {
     }
   }
 
-  /// Inserts `child` relative to `path`: appended at the end when `path` is the suite itself,
-  /// otherwise right after the child `path` points to or goes through (or at the end when none
-  /// matches). The child, and its descendants, are reparented under this suite, keeping their ids.
+  /// Inserts `child` where `position` says relative to `path`: appended at the end with
+  /// [`DropPosition::Into`] (`path` being this suite), otherwise right before or after the child at
+  /// `path`. The child, and its descendants, are reparented under this suite, keeping their ids.
   /// Returns the paths that changed, as `old path -> new path`.
   ///
   /// # Errors
-  /// [`ProjectError::NoOp`] if `path` isn't in this suite.
+  /// [`ProjectError::NoOp`], leaving `child` out of the suite, if `path` isn't this suite with
+  /// [`DropPosition::Into`], or a child of this suite with [`DropPosition::Before`] and
+  /// [`DropPosition::After`].
   pub(crate) fn insert_child(
     &mut self,
     child: TestSuiteChild,
     path: &TestPath,
+    position: DropPosition,
     cx: &mut Context<Self>,
   ) -> ProjectResult<HashMap<TestPath, TestPath>> {
-    if self.meta.id() != path.suite_id() {
-      return Err(ProjectError::NoOp);
+    let ix = match position {
+      DropPosition::Into if *path == self.meta.path => Some(self.children.len()),
+      DropPosition::Into => None,
+      DropPosition::Before => self.children.iter().position(|child| child.path(cx) == *path),
+      DropPosition::After => self
+        .children
+        .iter()
+        .position(|child| child.path(cx) == *path)
+        .map(|ix| ix + 1),
     }
+    .ok_or(ProjectError::NoOp)?;
     let updated_paths = child.reparent(&self.meta.path, cx);
-    let ix = if path.is_suite() {
-      self.children.len()
-    } else {
-      self.position_after(path, cx).unwrap_or(self.children.len())
-    };
     self.children.insert(ix, child);
 
     Ok(updated_paths)
@@ -645,7 +652,7 @@ mod tests {
     let case_a = suite(&tests, p.suite_a, cx).update(cx, |suite, cx| suite.remove_child(&p.case_a, cx).unwrap());
     let suite_b = suite(&tests, p.suite_b, cx);
     let updated = suite_b
-      .update(cx, |suite, cx| suite.insert_child(case_a, &p.case_b, cx))
+      .update(cx, |suite, cx| suite.insert_child(case_a, &p.case_b, DropPosition::After, cx))
       .unwrap();
     assert_eq!(child_names(&tests, p.suite_b, cx), vec!["Case B", "Case A", "Suite step B"]);
     let sb = p.suite_b.id();
@@ -667,7 +674,7 @@ mod tests {
     let step_a1 = case(&tests, p.case_a, cx).update(cx, |case, cx| case.remove_step(&p.step_a1, cx).unwrap());
     let updated = suite(&tests, p.suite_b, cx)
       .update(cx, |suite, cx| {
-        suite.insert_child(TestSuiteChild::Step(step_a1), &p.suite_b, cx)
+        suite.insert_child(TestSuiteChild::Step(step_a1), &p.suite_b, DropPosition::Into, cx)
       })
       .unwrap();
     let new_path = TestPath::SuiteStep(p.suite_b.id(), p.step_a1.id());
@@ -676,11 +683,30 @@ mod tests {
   }
 
   #[gpui_kit::test]
+  fn insert_child_before_a_child_places_it_first(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let step_b1 = case(&tests, p.case_b, cx).update(cx, |case, cx| case.remove_step(&p.step_b1, cx).unwrap());
+    suite(&tests, p.suite_b, cx)
+      .update(cx, |suite, cx| {
+        suite.insert_child(TestSuiteChild::Step(step_b1), &p.case_b, DropPosition::Before, cx)
+      })
+      .unwrap();
+    assert_eq!(child_names(&tests, p.suite_b, cx), vec!["Step B1", "Case B", "Suite step B"]);
+  }
+
+  #[gpui_kit::test]
   fn insert_child_out_of_the_suite_is_a_no_op(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let case_a = TestSuiteChild::Case(case(&tests, p.case_a, cx));
-    let result = suite(&tests, p.suite_b, cx).update(cx, |suite, cx| suite.insert_child(case_a, &p.case_a, cx));
-    assert!(matches!(result, Err(ProjectError::NoOp)));
+    let suite_b = suite(&tests, p.suite_b, cx);
+    for (path, position) in [
+      (p.case_a, DropPosition::After),
+      (p.suite_a, DropPosition::Into),
+      (p.suite_b, DropPosition::Before),
+    ] {
+      let case_a = TestSuiteChild::Case(case(&tests, p.case_a, cx));
+      let result = suite_b.update(cx, |suite, cx| suite.insert_child(case_a, &path, position, cx));
+      assert!(matches!(result, Err(ProjectError::NoOp)), "{position:?} {path}");
+    }
     assert_eq!(child_names(&tests, p.suite_b, cx), vec!["Case B", "Suite step B"]);
   }
 

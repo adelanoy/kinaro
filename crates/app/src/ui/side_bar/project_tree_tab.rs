@@ -19,10 +19,10 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_assets::icon::IconAsset;
 use ki_utils::ui::MovingLabel;
-use ki_utils::{CASE, STEP, SUITE, SidebarPanel};
+use ki_utils::{CASE, DropPosition, STEP, SUITE, SidebarPanel};
 use ki_utils::{Offset, TestPath};
 use ki_workspace::error::ProjectError;
-use ki_workspace::test::{TestMetadataOwner, TestsContainer};
+use ki_workspace::test::{TestMetadataOwner, TestsContainer, can_move};
 use ki_workspace::{Project, TestStep, TestSuite, TestSuiteChild};
 use log::warn;
 use std::collections::HashSet;
@@ -241,6 +241,9 @@ struct ProjectTreeDelegate {
   tests: Entity<TestsContainer>,
   /// The visible rows (expanded nodes' children only), in display order
   tree_nodes: Vec<ProjectTreeNode>,
+  /// Where the dragged node would be dropped: the target node and the position relative to it.
+  /// Only meaningful while a drag is active, as it isn't reset when a drag ends outside of the tree.
+  drop_target: Option<(TestPath, DropPosition)>,
   _tests_sub: Subscription,
 }
 
@@ -358,8 +361,15 @@ impl ProjectTreeDelegate {
 
   /// Moves the node `from` relative to the node `to` (drag and drop), pushing a notification if that
   /// fails, unless the move is just not allowed.
-  fn move_node(&mut self, from: TestPath, to: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    match self.tests.update(cx, |tests, cx| tests.move_test(from, to, cx)) {
+  fn move_node(
+    &mut self,
+    from: TestPath,
+    to: TestPath,
+    position: DropPosition,
+    window: &mut Window,
+    cx: &mut Context<TreeState<Self>>,
+  ) {
+    match self.tests.update(cx, |tests, cx| tests.move_test(from, to, position, cx)) {
       Ok(_) | Err(ProjectError::NoOp) => {}
       Err(err) => window.push_notification(err, cx),
     }
@@ -373,6 +383,7 @@ impl ProjectTreeDelegate {
     let mut delegate = Self {
       tests,
       tree_nodes: vec![],
+      drop_target: None,
       _tests_sub,
     };
     delegate.update_tests_nodes(cx);
@@ -510,12 +521,54 @@ impl ProjectTreeDelegate {
   }
 
   /// Rebuilds the rows from the tests.
+  /// Returns where the node at `dragged` would be dropped when hovering the row at `ix`, `fraction`
+  /// being the height of the cursor in the row (from 0 at the top to 1 at the bottom), or `None`
+  /// when it can't be dropped there.
+  ///
+  /// Below an expanded node, the gap is the one above its first child: the node is placed before
+  /// that child when it can be.
+  fn drop_target_at(&self, ix: usize, dragged: TestPath, fraction: f32) -> Option<(TestPath, DropPosition)> {
+    let node = self.tree_nodes.get(ix)?;
+    let position = drop_position(dragged, node.path, fraction)?;
+    if position == DropPosition::After
+      && node.expanded
+      && !node.leaf
+      && let Some(first_child) = self.tree_nodes.get(ix + 1)
+      && can_move(dragged, first_child.path, DropPosition::Before)
+    {
+      return Some((first_child.path, DropPosition::Before));
+    }
+    Some((node.path, position))
+  }
+
   fn update_tests_nodes(&mut self, cx: &mut Context<TreeState<Self>>) {
     self.tree_nodes = self.tests.read_with(cx, |tests, _| {
       let opened_nodes = tests.opened_tree_nodes();
       get_ts_entries(&tests.suites, opened_nodes, cx)
     });
     cx.notify();
+  }
+}
+
+/// Returns where the node at `dragged` would be dropped relative to the node at `target`, `fraction`
+/// being the height of the cursor in the target's row (from 0 at the top to 1 at the bottom), or
+/// `None` when it can't be dropped on `target`.
+///
+/// When the node can be dropped both into and next to `target`, the top and bottom quarters of the
+/// row place it before and after `target`, the middle into it. When it can only be dropped next to
+/// `target`, the top half places it before and the bottom half after.
+fn drop_position(dragged: TestPath, target: TestPath, fraction: f32) -> Option<DropPosition> {
+  let into = can_move(dragged, target, DropPosition::Into);
+  // Before and After are allowed for the same nodes
+  let sides = can_move(dragged, target, DropPosition::Before);
+  match (into, sides) {
+    (true, false) => Some(DropPosition::Into),
+    (true, true) if fraction < 0.25 => Some(DropPosition::Before),
+    (true, true) if fraction > 0.75 => Some(DropPosition::After),
+    (true, true) => Some(DropPosition::Into),
+    (false, true) if fraction < 0.5 => Some(DropPosition::Before),
+    (false, true) => Some(DropPosition::After),
+    (false, false) => None,
   }
 }
 
@@ -705,17 +758,45 @@ impl TreeDelegate for ProjectTreeDelegate {
           label: node.label.clone(),
           data: node.path,
         },
-        |drag: &MovingLabel<TestPath>, _, _, cx| {
-          cx.stop_propagation();
-          cx.new(|_| drag.clone())
+        {
+          let tree = cx.weak_entity();
+          move |drag: &MovingLabel<TestPath>, _, _, cx| {
+            cx.stop_propagation();
+            _ = tree.update(cx, |tree, _| tree.delegate_mut().drop_target = None);
+            cx.new(|_| drag.clone())
+          }
         },
       )
-      .on_drop({
-        let to_path = node.path;
-        cx.listener(move |table, e: &MovingLabel<TestPath>, window, cx| {
-          table.delegate_mut().move_node(e.data, to_path, window, cx);
-        })
+      .on_drag_move(cx.listener(move |tree, event: &DragMoveEvent<MovingLabel<TestPath>>, _, cx| {
+        // Called on every row during the drag: only the hovered one is the target
+        let position = event.event.position;
+        if !event.bounds.contains(&position) {
+          return;
+        }
+        let fraction = (position.y - event.bounds.top()) / event.bounds.size.height;
+        let dragged = event.drag(cx).data;
+        let drop_target = tree.delegate().drop_target_at(ix, dragged, fraction);
+        if tree.delegate().drop_target != drop_target {
+          tree.delegate_mut().drop_target = drop_target;
+          cx.notify();
+        }
+      }))
+      .when(cx.has_active_drag(), |this| match self.drop_target {
+        Some((target, DropPosition::Before)) if target == node.path => {
+          this.border_t_2().border_color(cx.theme().drop_target)
+        }
+        Some((target, DropPosition::After)) if target == node.path => {
+          this.border_b_2().border_color(cx.theme().drop_target)
+        }
+        Some((target, DropPosition::Into)) if target == node.path => this.rounded_md().bg(cx.theme().drop_target),
+        _ => this,
       })
+      .on_drop(cx.listener(move |tree, drag: &MovingLabel<TestPath>, window, cx| {
+        if let Some((to, position)) = tree.delegate_mut().drop_target.take() {
+          tree.delegate_mut().move_node(drag.data, to, position, window, cx);
+        }
+        cx.notify();
+      }))
       .context_menu(build_context_menu(node))
   }
 }
@@ -754,5 +835,58 @@ impl Render for ProjectTree {
         ),
       )
       .child(Tree::new(self.tree_state.clone()))
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  // Not a glob import of the parent module, whose `gpui_kit::*` import shadows `#[test]`
+  use super::drop_position;
+  use ki_utils::{DropPosition, TestPath};
+  use uuid::Uuid;
+
+  #[test]
+  fn drop_position_on_a_suite() {
+    let (suite, other_suite) = (TestPath::Suite(Uuid::new_v4()), TestPath::Suite(Uuid::new_v4()));
+    // A suite goes before or after a suite
+    assert_eq!(drop_position(other_suite, suite, 0.4), Some(DropPosition::Before));
+    assert_eq!(drop_position(other_suite, suite, 0.6), Some(DropPosition::After));
+    // Anything else goes into it, wherever the cursor is
+    let case = TestPath::Case(Uuid::new_v4(), Uuid::new_v4());
+    let step = TestPath::Step(Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    for fraction in [0.1, 0.5, 0.9] {
+      assert_eq!(drop_position(case, suite, fraction), Some(DropPosition::Into));
+      assert_eq!(drop_position(step, suite, fraction), Some(DropPosition::Into));
+    }
+  }
+
+  #[test]
+  fn drop_position_on_a_case() {
+    let suite_id = Uuid::new_v4();
+    let case = TestPath::Case(suite_id, Uuid::new_v4());
+    // A step goes before, into or after a case
+    let step = TestPath::SuiteStep(suite_id, Uuid::new_v4());
+    assert_eq!(drop_position(step, case, 0.2), Some(DropPosition::Before));
+    assert_eq!(drop_position(step, case, 0.5), Some(DropPosition::Into));
+    assert_eq!(drop_position(step, case, 0.8), Some(DropPosition::After));
+    // A case only goes before or after it
+    let other_case = TestPath::Case(suite_id, Uuid::new_v4());
+    assert_eq!(drop_position(other_case, case, 0.4), Some(DropPosition::Before));
+    assert_eq!(drop_position(other_case, case, 0.6), Some(DropPosition::After));
+    // A suite can't be dropped on it
+    assert_eq!(drop_position(TestPath::Suite(suite_id), case, 0.5), None);
+  }
+
+  #[test]
+  fn drop_position_on_a_step() {
+    let (suite_id, case_id) = (Uuid::new_v4(), Uuid::new_v4());
+    let step = TestPath::Step(suite_id, case_id, Uuid::new_v4());
+    let other_step = TestPath::Step(suite_id, case_id, Uuid::new_v4());
+    assert_eq!(drop_position(other_step, step, 0.4), Some(DropPosition::Before));
+    assert_eq!(drop_position(other_step, step, 0.6), Some(DropPosition::After));
+    // A case can't be nested in a case
+    assert_eq!(drop_position(TestPath::Case(suite_id, Uuid::new_v4()), step, 0.5), None);
+    // Nor can a node be dropped on itself
+    assert_eq!(drop_position(step, step, 0.5), None);
   }
 }

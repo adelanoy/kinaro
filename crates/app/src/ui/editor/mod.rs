@@ -16,11 +16,11 @@ use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{ActiveTheme, Icon, IconName, Sizable};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-  App, AppContext, Context, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString,
-  StatefulInteractiveElement, Styled, Subscription, Window, div,
+  App, AppContext, Context, DragMoveEvent, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
+  SharedString, StatefulInteractiveElement, Styled, Subscription, Window, div,
 };
 use ki_utils::ui::MovingLabel;
-use ki_utils::{TestPath, moved_index};
+use ki_utils::{moved_index, DropPosition, TestPath};
 use ki_workspace::Project;
 use ki_workspace::test::{TestsContainer, TestsContainerEvent};
 use log::warn;
@@ -60,6 +60,19 @@ impl TestEditor {
   }
 }
 
+
+/// Returns the final index of the tab at `from` once dropped on the `side` of the tab at `target`.
+fn insertion_index(from: usize, target: usize, side: DropPosition) -> usize {
+  match side {
+    _ if from == target => from,
+    DropPosition::Before if from < target => target - 1,
+    DropPosition::Before => target,
+    DropPosition::After if from < target => target,
+    DropPosition::After => target + 1,
+    _ => target,
+  }
+}
+
 /// The main editor view: one tab per test node opened from the project tree.
 ///
 /// The opened tabs and the active one are mirrored in the project's [`TestsContainer`] so they
@@ -70,6 +83,9 @@ pub struct EditorView {
   tabs: Vec<TabEditor>,
   active_tab: Option<usize>,
   profile_selector: Entity<ProfileSelector>,
+  /// The tab hovered by a dragged tab, and the side of it where the dragged tab would be dropped.
+  /// Only meaningful while a drag is active, as it isn't reset when a drag ends outside the tabs.
+  drop_target: Option<(usize, DropPosition)>,
   _tests_sub: Subscription,
 }
 
@@ -122,6 +138,7 @@ impl EditorView {
       tabs,
       profile_selector,
       active_tab,
+      drop_target: None,
       _tests_sub,
     }
   }
@@ -192,7 +209,9 @@ impl EditorView {
     self.tabs.insert(to, tab);
     self.active_tab = self.active_tab.map(|ix| moved_index(ix, from, to));
     let paths = self.tabs.iter().map(|tab| tab.path).collect();
-    self.tests.update(cx, |tests, cx| tests.set_editor_tabs(self.active_tab, paths, cx));
+    self
+      .tests
+      .update(cx, |tests, cx| tests.set_editor_tabs(self.active_tab, paths, cx));
     cx.notify();
   }
 
@@ -261,6 +280,8 @@ impl EditorView {
 
 impl Render for EditorView {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    let view = cx.weak_entity();
+    let drop_target = self.drop_target.filter(|_| cx.has_active_drag());
     v_flex()
       .size_full()
       .child(
@@ -284,21 +305,48 @@ impl Render for EditorView {
                         label: tab.editor.label(cx),
                         data: ix,
                       },
-                      |drag, _, _, cx| {
-                        cx.stop_propagation();
-                        cx.new(|_| drag.clone())
+                      {
+                        let view = view.clone();
+                        move |drag, _, _, cx| {
+                          cx.stop_propagation();
+                          _ = view.update(cx, |this, _| this.drop_target = None);
+                          cx.new(|_| drag.clone())
+                        }
                       },
                     )
-                    .drag_over(move |style, drag: &MovingLabel<usize>, _, cx| {
-                      if drag.data < ix {
-                        style.border_r_2().border_color(cx.theme().primary)
-                      } else if drag.data > ix {
-                        style.border_l_2().border_color(cx.theme().primary)
-                      } else {
-                        style
+                    .on_drag_move(cx.listener(move |this, event: &DragMoveEvent<MovingLabel<usize>>, _, cx| {
+                      // Called on every tab during the drag: only the hovered one is the target
+                      let position = event.event.position;
+                      if !event.bounds.contains(&position) {
+                        return;
                       }
+                      let side = if position.x < event.bounds.center().x {
+                        DropPosition::Before
+                      } else {
+                        DropPosition::After
+                      };
+                      if this.drop_target != Some((ix, side)) {
+                        this.drop_target = Some((ix, side));
+                        cx.notify();
+                      }
+                    }))
+                    .drag_over(move |style, _: &MovingLabel<usize>, _, cx| match drop_target {
+                      Some((target, DropPosition::Before)) if target == ix => {
+                        style.border_l_3().border_color(cx.theme().colors.drop_target)
+                      }
+                      Some((target, DropPosition::After)) if target == ix => {
+                        style.border_r_3().border_color(cx.theme().colors.drop_target)
+                      }
+                      _ => style,
                     })
-                    .on_drop(cx.listener(move |this, drag: &MovingLabel<usize>, _, cx| this.move_tab(drag.data, ix, cx)))
+                    .on_drop(cx.listener(move |this, drag: &MovingLabel<usize>, _, cx| {
+                      let side = match this.drop_target.take() {
+                        Some((target, side)) if target == ix => side,
+                        _ => DropPosition::Before,
+                      };
+                      this.move_tab(drag.data, insertion_index(drag.data, ix, side), cx);
+                      cx.notify();
+                    }))
                     .on_mouse_down(
                       MouseButton::Middle,
                       cx.listener(move |this, _, window, cx| {
@@ -336,5 +384,34 @@ impl Render for EditorView {
           ),
         }
       }))
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn insertion_index_from_the_left() {
+    // [a, b, c, d] dragging a (0)
+    assert_eq!(insertion_index(0, 2, DropPosition::Before), 1);
+    assert_eq!(insertion_index(0, 2, DropPosition::After), 2);
+    assert_eq!(insertion_index(0, 3, DropPosition::After), 3);
+  }
+
+  #[test]
+  fn insertion_index_from_the_right() {
+    // [a, b, c, d] dragging d (3)
+    assert_eq!(insertion_index(3, 1, DropPosition::Before), 1);
+    assert_eq!(insertion_index(3, 1, DropPosition::After), 2);
+    assert_eq!(insertion_index(3, 0, DropPosition::Before), 0);
+  }
+
+  #[test]
+  fn insertion_index_next_to_itself_is_a_no_op() {
+    assert_eq!(insertion_index(1, 1, DropPosition::Before), 1);
+    assert_eq!(insertion_index(1, 1, DropPosition::After), 1);
+    assert_eq!(insertion_index(1, 0, DropPosition::After), 1);
+    assert_eq!(insertion_index(1, 2, DropPosition::Before), 1);
   }
 }
