@@ -1,5 +1,7 @@
 use crate::error::{ProjectError, ProjectResult};
-use crate::test::{TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent, test_step::TestStep};
+use crate::test::{
+  DropPosition, TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent, test_step::TestStep,
+};
 use gpui_kit::component::Icon;
 use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, SharedString, WeakEntity};
 use ki_assets::icon::IconAsset;
@@ -146,21 +148,24 @@ impl TestCase {
     }
   }
 
-  /// Inserts `new_step` relative to `path`: appended at the end when `path` is a case path,
-  /// otherwise right after the step at `path` (or at the end when none matches). The step is
-  /// reparented under this case, keeping its id. Returns its new path.
-  pub(crate) fn insert_step(&mut self, new_step: Entity<TestStep>, path: &TestPath, cx: &mut Context<Self>) -> TestPath {
+  /// Inserts `new_step` where `position` says relative to `path`: appended at the end with
+  /// [`DropPosition::Into`], otherwise right before or after the step at `path` (or at the end when
+  /// none matches). The step is reparented under this case, keeping its id. Returns its new path.
+  pub(crate) fn insert_step(
+    &mut self,
+    new_step: Entity<TestStep>,
+    path: &TestPath,
+    position: DropPosition,
+    cx: &mut Context<Self>,
+  ) -> TestPath {
     let (_, new_path) = new_step.update(cx, |step, _| step.reparent(&self.meta.path, true));
-    let ix = if path.is_case() {
-      self.steps.len()
-    } else {
-      self
-        .steps
-        .iter()
-        .position(|step| step.read(cx).path() == *path)
-        .map(|ix| min(ix + 1, self.steps.len()))
-        .unwrap_or(self.steps.len())
-    };
+    let target_ix = || self.steps.iter().position(|step| step.read(cx).path() == *path);
+    let ix = match position {
+      DropPosition::Into => None,
+      DropPosition::Before => target_ix(),
+      DropPosition::After => target_ix().map(|ix| ix + 1),
+    }
+    .unwrap_or(self.steps.len());
     self.steps.insert(ix, new_step);
     new_path
   }
@@ -537,10 +542,24 @@ mod tests {
       .update(cx, |case, cx| case.remove_step(&p.step_b1, cx))
       .unwrap();
     let case_a = case(&tests, p.case_a, cx);
-    let new_path = case_a.update(cx, |case, cx| case.insert_step(step_b1.clone(), &p.step_a1, cx));
+    let new_path = case_a.update(cx, |case, cx| {
+      case.insert_step(step_b1.clone(), &p.step_a1, DropPosition::After, cx)
+    });
     assert_eq!(new_path, TestPath::Step(p.suite_a.id(), p.case_a.id(), p.step_b1.id()));
     assert_eq!(step_b1.read_with(cx, |step, _| step.path()), new_path);
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Step B1", "Step A2"]);
+  }
+
+  #[gpui_kit::test]
+  fn insert_step_before_a_step_or_into_the_case(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let case_a = case(&tests, p.case_a, cx);
+    let step_a2 = case_a.update(cx, |case, cx| case.remove_step(&p.step_a2, cx).unwrap());
+    case_a.update(cx, |case, cx| case.insert_step(step_a2, &p.step_a1, DropPosition::Before, cx));
+    assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A2", "Step A1"]);
+    let step_a2 = case_a.update(cx, |case, cx| case.remove_step(&p.step_a2, cx).unwrap());
+    case_a.update(cx, |case, cx| case.insert_step(step_a2, &p.case_a, DropPosition::Into, cx));
+    assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Step A2"]);
   }
 
   #[gpui_kit::test]

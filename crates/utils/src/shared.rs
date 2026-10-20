@@ -2,6 +2,17 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use uuid::Uuid;
 
+/// Where a node moved onto another one (the target) is placed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DropPosition {
+  /// As the previous sibling of the target
+  Before,
+  /// As the last child of the target (a suite or a case)
+  Into,
+  /// As the next sibling of the target
+  After,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SidebarPanel {
   Profile,
