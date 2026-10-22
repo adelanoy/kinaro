@@ -10,20 +10,25 @@ use crate::ui::editor::profile_selector::ProfileSelector;
 use crate::ui::editor::step_editor::StepEditor;
 use crate::ui::editor::suite_editor::SuiteEditor;
 use gpui_kit::base::{h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::button::{Button, ButtonVariants, Toggle};
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyTitle};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{ActiveTheme, Icon, IconName, Sizable};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-  App, AppContext, Context, DragMoveEvent, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
-  SharedString, StatefulInteractiveElement, Styled, Subscription, Window, div,
+  App, AppContext, Context, DragMoveEvent, Entity, EventEmitter, InteractiveElement, IntoElement, MouseButton, ParentElement,
+  Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window, div,
 };
+use ki_settings::app_state::AppState;
 use ki_utils::ui::MovingLabel;
-use ki_utils::{moved_index, DropPosition, TestPath};
+use ki_utils::{DropPosition, TestPath, moved_index};
 use ki_workspace::Project;
 use ki_workspace::test::{TestsContainer, TestsContainerEvent};
 use log::warn;
+
+pub enum EditorEvent {
+  ToggleSidebar,
+}
 
 /// A tab of the editor: the node it shows and its editor.
 struct TabEditor {
@@ -59,7 +64,6 @@ impl TestEditor {
     }
   }
 }
-
 
 /// Returns the final index of the tab at `from` once dropped on the `side` of the tab at `target`.
 fn insertion_index(from: usize, target: usize, side: DropPosition) -> usize {
@@ -297,6 +301,19 @@ impl Render for EditorView {
               TabBar::new("editor-tabs")
                 .selected_index(tab_ix)
                 .on_click(cx.listener(|this, ix, _, cx| this.select_tab(Some(*ix), cx)))
+                .prefix({
+                  let is_checked = !AppState::read(cx, |app_state| app_state.sidebar.collapsed);
+                  Toggle::new("toggle-sidebar")
+                    .checked(is_checked)
+                    .icon({
+                      if is_checked {
+                        IconName::PanelLeftClose
+                      } else {
+                        IconName::PanelLeftOpen
+                      }
+                    })
+                    .on_click(cx.listener(|_, _, _, cx| cx.emit(EditorEvent::ToggleSidebar)))
+                })
                 .children(self.tabs.iter().enumerate().map(|(ix, tab)| {
                   Tab::new()
                     .px_2()
@@ -386,6 +403,8 @@ impl Render for EditorView {
       }))
   }
 }
+
+impl EventEmitter<EditorEvent> for EditorView {}
 
 #[cfg(test)]
 mod tests {

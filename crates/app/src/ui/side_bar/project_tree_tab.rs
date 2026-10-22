@@ -782,12 +782,8 @@ impl TreeDelegate for ProjectTreeDelegate {
         }
       }))
       .when(cx.has_active_drag(), |this| match self.drop_target {
-        Some((target, DropPosition::Before)) if target == node.path => {
-          this.border_t_2().border_color(cx.theme().drop_target)
-        }
-        Some((target, DropPosition::After)) if target == node.path => {
-          this.border_b_2().border_color(cx.theme().drop_target)
-        }
+        Some((target, DropPosition::Before)) if target == node.path => this.border_t_2().border_color(cx.theme().drop_target),
+        Some((target, DropPosition::After)) if target == node.path => this.border_b_2().border_color(cx.theme().drop_target),
         Some((target, DropPosition::Into)) if target == node.path => this.rounded_md().bg(cx.theme().drop_target),
         _ => this,
       })

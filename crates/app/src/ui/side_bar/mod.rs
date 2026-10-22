@@ -5,18 +5,22 @@ mod var_editor_tab;
 use crate::ui::side_bar::profile_editor_tab::ProfileEditor;
 use crate::ui::side_bar::project_tree_tab::ProjectTree;
 use crate::ui::side_bar::var_editor_tab::VariableEditor;
-use gpui_kit::component::{ActiveTheme, Colorize, Icon};
+use gpui_kit::base::v_flex;
+use gpui_kit::component::tab::{Tab, TabBar};
+use gpui_kit::component::{Icon, Sizable};
 use gpui_kit::*;
+use ki_settings::app_state::AppState;
 use ki_utils::SidebarPanel;
 use ki_workspace::Project;
 
 pub struct ProjectSidebar {
-  pub selected_panel: SidebarPanel,
+  selected_panel: SidebarPanel,
   panels: Vec<Entity<ProjectPanelContainer>>,
 }
 
 impl ProjectSidebar {
-  pub(super) fn new(project: Entity<Project>, selected_panel: SidebarPanel, window: &mut Window, cx: &mut Context<Self>) -> Self {
+  pub(super) fn new(project: Entity<Project>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    let selected_panel = AppState::read(cx, |app_state| app_state.sidebar.selected_panel);
     Self {
       selected_panel,
       panels: Self::build_project_panels(project, window, cx),
@@ -35,16 +39,22 @@ impl ProjectSidebar {
     ]
   }
 
-  pub fn panel_descriptors(&self, cx: &App) -> Vec<ProjectPanelDescriptor> {
-    self.panels.iter().map(|panel| panel.read(cx).descriptor.clone()).collect()
+  fn select_panel(&mut self, ix: usize, cx: &mut Context<Self>) {
+    let panel_type = self.panels[ix].read(cx).descriptor.panel_type;
+    self.selected_panel = panel_type;
+    AppState::update(cx, |state, _| {
+      state.sidebar.selected_panel = panel_type;
+      true
+    });
+    cx.notify();
   }
 }
 
 #[derive(Clone)]
-pub struct ProjectPanelDescriptor {
-  pub title: SharedString,
-  pub icon: Icon,
-  pub panel_type: SidebarPanel,
+struct ProjectPanelDescriptor {
+  title: SharedString,
+  icon: Icon,
+  panel_type: SidebarPanel,
 }
 
 struct ProjectPanelContainer {
@@ -82,17 +92,29 @@ trait ProjectConfigurationPanel: Render {
 
 impl Render for ProjectSidebar {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-    let panel = self
+    let (ix, panel) = self
       .panels
       .iter()
-      .find(|panel| panel.read(cx).descriptor.panel_type == self.selected_panel)
+      .enumerate()
+      .find(|(_, panel)| panel.read(cx).descriptor.panel_type == self.selected_panel)
       .unwrap();
-    div().size_full().p_2().child(
-      div()
-        .size_full()
-        .rounded_xl()
-        .bg(cx.theme().background.darken(0.3))
-        .child(panel.read(cx).view.clone()),
-    )
+
+    v_flex()
+      .size_full()
+      .gap_y_1()
+      .child(
+        TabBar::new("project-config-tabs")
+          .segmented()
+          .small()
+          .selected_index(ix)
+          .on_click(cx.listener(|this, ix, _, cx| this.select_panel(*ix, cx)))
+          .children(self.panels.iter().map(|panel| {
+            Tab::new()
+              .px_2()
+              .prefix(panel.read(cx).descriptor.icon.clone())
+              .child(panel.read(cx).descriptor.title.clone())
+          })),
+      )
+      .child(panel.read(cx).view.clone())
   }
 }

@@ -4,10 +4,10 @@ mod side_bar;
 mod title_bar;
 
 use crate::actions::{CreateProject, OpenProject};
-use crate::ui::editor::EditorView;
-use crate::ui::side_bar::{ProjectPanelDescriptor, ProjectSidebar};
+use crate::ui::editor::{EditorEvent, EditorView};
+use crate::ui::side_bar::ProjectSidebar;
 use crate::ui::title_bar::AppTitleBar;
-use gpui_kit::component::button::{Button, ButtonVariants, Toggle, ToggleVariants};
+use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::dialog::{DialogAction, DialogClose, DialogFooter};
 use gpui_kit::component::empty::{Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyMediaVariant, EmptyTitle};
 use gpui_kit::component::form::{field, v_form};
@@ -25,14 +25,18 @@ use ki_workspace::project::PROJECT_FILE_EXT;
 use ki_workspace::{Workspace, WorkspaceEvent};
 use std::path::PathBuf;
 
+struct MainContent {
+  project_sidebar: Entity<ProjectSidebar>,
+  editor: Entity<EditorView>,
+  _editor_sub: Subscription,
+}
+
 pub struct WorkspaceView {
   workspace: Entity<Workspace>,
   title_bar: Entity<AppTitleBar>,
-  project_sidebar: Option<Entity<ProjectSidebar>>,
-  project_panel_descriptors: Vec<ProjectPanelDescriptor>,
   sidebar_collapsed: bool,
   sidebar_width: f32,
-  editor: Option<Entity<EditorView>>,
+  main_content: Option<MainContent>,
   focus_handle: FocusHandle,
   _workspace_sub: Subscription,
 }
@@ -48,7 +52,7 @@ impl WorkspaceView {
     let workspace = cx.new(Workspace::init);
     let _workspace_sub = cx.subscribe_in(&workspace, window, |this, workspace, event, window, cx| {
       if let WorkspaceEvent::ActiveProjectChanged = event {
-        this.load_project(workspace, window, cx);
+        this.main_content = Self::load_project(workspace, window, cx);
         cx.notify();
       }
     });
@@ -64,6 +68,7 @@ impl WorkspaceView {
     if sidebar_width > max_sidebar_width {
       sidebar_width = max_sidebar_width;
     }
+    let main_content = Self::load_project(&workspace, window, cx);
 
     // Check if any project failed to load. If there is display a notif at end of render cycle
     let project_errors = workspace.read(cx).all_failed_projects();
@@ -85,37 +90,35 @@ impl WorkspaceView {
     let focus_handle = cx.focus_handle();
     window.focus(&focus_handle, cx);
 
-    let mut workspace_view = Self {
+    Self {
       workspace: workspace.clone(),
       title_bar,
-      project_sidebar: None,
-      project_panel_descriptors: vec![],
       sidebar_collapsed,
       sidebar_width,
-      editor: None,
+      main_content,
       focus_handle,
       _workspace_sub,
-    };
-    workspace_view.load_project(&workspace, window, cx);
-    workspace_view
+    }
   }
 
-  fn load_project(&mut self, workspace: &Entity<Workspace>, window: &mut Window, cx: &mut Context<WorkspaceView>) {
-    let selected_panel = AppState::read(cx, |app_state| app_state.sidebar.selected_panel);
-    self.project_sidebar = workspace
-      .read(cx)
-      .active_project()
-      .map(|project| cx.new(|cx| ProjectSidebar::new(project.clone(), selected_panel, window, cx)));
-    self.project_panel_descriptors = self
-      .project_sidebar
-      .as_ref()
-      .map(|sidebar| sidebar.read_with(cx, |sidebar, cx| sidebar.panel_descriptors(cx)))
-      .unwrap_or(vec![]);
-
-    self.editor = workspace
-      .read(cx)
-      .active_project()
-      .map(|project| cx.new(|cx| EditorView::new(project.clone(), window, cx)));
+  fn load_project(workspace: &Entity<Workspace>, window: &mut Window, cx: &mut Context<Self>) -> Option<MainContent> {
+    workspace.read(cx).active_project().map(|project| {
+      let project_sidebar = cx.new(|cx| ProjectSidebar::new(project.clone(), window, cx));
+      let editor = cx.new(|cx| EditorView::new(project.clone(), window, cx));
+      let _editor_sub = cx.subscribe(&editor, |this, _, _: &EditorEvent, cx| {
+        this.sidebar_collapsed = !this.sidebar_collapsed;
+        AppState::update(cx, |state, _| {
+          state.sidebar.collapsed = this.sidebar_collapsed;
+          true
+        });
+        cx.notify();
+      });
+      MainContent {
+        project_sidebar,
+        editor,
+        _editor_sub,
+      }
+    })
   }
 
   fn on_action_create_project(&mut self, _: &CreateProject, window: &mut Window, cx: &mut Context<Self>) {
@@ -214,48 +217,11 @@ impl WorkspaceView {
     })
     .detach();
   }
-
-  fn sidebar_toggles(&self, cx: &mut Context<Self>) -> Vec<impl IntoElement> {
-    let settings_panel = AppState::read(cx, |app_state| app_state.sidebar.selected_panel);
-    self
-      .project_panel_descriptors
-      .iter()
-      .map(|descriptor| {
-        let panel = descriptor.panel_type;
-        Toggle::new(descriptor.title.clone())
-          .ghost()
-          .icon(descriptor.icon.clone())
-          .checked(settings_panel == panel)
-          .rounded_sm()
-          .on_click(cx.listener({
-            move |this, _, _, cx| {
-              // Compare the saved setting: If it's already the currently selected panel, change the collapse status, else,  instructs sidebar
-              if panel == settings_panel {
-                this.sidebar_collapsed = !this.sidebar_collapsed;
-              } else {
-                this.sidebar_collapsed = false;
-                this
-                  .project_sidebar
-                  .as_ref()
-                  .unwrap()
-                  .update(cx, |sidebar, _| sidebar.selected_panel = panel);
-              }
-              AppState::update(cx, |app_state, _| {
-                app_state.sidebar.selected_panel = panel;
-                app_state.sidebar.collapsed = this.sidebar_collapsed;
-                true
-              });
-            }
-          }))
-      })
-      .collect()
-  }
 }
 
 impl Render for WorkspaceView {
   fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     let max_sidebar_width = window.bounds().size.width * 0.8;
-    let project_active = self.project_sidebar.is_some();
 
     div()
       .id("kinaro-root")
@@ -268,32 +234,30 @@ impl Render for WorkspaceView {
           .size_full()
           .child(self.title_bar.clone())
           .child(h_flex().size_full().when_else(
-            project_active,
+            self.main_content.is_some(),
             |this| {
-              this
-                .child(v_flex().h_full().p_1().gap_y_1().children(self.sidebar_toggles(cx)))
-                .child(
-                  h_resizable("kinaro-main-view")
-                    .on_resize({
-                      let this = cx.entity();
-                      move |state, _, cx| {
-                        let width = state.read_with(cx, |state, _| state.sizes()[0]).as_f32();
-                        this.update(cx, |this, _| this.sidebar_width = width);
-                        AppState::update(cx, |app_state, _| {
-                          app_state.sidebar.width = width;
-                          true
-                        })
-                      }
-                    })
-                    .child(
-                      resizable_panel()
-                        .visible(!self.sidebar_collapsed)
-                        .size(self.sidebar_width)
-                        .size_range(px(250.0)..max_sidebar_width)
-                        .child(self.project_sidebar.clone().unwrap()),
-                    )
-                    .child(self.editor.clone().unwrap().into_any_element()),
-                )
+              this.child(
+                h_resizable("kinaro-main-view")
+                  .on_resize({
+                    let this = cx.entity();
+                    move |state, _, cx| {
+                      let width = state.read_with(cx, |state, _| state.sizes()[0]).as_f32();
+                      this.update(cx, |this, _| this.sidebar_width = width);
+                      AppState::update(cx, |app_state, _| {
+                        app_state.sidebar.width = width;
+                        true
+                      })
+                    }
+                  })
+                  .child(
+                    resizable_panel()
+                      .visible(!self.sidebar_collapsed)
+                      .size(self.sidebar_width)
+                      .size_range(px(250.0)..max_sidebar_width)
+                      .child(self.main_content.as_ref().unwrap().project_sidebar.clone()),
+                  )
+                  .child(self.main_content.as_ref().unwrap().editor.clone().into_any_element()),
+              )
             },
             |this| {
               this.child(
