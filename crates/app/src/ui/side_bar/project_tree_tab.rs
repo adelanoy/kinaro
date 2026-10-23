@@ -3,9 +3,7 @@ use crate::actions::{
   PROJECT_TREE_CONTEXT_KEY, Rename, SwitchNodeActiveStatus,
 };
 use crate::app;
-use crate::ui::components::dialog::show_rename_dialog;
 use crate::ui::components::tree::{ProjectTreeNode, Tree, TreeDelegate, TreeEvent, TreeState};
-use crate::ui::side_bar::ProjectConfigurationPanel;
 use gpui_kit::base::input::{Copy, Paste};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{
@@ -17,6 +15,8 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
+use ki_app_shared::dialog::show_rename_dialog;
+use ki_app_shared::panel::PanelDescriptor;
 use ki_assets::icon::IconAsset;
 use ki_utils::ui::MovingLabel;
 use ki_utils::{CASE, DropPosition, STEP, SUITE, SidebarPanel};
@@ -93,7 +93,7 @@ impl ProjectTree {
         warn!("ProjectTree:on_action_copy_id: no tree_state selected path");
         return;
       };
-      app::copy_id(path, window, cx);
+      ki_app_shared::copy_id(path, window, cx);
     });
   }
 
@@ -104,7 +104,7 @@ impl ProjectTree {
         warn!("ProjectTree:on_action_copy_path: no tree_state selected path");
         return;
       };
-      app::copy_path(path, window, cx);
+      ki_app_shared::copy_path(path, window, cx);
     });
   }
 
@@ -211,7 +211,7 @@ impl ProjectTree {
   }
 }
 
-impl ProjectConfigurationPanel for ProjectTree {
+impl PanelDescriptor<SidebarPanel, Project> for ProjectTree {
   fn name() -> &'static str {
     "Project Tree"
   }
@@ -224,7 +224,7 @@ impl ProjectConfigurationPanel for ProjectTree {
     SidebarPanel::ProjectTree
   }
 
-  fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<impl Render> {
+  fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<Self> {
     cx.new(|cx| {
       let tests = project.read(cx).tests.clone();
       let tree_state = cx.new(|cx| TreeState::new(ProjectTreeDelegate::new(tests, window, cx), cx));

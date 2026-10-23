@@ -1,6 +1,6 @@
-use crate::ui::editor::header_editor::HeaderEditor;
-use crate::ui::editor::steps::delay_editor::DelayEditor;
-use crate::ui::editor::steps::rest_editor::RestEditor;
+use crate::metadata_editor::MetadataEditor;
+use crate::step_editor::delay_editor::DelayEditor;
+use crate::step_editor::rest_editor::RestEditor;
 use gpui_kit::component::Icon;
 use gpui_kit::component::separator::Separator;
 use gpui_kit::prelude::FluentBuilder;
@@ -11,7 +11,10 @@ use ki_workspace::TestStep;
 use ki_workspace::test::TestMetadataOwner;
 use ki_workspace::test::test_step::StepData;
 
-pub enum StepDataEvent {
+mod delay_editor;
+mod rest_editor;
+
+enum StepDataEvent {
   IconChanged,
 }
 
@@ -24,7 +27,7 @@ pub enum StepDataEditor {
 /// Editor of a test step.
 pub struct StepEditor {
   step: Entity<TestStep>,
-  header_editor: Entity<HeaderEditor<TestStep>>,
+  metadata_editor: Entity<MetadataEditor<TestStep>>,
   icon: Icon,
   data_editor: StepDataEditor,
   _data_editor_sub: Option<Subscription>,
@@ -33,11 +36,11 @@ pub struct StepEditor {
 impl StepEditor {
   /// Creates the editor of `step`.
   pub fn new(step: Entity<TestStep>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-    let header_editor = cx.new(|_| HeaderEditor::new(step.clone()));
+    let header_editor = cx.new(|_| MetadataEditor::new(step.clone()));
     let (data_editor, _data_editor_sub) = Self::data_editor(&step, window, cx);
     Self {
       step: step.clone(),
-      header_editor,
+      metadata_editor: header_editor,
       icon: step.read_with(cx, |step, cx| step.icon(cx)),
       data_editor,
       _data_editor_sub,
@@ -75,7 +78,7 @@ impl Render for StepEditor {
   fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
     div()
       .size_full()
-      .child(self.header_editor.clone())
+      .child(self.metadata_editor.clone())
       .child(Separator::horizontal())
       .child(div().size_full().map(|this| match &self.data_editor {
         StepDataEditor::Delay(editor) => this.child(editor.clone()),

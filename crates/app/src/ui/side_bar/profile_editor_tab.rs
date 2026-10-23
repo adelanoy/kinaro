@@ -1,5 +1,4 @@
 use crate::actions::{Delete, Duplicate, Escape};
-use crate::ui::side_bar::ProjectConfigurationPanel;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::label::Label;
@@ -8,6 +7,7 @@ use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, T
 use gpui_kit::component::{Disableable, Icon, IconName, Sizable, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
+use ki_app_shared::panel::PanelDescriptor;
 use ki_assets::icon::IconAsset;
 use ki_utils::SidebarPanel;
 use ki_utils::ui::{CellState, MovingLabel};
@@ -57,7 +57,7 @@ impl ProfileEditor {
   }
 }
 
-impl ProjectConfigurationPanel for ProfileEditor {
+impl PanelDescriptor<SidebarPanel, Project> for ProfileEditor {
   fn name() -> &'static str {
     "Profiles"
   }
@@ -70,7 +70,7 @@ impl ProjectConfigurationPanel for ProfileEditor {
     SidebarPanel::Profile
   }
 
-  fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<impl Render> {
+  fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<Self> {
     cx.new(|cx| {
       let table_state = cx.new(|cx| {
         TableState::new(ProfileDataTableDelegate::new(project, window, cx), window, cx)

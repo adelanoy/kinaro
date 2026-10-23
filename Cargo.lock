@@ -3761,6 +3761,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
+name = "ki_app_shared"
+version = "0.1.0"
+dependencies = [
+ "gpui-kit",
+ "ki_utils",
+ "ki_workspace",
+]
+
+[[package]]
 name = "ki_assets"
 version = "0.1.0"
 dependencies = [
@@ -3769,6 +3778,19 @@ dependencies = [
  "ki_settings",
  "log",
  "rust-embed",
+]
+
+[[package]]
+name = "ki_editor"
+version = "0.1.0"
+dependencies = [
+ "gpui-kit",
+ "ki_app_shared",
+ "ki_assets",
+ "ki_settings",
+ "ki_utils",
+ "ki_workspace",
+ "log",
 ]
 
 [[package]]
@@ -3832,7 +3854,9 @@ dependencies = [
  "anyhow",
  "dirs 5.0.1",
  "gpui-kit",
+ "ki_app_shared",
  "ki_assets",
+ "ki_editor",
  "ki_settings",
  "ki_utils",
  "ki_workspace",

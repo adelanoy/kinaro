@@ -13,6 +13,8 @@ members = [
     "crates/assets",
     "crates/utils",
     "crates/workspace",
+    "crates/editor",
+    "crates/shared",
 ]
 default-members = ["crates/app"]
 
@@ -23,6 +25,8 @@ ki_settings = { path = "crates/settings" }
 ki_assets = { path = "crates/assets" }
 ki_utils = {path = "crates/utils"}
 ki_workspace = {path = "crates/workspace"}
+ki_editor = {path = "crates/editor" }
+ki_app_shared = {path = "crates/shared" }
 
 gpui-kit = { version = "0.8", default-features = false, features = ["component"] }
 serde = { version = "1", features = ["derive"] }
@@ -33,6 +37,7 @@ thiserror = "2"
 anyhow = "1"
 log = "0.4"
 dirs = "5.0"
+log4rs = { version = "1", default-features = false, features = ["console_appender", "pattern_encoder", "file_appender"] }
 
 [profile.dev.package]
 gpui-pre = { opt-level = 3 }

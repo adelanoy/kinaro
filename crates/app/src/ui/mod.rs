@@ -1,10 +1,8 @@
 mod components;
-mod editor;
 mod side_bar;
 mod title_bar;
 
 use crate::actions::{CreateProject, OpenProject};
-use crate::ui::editor::{EditorEvent, EditorView};
 use crate::ui::side_bar::ProjectSidebar;
 use crate::ui::title_bar::AppTitleBar;
 use gpui_kit::component::button::{Button, ButtonVariants};
@@ -24,6 +22,7 @@ use ki_settings::app_state::AppState;
 use ki_workspace::project::PROJECT_FILE_EXT;
 use ki_workspace::{Workspace, WorkspaceEvent};
 use std::path::PathBuf;
+use ki_editor::{EditorEvent, EditorView};
 
 struct MainContent {
   project_sidebar: Entity<ProjectSidebar>,
