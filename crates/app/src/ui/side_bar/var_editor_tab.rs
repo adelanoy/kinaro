@@ -259,7 +259,7 @@ impl VariableDataTableDelegate {
       self._cell_input_sub = None;
     }
 
-    let mut var = self.project_vars.read(cx).references.get(row_ix).unwrap().clone();
+    let var = self.project_vars.read(cx).references.get(row_ix).unwrap().clone();
     match col_ix {
       0 => {
         self.cell_input_state.update(cx, |state, cx| {
@@ -281,19 +281,19 @@ impl VariableDataTableDelegate {
         });
       }
       2 => {
-        let (overridden, effective_value) = self.effective_value(&var);
-        if overridden {
-          var.value = effective_value;
-        }
+        let (_, effective_value) = self.effective_value(&var);
         self.cell_input_state.update(cx, |state, cx| {
-          state.set_value(var.value.clone(), window, cx);
+          state.set_value(effective_value, window, cx);
           state.focus(window, cx);
         });
+        let current_profile = self.viewing_profile;
         self._cell_input_sub = Some(cx.subscribe_in(
           &self.cell_input_state,
           window,
           move |table, input_state, event, window, cx| {
-            Self::on_cell_input_event(table, input_state, event, window, cx, |var, value| var.value = value)
+            Self::on_cell_input_event(table, input_state, event, window, cx, |var, value| {
+              var.set_value(value, current_profile)
+            })
           },
         ));
       }
@@ -350,11 +350,10 @@ impl VariableDataTableDelegate {
   }
 
   fn update_variable(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-    let profile = self.viewing_profile;
     if let CellState::CellEdited(_, _, data) = &self.cell_state
       && let Err(err) = self
         .project_vars
-        .update(cx, |this, cx| this.update_variable(profile, data, cx))
+        .update(cx, |this, cx| this.update_variable(data.clone(), cx))
     {
       window.push_notification(err, cx);
     }
@@ -463,7 +462,6 @@ impl Render for VariableEditor {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     let table_state = self.table_state.clone();
     let switch_on = table_state.read(cx).delegate().viewing_profile;
-    let profile_select_state = &table_state.read(cx).delegate().profile_select_state;
     let (is_editing, no_selection) = self.table_state.read_with(cx, |this, _| {
       let delegate = this.delegate();
       (
@@ -507,7 +505,10 @@ impl Render for VariableEditor {
                   }),
               )
               .when(switch_on.is_some(), |this| {
-                this.child(Select::new(profile_select_state).small().min_w_32())
+                this.child({
+                  let profile_select_state = &table_state.read(cx).delegate().profile_select_state;
+                  Select::new(profile_select_state).small().min_w_32()
+                })
               }),
           )
           .child(
