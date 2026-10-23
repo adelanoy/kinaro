@@ -309,8 +309,7 @@ impl ProjectVariables {
   /// Returns a [`ProjectError::VariableNotFound`] if the profile could not be found by its id
   pub fn update_variable(
     &mut self,
-    profile_id: Option<Uuid>,
-    updated_variable: &VariableReference,
+    updated_variable: VariableReference,
     cx: &mut Context<Self>,
   ) -> ProjectResult<()> {
     let Some(var) = self.references.iter_mut().find(|p| p.id == updated_variable.id) else {
@@ -318,25 +317,10 @@ impl ProjectVariables {
       return Err(ProjectError::VariableNotFound);
     };
 
-    if updated_variable == var {
-      if let Some(profile_id) = profile_id
-        && self.profiles.iter().any(|p| p.id == profile_id)
-      {
-        var.overrides.remove(&profile_id);
-        cx.emit(ProjectVariablesEvent::VariablesChanged);
-      }
+    if updated_variable == *var {
       return Ok(());
     }
-
-    var.name = updated_variable.name.clone();
-    var.description = updated_variable.description.clone();
-    var.kind = updated_variable.kind;
-    if updated_variable.value != var.value
-      && let Some(profile_id) = profile_id
-      && self.profiles.iter().any(|p| p.id == profile_id)
-    {
-      var.overrides.insert(profile_id, updated_variable.value.clone());
-    }
+    *var = updated_variable;
 
     cx.emit(ProjectVariablesEvent::VariablesChanged);
     Ok(())
@@ -384,12 +368,14 @@ impl ProjectVariables {
 
 impl EventEmitter<ProjectVariablesEvent> for ProjectVariables {}
 
+/// This struct contains the definition of a variable with all the overridden values per-profile
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct VariableReference {
   pub id: Uuid,
   pub name: SharedString,
   pub description: SharedString,
   pub kind: VariableKind,
+  /// Reference value for this variable. to set a new value, [`VariableReference::set_value`] should be used to handle overrides
   pub value: SharedString,
   overrides: HashMap<Uuid, SharedString>,
 }
@@ -437,6 +423,19 @@ impl VariableReference {
     if self.overrides.remove(&profile_id).is_some() {
       cx.emit(ProjectVariablesEvent::VariablesChanged);
     }
+  }
+
+  /// Sets a new value depending on the profile.
+  pub fn set_value(&mut self, value: SharedString, profile_id: Option<Uuid>) {
+    match profile_id {
+      Some(id) if self.value == value => {
+        self.overrides.remove(&id);
+      }
+      Some(id) => {
+        self.overrides.insert(id, value);
+      }
+      None => self.value = value,
+    };
   }
 }
 
