@@ -1,14 +1,11 @@
 mod case_editor;
-mod header_editor;
-mod profile_selector;
+mod metadata_editor;
 mod step_editor;
-mod steps;
 mod suite_editor;
 
-use crate::ui::editor::case_editor::CaseEditor;
-use crate::ui::editor::profile_selector::ProfileSelector;
-use crate::ui::editor::step_editor::StepEditor;
-use crate::ui::editor::suite_editor::SuiteEditor;
+use crate::case_editor::CaseEditor;
+use crate::step_editor::StepEditor;
+use crate::suite_editor::SuiteEditor;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants, Toggle};
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyTitle};
@@ -87,7 +84,6 @@ pub struct EditorView {
   tests: Entity<TestsContainer>,
   tabs: Vec<TabEditor>,
   active_tab: Option<usize>,
-  profile_selector: Entity<ProfileSelector>,
   /// The tab hovered by a dragged tab, and the side of it where the dragged tab would be dropped.
   /// Only meaningful while a drag is active, as it isn't reset when a drag ends outside the tabs.
   drop_target: Option<(usize, DropPosition)>,
@@ -171,12 +167,9 @@ impl EditorView {
     let tests = project.read(cx).tests.clone();
     let _tests_sub = cx.subscribe_in(&tests, window, Self::tests_event_listener);
     let (tabs, active_tab) = Self::get_tabs(&tests, window, cx);
-    let vars = project.read(cx).variables.clone();
-    let profile_selector = cx.new(|cx| ProfileSelector::new(vars, window, cx));
     Self {
       tests,
       tabs,
-      profile_selector,
       active_tab,
       drop_target: None,
       context_menu_tab: None,
@@ -321,128 +314,119 @@ impl Render for EditorView {
     let drop_target = self.drop_target.filter(|_| cx.has_active_drag());
     v_flex()
       .size_full()
-      .child(
-        h_flex()
-          .w_full()
-          .p_2()
-          .h_12()
-          .flex_row_reverse()
-          .justify_between()
-          .child(self.profile_selector.clone())
-          .when_some(self.active_tab, |this, tab_ix| {
-            this.child(
-              // The bar only takes tabs, so the context menu is on a wrapper of the bar
-              h_flex()
-                .id("editor-tabs-container")
-                .min_w_0()
-                .context_menu({
-                  let view = view.clone();
-                  move |menu, _, cx| {
-                    let target = view
-                      .update(cx, |this, _| this.context_menu_tab.take().map(|ix| (ix, this.tabs.len())))
-                      .ok()
-                      .flatten();
-                    match target {
-                      Some((ix, tab_count)) => Self::build_tab_context_menu(&view, ix, tab_count, menu),
-                      None => menu,
-                    }
-                  }
-                })
-                .child(
-                  TabBar::new("editor-tabs")
-                    .selected_index(tab_ix)
-                    .on_click(cx.listener(|this, ix, _, cx| this.select_tab(Some(*ix), cx)))
-                    .prefix({
-                      let is_checked = !AppState::read(cx, |app_state| app_state.sidebar.collapsed);
-                      Toggle::new("toggle-sidebar")
-                        .checked(is_checked)
-                        .icon({
-                          if is_checked {
-                            IconName::PanelLeftClose
-                          } else {
-                            IconName::PanelLeftOpen
-                          }
-                        })
-                        .on_click(cx.listener(|_, _, _, cx| cx.emit(EditorEvent::ToggleSidebar)))
+      .child(h_flex().w_full().p_2().h_12().when_some(self.active_tab, |this, tab_ix| {
+        this.child(
+          // The bar only takes tabs, so the context menu is on a wrapper of the bar
+          h_flex()
+            .id("editor-tabs-container")
+            .min_w_0()
+            .context_menu({
+              let view = view.clone();
+              move |menu, _, cx| {
+                let target = view
+                  .update(cx, |this, _| this.context_menu_tab.take().map(|ix| (ix, this.tabs.len())))
+                  .ok()
+                  .flatten();
+                match target {
+                  Some((ix, tab_count)) => Self::build_tab_context_menu(&view, ix, tab_count, menu),
+                  None => menu,
+                }
+              }
+            })
+            .child(
+              TabBar::new("editor-tabs")
+                .selected_index(tab_ix)
+                .on_click(cx.listener(|this, ix, _, cx| this.select_tab(Some(*ix), cx)))
+                .prefix({
+                  let is_checked = !AppState::read(cx, |app_state| app_state.sidebar.collapsed);
+                  Toggle::new("toggle-sidebar")
+                    .checked(is_checked)
+                    .icon({
+                      if is_checked {
+                        IconName::PanelLeftClose
+                      } else {
+                        IconName::PanelLeftOpen
+                      }
                     })
-                    .children(self.tabs.iter().enumerate().map(|(ix, tab)| {
-                      Tab::new()
-                        .px_2()
-                        .on_drag(
-                          MovingLabel {
-                            label: tab.editor.label(cx),
-                            data: ix,
-                          },
-                          {
-                            let view = view.clone();
-                            move |drag, _, _, cx| {
-                              cx.stop_propagation();
-                              _ = view.update(cx, |this, _| this.drop_target = None);
-                              cx.new(|_| drag.clone())
-                            }
-                          },
-                        )
-                        .on_drag_move(cx.listener(move |this, event: &DragMoveEvent<MovingLabel<usize>>, _, cx| {
-                          // Called on every tab during the drag: only the hovered one is the target
-                          let position = event.event.position;
-                          if !event.bounds.contains(&position) {
-                            return;
-                          }
-                          let side = if position.x < event.bounds.center().x {
-                            DropPosition::Before
-                          } else {
-                            DropPosition::After
-                          };
-                          if this.drop_target != Some((ix, side)) {
-                            this.drop_target = Some((ix, side));
-                            cx.notify();
-                          }
-                        }))
-                        .drag_over(move |style, _: &MovingLabel<usize>, _, cx| match drop_target {
-                          Some((target, DropPosition::Before)) if target == ix => {
-                            style.border_l_3().border_color(cx.theme().colors.drop_target)
-                          }
-                          Some((target, DropPosition::After)) if target == ix => {
-                            style.border_r_3().border_color(cx.theme().colors.drop_target)
-                          }
-                          _ => style,
-                        })
-                        .on_drop(cx.listener(move |this, drag: &MovingLabel<usize>, _, cx| {
-                          let side = match this.drop_target.take() {
-                            Some((target, side)) if target == ix => side,
-                            _ => DropPosition::Before,
-                          };
-                          this.move_tab(drag.data, insertion_index(drag.data, ix, side), cx);
-                          cx.notify();
-                        }))
-                        .on_mouse_down(
-                          MouseButton::Middle,
-                          cx.listener(move |this, _, window, cx| {
-                            cx.stop_propagation();
-                            this.close_tab(ix, window, cx);
-                          }),
-                        )
-                        .on_mouse_down(
-                          MouseButton::Right,
-                          cx.listener(move |this, _, _, _| this.context_menu_tab = Some(ix)),
-                        )
-                        .prefix(tab.editor.icon(cx))
-                        .suffix(
-                          Button::new(format!("tab-close-{ix}"))
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::Close)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                              cx.stop_propagation();
-                              this.close_tab(ix, window, cx);
-                            })),
-                        )
-                        .label(tab.editor.label(cx))
-                    })),
-                ),
-            )
-          }),
-      )
+                    .on_click(cx.listener(|_, _, _, cx| cx.emit(EditorEvent::ToggleSidebar)))
+                })
+                .children(self.tabs.iter().enumerate().map(|(ix, tab)| {
+                  Tab::new()
+                    .px_2()
+                    .on_drag(
+                      MovingLabel {
+                        label: tab.editor.label(cx),
+                        data: ix,
+                      },
+                      {
+                        let view = view.clone();
+                        move |drag, _, _, cx| {
+                          cx.stop_propagation();
+                          _ = view.update(cx, |this, _| this.drop_target = None);
+                          cx.new(|_| drag.clone())
+                        }
+                      },
+                    )
+                    .on_drag_move(cx.listener(move |this, event: &DragMoveEvent<MovingLabel<usize>>, _, cx| {
+                      // Called on every tab during the drag: only the hovered one is the target
+                      let position = event.event.position;
+                      if !event.bounds.contains(&position) {
+                        return;
+                      }
+                      let side = if position.x < event.bounds.center().x {
+                        DropPosition::Before
+                      } else {
+                        DropPosition::After
+                      };
+                      if this.drop_target != Some((ix, side)) {
+                        this.drop_target = Some((ix, side));
+                        cx.notify();
+                      }
+                    }))
+                    .drag_over(move |style, _: &MovingLabel<usize>, _, cx| match drop_target {
+                      Some((target, DropPosition::Before)) if target == ix => {
+                        style.border_l_3().border_color(cx.theme().colors.drop_target)
+                      }
+                      Some((target, DropPosition::After)) if target == ix => {
+                        style.border_r_3().border_color(cx.theme().colors.drop_target)
+                      }
+                      _ => style,
+                    })
+                    .on_drop(cx.listener(move |this, drag: &MovingLabel<usize>, _, cx| {
+                      let side = match this.drop_target.take() {
+                        Some((target, side)) if target == ix => side,
+                        _ => DropPosition::Before,
+                      };
+                      this.move_tab(drag.data, insertion_index(drag.data, ix, side), cx);
+                      cx.notify();
+                    }))
+                    .on_mouse_down(
+                      MouseButton::Middle,
+                      cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.close_tab(ix, window, cx);
+                      }),
+                    )
+                    .on_mouse_down(
+                      MouseButton::Right,
+                      cx.listener(move |this, _, _, _| this.context_menu_tab = Some(ix)),
+                    )
+                    .prefix(tab.editor.icon(cx))
+                    .suffix(
+                      Button::new(format!("tab-close-{ix}"))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Close)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                          cx.stop_propagation();
+                          this.close_tab(ix, window, cx);
+                        })),
+                    )
+                    .label(tab.editor.label(cx))
+                })),
+            ),
+        )
+      }))
       .child(div().size_full().map(|this| {
         match self.active_tab.and_then(|tab| self.tabs.get(tab)).map(|tab| &tab.editor) {
           Some(TestEditor::Suite(editor)) => this.child(editor.clone()),

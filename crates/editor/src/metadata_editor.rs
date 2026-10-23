@@ -1,5 +1,3 @@
-use crate::app;
-use crate::ui::components::dialog::{show_edit_desc_dialog, show_rename_dialog};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::collapsible::Collapsible;
 use gpui_kit::component::label::Label;
@@ -8,19 +6,20 @@ use gpui_kit::component::text::markdown;
 use gpui_kit::component::{ActiveTheme, IconName, Sizable, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{Context, Entity, IntoElement, ParentElement, Render, Styled, TextAlign, Window, div};
+use ki_app_shared::dialog::{show_edit_desc_dialog, show_rename_dialog};
 use ki_assets::icon::IconAsset;
 use ki_workspace::test::TestMetadataOwner;
 
 /// Header shared by the editors of every kind of test node: shows its name, id
 /// and path (both copyable), its active status and its markdown description,
 /// with controls to rename it, toggle it and edit its description.
-pub struct HeaderEditor<M: TestMetadataOwner + 'static> {
+pub struct MetadataEditor<M: TestMetadataOwner + 'static> {
   /// The edited node, read when the header is rendered
   meta: Entity<M>,
   content_expanded: bool,
 }
 
-impl<M: TestMetadataOwner> HeaderEditor<M> {
+impl<M: TestMetadataOwner> MetadataEditor<M> {
   /// Creates the header of the node `meta`.
   pub fn new(meta: Entity<M>) -> Self {
     Self {
@@ -30,7 +29,7 @@ impl<M: TestMetadataOwner> HeaderEditor<M> {
   }
 }
 
-impl<M: TestMetadataOwner + 'static> Render for HeaderEditor<M> {
+impl<M: TestMetadataOwner + 'static> Render for MetadataEditor<M> {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     let (path, name, description, disabled) = self
       .meta
@@ -98,7 +97,7 @@ impl<M: TestMetadataOwner + 'static> Render for HeaderEditor<M> {
                   )
                   .text()
                   .compact()
-                  .on_click(move |_, window, cx| app::copy_id(path, window, cx)),
+                  .on_click(move |_, window, cx| ki_app_shared::copy_id(path, window, cx)),
               ),
             )
             .child(
@@ -111,7 +110,7 @@ impl<M: TestMetadataOwner + 'static> Render for HeaderEditor<M> {
                   )
                   .text()
                   .compact()
-                  .on_click(move |_, window, cx| app::copy_path(path, window, cx)),
+                  .on_click(move |_, window, cx| ki_app_shared::copy_path(path, window, cx)),
               ),
             )
             .child(h_flex().gap_x_2().child(Label::new("Description").text_xl()).child(

@@ -9,11 +9,14 @@ ki_assets.workspace = true
 ki_settings.workspace = true
 ki_utils.workspace = true
 ki_workspace.workspace = true
+ki_app_shared.workspace = true
+ki_editor.workspace = true
 
+#Externals
 gpui-kit.workspace = true
 log.workspace = true
 dirs.workspace = true
 uuid.workspace = true
 serde_json.workspace = true
-log4rs = { version = "1", default-features = false, features = ["console_appender", "pattern_encoder", "file_appender"] }
+log4rs.workspace = true
 anyhow.workspace = true

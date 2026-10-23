@@ -4,6 +4,7 @@ use gpui_kit::{App, IntoElement, RenderOnce, SharedString, Window};
 #[derive(IntoElement, Clone)]
 pub enum IconAsset {
   Ban,
+  Braces,
   Duplicate,
   Pencil,
   Profile,
@@ -17,6 +18,7 @@ pub enum IconAsset {
   StepRestPatch,
   StepRestPost,
   StepRestPut,
+  TableProperties,
   TestCase,
   TestStep,
   TestSuite,
@@ -28,6 +30,7 @@ impl IconNamed for IconAsset {
   fn path(self) -> SharedString {
     match self {
       IconAsset::Ban => "icons/ban.svg",
+      IconAsset::Braces => "icons/braces.svg",
       IconAsset::Duplicate => "icons/duplicate.svg",
       IconAsset::Pencil => "icons/pencil.svg",
       IconAsset::Profile => "icons/profile.svg",
@@ -41,6 +44,7 @@ impl IconNamed for IconAsset {
       IconAsset::StepRestPatch => "icons/step-rest-patch.svg",
       IconAsset::StepRestPost => "icons/step-rest-post.svg",
       IconAsset::StepRestPut => "icons/step-rest-put.svg",
+      IconAsset::TableProperties => "icons/table-properties.svg",
       IconAsset::TestCase => "icons/test-case.svg",
       IconAsset::TestStep => "icons/test-step.svg",
       IconAsset::TestSuite => "icons/test-suite.svg",

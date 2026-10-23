@@ -1,7 +1,5 @@
 use crate::actions;
-use gpui_kit::component::WindowExt;
-use gpui_kit::component::notification::Notification;
-use gpui_kit::{App, ClipboardItem, Entity, Size, TitlebarOptions, Window, WindowDecorations, WindowOptions, point, px};
+use gpui_kit::{App, ClipboardItem, Entity, Size, TitlebarOptions, WindowDecorations, WindowOptions, point, px};
 use ki_settings::app_state::AppState;
 use ki_utils::{CASE, STEP, SUITE, TestPath};
 use ki_workspace::test::TestsContainer;
@@ -54,16 +52,6 @@ pub(super) fn build_window_options(cx: &mut App) -> WindowOptions {
     },
     ..Default::default()
   }
-}
-
-pub fn copy_id(path: TestPath, window: &mut Window, cx: &mut App) {
-  cx.write_to_clipboard(ClipboardItem::new_string(path.id().to_string()));
-  window.push_notification(Notification::info("Id copied!"), cx);
-}
-
-pub fn copy_path(path: TestPath, window: &mut Window, cx: &mut App) {
-  cx.write_to_clipboard(ClipboardItem::new_string(path.to_string()));
-  window.push_notification(Notification::info("Path copied!"), cx);
 }
 
 /// Copies the node at `path` in `tests` to the clipboard, serialized as JSON, with metadata telling

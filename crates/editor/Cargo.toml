@@ -1,0 +1,18 @@
+[package]
+name = "ki_editor"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+#Internals
+ki_utils.workspace = true
+ki_workspace.workspace = true
+ki_assets.workspace = true
+ki_settings.workspace = true
+ki_app_shared.workspace = true
+
+#Externals
+gpui-kit.workspace = true
+log.workspace = true

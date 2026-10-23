@@ -1,21 +1,33 @@
-use crate::ui::editor::step_editor::StepDataEvent;
+mod body_editor;
+mod header_editor;
+
+use crate::step_editor::StepDataEvent;
+use crate::step_editor::rest_editor::body_editor::RestBodyEditor;
+use crate::step_editor::rest_editor::header_editor::RestHeaderEditor;
 use gpui_kit::base::input::InputEvent;
 use gpui_kit::base::{IndexPath, h_flex, v_flex};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
-use gpui_kit::component::tab::{Tab, TabBar};
+use gpui_kit::component::tab::TabBar;
 use gpui_kit::component::{ActiveTheme, Colorize, Icon, IconName};
 use gpui_kit::{
   AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription,
   Window, div,
 };
+use ki_app_shared::panel::{Panel, PanelContainer};
 use ki_workspace::test::step_rest::{RestData, RestMethod};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RestEditorPanel {
+  Header,
+  Body,
+}
 
 pub struct RestEditor {
   rest_data: Entity<RestData>,
   endpoint_input_state: Entity<InputState>,
   method_select_state: Entity<SelectState<Vec<RestMethod>>>,
-  tab_ix: usize,
+  panel_container: PanelContainer<RestEditorPanel>,
   _subs: Vec<Subscription>,
 }
 
@@ -37,11 +49,19 @@ impl RestEditor {
       }),
     ];
 
+    let panel_container = PanelContainer::new(
+      vec![
+        Panel::build::<RestData, RestHeaderEditor>(rest_data.clone(), window, cx),
+        Panel::build::<RestData, RestBodyEditor>(rest_data.clone(), window, cx),
+      ],
+      RestEditorPanel::Header,
+    );
+
     Self {
       rest_data,
       endpoint_input_state: url_input_state,
       method_select_state,
-      tab_ix: 0,
+      panel_container,
       _subs,
     }
   }
@@ -92,7 +112,7 @@ impl Render for RestEditor {
           )
           .child(
             div()
-              .id("run-rest-step")
+              .id("run-rest_editor-step")
               .flex()
               .flex_shrink_0()
               .items_center()
@@ -108,12 +128,14 @@ impl Render for RestEditor {
       )
       .child(
         TabBar::new("tabs")
-          .selected_index(self.tab_ix)
+          .selected_index(self.panel_container.selected_ix())
           .segmented()
-          .on_click(cx.listener(|this, selected_index: &usize, _, _| this.tab_ix = *selected_index))
-          .child(Tab::new().label("Headers"))
-          .child(Tab::new().label("Profile"))
-          .child(Tab::new().label("Settings")),
+          .on_click(cx.listener(|this, selected_index: &usize, _, cx| {
+            this.panel_container.set_selected_ix(*selected_index);
+            cx.notify();
+          }))
+          .children(self.panel_container.tabs()),
       )
+      .child(self.panel_container.view())
   }
 }

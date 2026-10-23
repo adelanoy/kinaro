@@ -7,7 +7,7 @@ use gpui_kit::{
 use ki_workspace::variable::{ProfileInfo, ProjectVariables, ProjectVariablesEvent};
 use uuid::Uuid;
 
-pub(super) struct ProfileSelector {
+pub struct ProfileSelector {
   focus_handle: FocusHandle,
   _vars_event_sub: Subscription,
   profile_select_state: Entity<SelectState<Vec<ProfileInfo>>>,
@@ -77,9 +77,7 @@ impl Render for ProfileSelector {
     h_flex()
       .text_sm()
       .gap_x_2()
-      .pb_2()
-      .min_w_56()
-      .child("Profile")
+      .child("Active Profile")
       .child(Select::new(&self.profile_select_state).small())
   }
 }
