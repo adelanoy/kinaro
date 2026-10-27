@@ -1,5 +1,5 @@
-use crate::actions;
 use gpui_kit::{App, ClipboardItem, Entity, Size, TitlebarOptions, WindowDecorations, WindowOptions, point, px};
+use ki_app_shared::actions;
 use ki_settings::app_state::AppState;
 use ki_utils::{CASE, STEP, SUITE, TestPath};
 use ki_workspace::test::TestsContainer;

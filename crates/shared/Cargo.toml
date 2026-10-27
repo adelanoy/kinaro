@@ -12,3 +12,4 @@ ki_workspace.workspace = true
 
 #Externals
 gpui-kit.workspace = true
+serde.workspace = true

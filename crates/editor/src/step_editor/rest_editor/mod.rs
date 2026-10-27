@@ -1,9 +1,9 @@
 mod body_editor;
-mod header_editor;
+mod param_editor;
 
 use crate::step_editor::StepDataEvent;
 use crate::step_editor::rest_editor::body_editor::RestBodyEditor;
-use crate::step_editor::rest_editor::header_editor::RestHeaderEditor;
+use crate::step_editor::rest_editor::param_editor::RestParamEditor;
 use gpui_kit::base::input::InputEvent;
 use gpui_kit::base::{IndexPath, h_flex, v_flex};
 use gpui_kit::component::input::{Input, InputState};
@@ -19,7 +19,7 @@ use ki_workspace::test::step_rest::{RestData, RestMethod};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RestEditorPanel {
-  Header,
+  Params,
   Body,
 }
 
@@ -51,10 +51,10 @@ impl RestEditor {
 
     let panel_container = PanelContainer::new(
       vec![
-        Panel::build::<RestData, RestHeaderEditor>(rest_data.clone(), window, cx),
+        Panel::build::<RestData, RestParamEditor>(rest_data.clone(), window, cx),
         Panel::build::<RestData, RestBodyEditor>(rest_data.clone(), window, cx),
       ],
-      RestEditorPanel::Header,
+      RestEditorPanel::Params,
     );
 
     Self {

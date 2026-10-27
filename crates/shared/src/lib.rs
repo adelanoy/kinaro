@@ -5,6 +5,7 @@ use ki_utils::TestPath;
 
 pub mod dialog;
 pub mod panel;
+pub mod actions;
 
 pub fn copy_id(path: TestPath, window: &mut Window, cx: &mut App) {
   cx.write_to_clipboard(ClipboardItem::new_string(path.id().to_string()));

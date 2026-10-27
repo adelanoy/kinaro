@@ -1,13 +1,25 @@
 use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::{Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div, px};
 use std::sync::LazyLock;
 
 pub static EMPTY_SHARED_STRING: LazyLock<SharedString> = LazyLock::new(|| SharedString::new(""));
 
-pub enum CellState<T> {
-  Unselected,
-  CellSelected(usize),
-  CellEdited(usize, usize, T),
+/// Builds the context menu of a tree node.
+pub type ContextMenuBuilder = dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu;
+
+/// A table cell being edited, along with its edited value not yet written back.
+pub struct EditedCell<T> {
+  pub row: usize,
+  pub col: usize,
+  pub data: T,
+}
+
+impl<T> EditedCell<T> {
+  /// Whether this is the cell at `row`/`col`.
+  pub fn is_at(&self, row: usize, col: usize) -> bool {
+    (self.row, self.col) == (row, col)
+  }
 }
 
 /// Computes a name based on the given name, appended with '_X' where X is an integer and where the `name_X` is the first available in the collection.

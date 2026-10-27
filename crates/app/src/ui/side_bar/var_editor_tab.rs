@@ -1,28 +1,92 @@
-use crate::actions::{Delete, Duplicate, Escape};
 use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::empty::{EmptyDescription, EmptyHeader, EmptyTitle};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::label::Label;
+use gpui_kit::component::menu::{ContextMenuExt, PopupMenu};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
-use gpui_kit::component::{ActiveTheme, Disableable, Icon, IconName, IndexPath, Sizable, WindowExt, h_flex, v_flex};
+use gpui_kit::component::{
+  ActiveTheme, Disableable, FocusableExt, Icon, IconName, IndexPath, Sizable, WindowExt, h_flex, v_flex,
+};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
+use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
 use ki_app_shared::panel::PanelDescriptor;
 use ki_assets::icon::IconAsset;
 use ki_utils::SidebarPanel;
-use ki_utils::ui::{CellState, MovingLabel};
+use ki_utils::ui::{ContextMenuBuilder, EditedCell, MovingLabel};
 use ki_workspace::Project;
-use ki_workspace::variable::{ProfileInfo, ProjectVariables, VariableKind, VariableReference};
+use ki_workspace::variable::{Profile, ProjectVariables, VariableKind, VariableReference};
 use log::warn;
 use uuid::Uuid;
 
-pub(in crate::ui::side_bar) struct VariableEditor {
+pub struct VariableEditor {
   table_state: Entity<TableState<VariableDataTableDelegate>>,
 }
 
 impl VariableEditor {
+  fn on_action_delete(&mut self, _action: &Delete, window: &mut Window, cx: &mut Context<Self>) {
+    if let Some(row_ix) = self
+      .table_state
+      .read(cx)
+      .selected_row()
+      .or_else(|| self.table_state.read(cx).selected_cell().map(|(row, _)| row))
+    {
+      let table_state = self.table_state.clone();
+      window.open_alert_dialog(cx, {
+        move |dialog, _, _| {
+          dialog
+            .title("Delete Variable")
+            .description("Are you sure you want to delete the variable?")
+            .show_cancel(true)
+            .on_ok({
+              let this = table_state.clone();
+              move |_, window, cx| {
+                this.update(cx, |this, cx| {
+                  this.delegate_mut().delete_variable(row_ix, window, cx);
+                  this.clear_selection(cx);
+                });
+                true
+              }
+            })
+        }
+      });
+    }
+  }
+
+  fn on_action_edit(&mut self, _: &Edit, window: &mut Window, cx: &mut Context<Self>) {
+    self.table_state.update(cx, |this, cx| {
+      let Some(cell) = this.selected_cell() else {
+        return;
+      };
+      this.delegate_mut().begin_edit(cell.0, cell.1, window, cx)
+    });
+  }
+
+  fn on_action_duplicate(&mut self, _action: &Duplicate, _window: &mut Window, cx: &mut Context<Self>) {
+    if let Some(row_ix) = self
+      .table_state
+      .read(cx)
+      .selected_row()
+      .or_else(|| self.table_state.read(cx).selected_cell().map(|(row, _)| row))
+    {
+      self.table_state.update(cx, |this, cx| {
+        this.delegate_mut().duplicate_variable(row_ix, cx);
+      });
+    }
+  }
+
+  fn on_action_new(&mut self, _action: &New, _window: &mut Window, cx: &mut Context<Self>) {
+    self.table_state.update(cx, |table_state, cx| {
+      let row_ix = table_state
+        .selected_row()
+        .or_else(|| table_state.selected_cell().map(|(row, _)| row));
+      table_state.delegate_mut().add_variable(row_ix, cx);
+    });
+  }
+
   fn on_table_event(
     &mut self,
     table: &Entity<TableState<VariableDataTableDelegate>>,
@@ -31,30 +95,11 @@ impl VariableEditor {
     cx: &mut Context<Self>,
   ) {
     table.update(cx, |this, cx| match event {
-      TableEvent::SelectCell(row_ix, col_ix) => this.delegate_mut().on_cell_selected(*row_ix, *col_ix, window, cx),
-      TableEvent::DoubleClickedCell(row_ix, col_ix) => this.delegate_mut().on_cell_edited(*row_ix, *col_ix, window, cx),
-      TableEvent::ClearSelection => {
-        this.delegate_mut().cell_state = CellState::Unselected;
-        this.delegate_mut()._cell_input_sub = None;
-      }
+      TableEvent::SelectCell(row_ix, col_ix) => this.delegate_mut().select_cell(*row_ix, *col_ix, window, cx),
+      TableEvent::DoubleClickedCell(row_ix, col_ix) => this.delegate_mut().begin_edit(*row_ix, *col_ix, window, cx),
+      TableEvent::ClearSelection => this.delegate_mut().clear_selection(),
       _ => {}
     });
-  }
-
-  fn on_delete_action(&mut self, _action: &Delete, window: &mut Window, cx: &mut Context<Self>) {
-    self.table_state.update(cx, |this, cx| {
-      this.delegate_mut().show_delete_variable_confirm_dialog(window, cx);
-    });
-  }
-
-  fn on_duplicate_action(&mut self, _action: &Duplicate, window: &mut Window, cx: &mut Context<Self>) {
-    self.table_state.update(cx, |table_state, cx| {
-      table_state.delegate_mut().duplicate_variable(window, cx);
-    });
-  }
-
-  fn on_escape_action(&mut self, _action: &Escape, _window: &mut Window, cx: &mut Context<Self>) {
-    self.table_state.update(cx, |table_state, cx| table_state.clear_selection(cx));
   }
 }
 
@@ -75,7 +120,7 @@ impl PanelDescriptor<SidebarPanel, Project> for VariableEditor {
     cx.new(|cx| {
       let table_state = cx.new(|cx| {
         TableState::new(VariableDataTableDelegate::new(project, window, cx), window, cx)
-          .row_selectable(false)
+          .row_selectable(true)
           .col_selectable(false)
           .cell_selectable(true)
       });
@@ -89,15 +134,118 @@ impl PanelDescriptor<SidebarPanel, Project> for VariableEditor {
 pub struct VariableDataTableDelegate {
   project_vars: Entity<ProjectVariables>,
   table_columns: Vec<Column>,
-  cell_state: CellState<VariableReference>,
-  profile_select_state: Entity<SelectState<Vec<ProfileInfo>>>,
+  edited_cell: Option<EditedCell<VariableReference>>,
+  profile_select_state: Entity<SelectState<Vec<Profile>>>,
   cell_input_state: Entity<InputState>,
   _cell_input_sub: Option<Subscription>,
   var_kind_select_state: Entity<SelectState<Vec<VariableKind>>>,
+  _var_kind_sub: Subscription,
   viewing_profile: Option<Uuid>,
 }
 
 impl VariableDataTableDelegate {
+  fn add_variable(&self, current_row: Option<usize>, cx: &mut Context<TableState<Self>>) {
+    self.project_vars.update(cx, |this, cx| this.add_variable(current_row, cx));
+    cx.notify();
+  }
+
+  fn build_cell_context_menu() -> Box<ContextMenuBuilder> {
+    let builder = move |menu: PopupMenu, _window: &mut Window, _cx: &mut Context<PopupMenu>| {
+      let menu = menu.menu_with_icon("Edit", IconAsset::Pencil, Box::new(Edit)).separator();
+      Self::build_row_context_menu(menu)
+    };
+    Box::new(builder)
+  }
+
+  fn build_row_context_menu(menu: PopupMenu) -> PopupMenu {
+    menu
+      .menu_with_icon("New", IconName::Plus, Box::new(New))
+      .menu_with_icon("Duplicate", IconName::Copy, Box::new(Duplicate))
+      .separator()
+      .menu_with_icon("Delete", IconName::Delete, Box::new(Delete))
+  }
+
+  fn begin_edit(&mut self, row_ix: usize, col_ix: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+    if self.edited_cell.is_none() {
+      let var = self.project_vars.read(cx).references.get(row_ix).unwrap().clone();
+      match col_ix {
+        0 => {
+          self.cell_input_state.update(cx, |state, cx| {
+            state.set_value(var.name.clone(), window, cx);
+            state.focus(window, cx);
+          });
+          self._cell_input_sub = Some(cx.subscribe_in(
+            &self.cell_input_state,
+            window,
+            move |table, input_state, event, window, cx| {
+              Self::on_cell_input_event(table, input_state, event, window, cx, |var, value| var.name = value)
+            },
+          ));
+        }
+        1 => {
+          self.var_kind_select_state.update(cx, |state, cx| {
+            state.set_selected_value(&var.kind, window, cx);
+            state.focus(window, cx);
+          });
+        }
+        2 => {
+          let (_, effective_value) = self.effective_value(&var);
+          self.cell_input_state.update(cx, |state, cx| {
+            state.set_value(effective_value, window, cx);
+            state.focus(window, cx);
+          });
+          let current_profile = self.viewing_profile;
+          self._cell_input_sub = Some(cx.subscribe_in(
+            &self.cell_input_state,
+            window,
+            move |table, input_state, event, window, cx| {
+              Self::on_cell_input_event(table, input_state, event, window, cx, |var, value| {
+                var.set_value(value, current_profile)
+              })
+            },
+          ));
+        }
+        3 => {
+          self.cell_input_state.update(cx, |state, cx| {
+            state.set_value(var.description.clone(), window, cx);
+            state.focus(window, cx);
+          });
+          self._cell_input_sub = Some(cx.subscribe_in(
+            &self.cell_input_state,
+            window,
+            move |table, input_state, event, window, cx| {
+              Self::on_cell_input_event(table, input_state, event, window, cx, |var, value| var.description = value)
+            },
+          ));
+        }
+        _ => unreachable!(),
+      }
+
+      self.edited_cell = Some(EditedCell {
+        row: row_ix,
+        col: col_ix,
+        data: var,
+      });
+    }
+  }
+
+  fn clear_selection(&mut self) {
+    self.edited_cell = None;
+    self._cell_input_sub = None;
+  }
+
+  fn delete_variable(&mut self, row_ix: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+    if let Err(err) = self.project_vars.update(cx, |this, cx| this.delete_variable(row_ix, cx)) {
+      window.push_notification(err, cx);
+    }
+    cx.notify();
+  }
+
+  fn duplicate_variable(&mut self, row_ix: usize, cx: &mut Context<TableState<Self>>) {
+    self.project_vars.update(cx, |this, cx| this.duplicate_variable(row_ix, cx));
+    cx.notify();
+  }
+
   fn new(project: Entity<Project>, window: &mut Window, cx: &mut Context<TableState<Self>>) -> Self {
     let table_columns = vec![
       Column::new("var_name", "Name").width(px(150.0)),
@@ -106,13 +254,13 @@ impl VariableDataTableDelegate {
       Column::new("var_description", "Description").width(px(250.0)),
     ];
     let project_vars = project.read(cx).variables.clone();
-    let profile_infos = project_vars.read(cx).profile_infos();
+    let profile_infos = project_vars.read(cx).profiles.clone();
 
     let profile_select_state = cx.new(|cx| SelectState::new(profile_infos, Some(IndexPath::default()), window, cx));
     cx.subscribe_in(
       &profile_select_state,
       window,
-      move |table, _, event: &SelectEvent<Vec<ProfileInfo>>, _, _| match event {
+      move |table, _, event: &SelectEvent<Vec<Profile>>, _, _| match event {
         SelectEvent::Confirm(profile) => table.delegate_mut().viewing_profile = *profile,
       },
     )
@@ -126,99 +274,32 @@ impl VariableDataTableDelegate {
         cx,
       )
     });
-    cx.subscribe_in(
+    let _var_kind_sub = cx.subscribe_in(
       &var_kind_select_state,
       window,
       move |table, _, event: &SelectEvent<Vec<VariableKind>>, _, _| match event {
         SelectEvent::Confirm(value) if value.is_some() => {
-          if let CellState::CellEdited(_, _, data) = &mut table.delegate_mut().cell_state {
-            data.kind = value.unwrap();
+          if let Some(edited) = &mut table.delegate_mut().edited_cell {
+            edited.data.kind = value.unwrap();
           }
         }
         SelectEvent::Confirm(_) => {}
       },
-    )
-    .detach();
+    );
 
     let cell_input_state = cx.new(|cx| InputState::new(window, cx));
 
     Self {
       project_vars,
       table_columns,
-      cell_state: CellState::Unselected,
+      edited_cell: None,
       profile_select_state,
       cell_input_state,
       _cell_input_sub: None,
       var_kind_select_state,
+      _var_kind_sub,
       viewing_profile: None,
     }
-  }
-
-  fn add_variable(&self, cx: &mut Context<TableState<Self>>) {
-    let current_row = match self.cell_state {
-      CellState::CellSelected(row_ix) => Some(row_ix),
-      CellState::Unselected => None,
-      _ => {
-        return;
-      }
-    };
-    let name = "new variable";
-    self
-      .project_vars
-      .update(cx, |this, cx| this.add_variable(current_row, name, cx));
-  }
-
-  fn show_delete_variable_confirm_dialog(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-    let row_ix = match self.cell_state {
-      CellState::CellSelected(row_ix) => row_ix,
-      _ => {
-        warn!("VariableDataTableDelegate:show_delete_profile_confirm_dialog: no cell selected");
-        return;
-      }
-    };
-    let Some(name) = self.project_vars.read(cx).profiles.get(row_ix).map(|p| p.name.clone()) else {
-      warn!("VariableDataTableDelegate:show_delete_profile_confirm_dialog: invalid selection");
-      return;
-    };
-
-    let this = cx.entity();
-    window.open_alert_dialog(cx, {
-      move |dialog, _, _| {
-        dialog
-          .title("Delete variable")
-          .description(format!("You are about to delete the variable '{}', continue?", name))
-          .show_cancel(true)
-          .on_ok({
-            let this = this.clone();
-            move |_, window, cx| {
-              this.update(cx, |this, cx| {
-                this.delegate_mut().delete_variable(row_ix, window, cx);
-              });
-              true
-            }
-          })
-      }
-    });
-  }
-
-  fn delete_variable(&mut self, row_ix: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-    if let Err(err) = self.project_vars.update(cx, |this, cx| this.delete_variable(row_ix, cx)) {
-      window.push_notification(err, cx);
-    }
-    cx.notify();
-  }
-
-  fn duplicate_variable(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-    let row_ix = match self.cell_state {
-      CellState::CellSelected(row_ix) => row_ix,
-      _ => {
-        return;
-      }
-    };
-    if let Err(err) = self.project_vars.update(cx, |this, cx| this.duplicate_variable(row_ix, cx)) {
-      window.push_notification(err, cx);
-    }
-    cx.notify();
   }
 
   fn revert_override(&mut self, row_ix: usize, cx: &mut Context<TableState<Self>>) {
@@ -234,88 +315,6 @@ impl VariableDataTableDelegate {
     });
   }
 
-  fn on_cell_selected(&mut self, row_ix: usize, col_ix: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-    match self.cell_state {
-      // Same cell being edited, return
-      CellState::CellEdited(edit_row_ix, edit_col_ix, _) if edit_row_ix == row_ix && edit_col_ix == col_ix => {
-        return;
-      }
-      // Other cell being edited, save before
-      CellState::CellEdited(_, _, _) => {
-        self.update_variable(window, cx);
-        self._cell_input_sub = None;
-      }
-      _ => {}
-    }
-    self.cell_state = CellState::CellSelected(row_ix);
-  }
-
-  fn on_cell_edited(&mut self, row_ix: usize, col_ix: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-    if let CellState::CellEdited(current_row_ix, current_col_ix, _) = self.cell_state {
-      if current_row_ix == row_ix && current_col_ix == col_ix {
-        return;
-      }
-      self.update_variable(window, cx);
-      self._cell_input_sub = None;
-    }
-
-    let var = self.project_vars.read(cx).references.get(row_ix).unwrap().clone();
-    match col_ix {
-      0 => {
-        self.cell_input_state.update(cx, |state, cx| {
-          state.set_value(var.name.clone(), window, cx);
-          state.focus(window, cx);
-        });
-        self._cell_input_sub = Some(cx.subscribe_in(
-          &self.cell_input_state,
-          window,
-          move |table, input_state, event, window, cx| {
-            Self::on_cell_input_event(table, input_state, event, window, cx, |var, value| var.name = value)
-          },
-        ));
-      }
-      1 => {
-        self.var_kind_select_state.update(cx, |state, cx| {
-          state.set_selected_value(&var.kind, window, cx);
-          state.focus(window, cx);
-        });
-      }
-      2 => {
-        let (_, effective_value) = self.effective_value(&var);
-        self.cell_input_state.update(cx, |state, cx| {
-          state.set_value(effective_value, window, cx);
-          state.focus(window, cx);
-        });
-        let current_profile = self.viewing_profile;
-        self._cell_input_sub = Some(cx.subscribe_in(
-          &self.cell_input_state,
-          window,
-          move |table, input_state, event, window, cx| {
-            Self::on_cell_input_event(table, input_state, event, window, cx, |var, value| {
-              var.set_value(value, current_profile)
-            })
-          },
-        ));
-      }
-      3 => {
-        self.cell_input_state.update(cx, |state, cx| {
-          state.set_value(var.description.clone(), window, cx);
-          state.focus(window, cx);
-        });
-        self._cell_input_sub = Some(cx.subscribe_in(
-          &self.cell_input_state,
-          window,
-          move |table, input_state, event, window, cx| {
-            Self::on_cell_input_event(table, input_state, event, window, cx, |var, value| var.description = value)
-          },
-        ));
-      }
-      _ => unreachable!(),
-    }
-
-    self.cell_state = CellState::CellEdited(row_ix, col_ix, var);
-  }
-
   fn on_cell_input_event<F>(
     table: &mut TableState<Self>,
     state: &Entity<InputState>,
@@ -328,34 +327,39 @@ impl VariableDataTableDelegate {
   {
     match event {
       InputEvent::Change => {
-        if let CellState::CellEdited(_, _, data) = &mut table.delegate_mut().cell_state {
+        if let Some(edited) = &mut table.delegate_mut().edited_cell {
           let text = state.read(cx).value();
-          f(data, text);
+          f(&mut edited.data, text);
         }
       }
-      InputEvent::PressEnter { secondary: _, shift: _ } | InputEvent::Blur => {
-        table.delegate_mut().end_edit_cell(window, cx);
-        table.focus_handle(cx).focus(window, cx);
-      }
+      InputEvent::PressEnter { .. } | InputEvent::Blur => table.delegate_mut().save_cell(window, cx),
       _ => {}
     }
   }
 
-  fn end_edit_cell(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-    if let CellState::CellEdited(row, _, _) = self.cell_state {
-      self.update_variable(window, cx);
-      self._cell_input_sub = None;
-      self.cell_state = CellState::CellSelected(row);
+  fn select_cell(&mut self, row_ix: usize, col_ix: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+    if self.edited_cell.as_ref().is_some_and(|edited| edited.is_at(row_ix, col_ix)) {
+      return;
     }
+    self.save_cell(window, cx);
   }
 
-  fn update_variable(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-    if let CellState::CellEdited(_, _, data) = &self.cell_state
-      && let Err(err) = self
-        .project_vars
-        .update(cx, |this, cx| this.update_variable(data.clone(), cx))
-    {
-      window.push_notification(err, cx);
+  fn save_cell(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+    if let Some(edited) = self.edited_cell.take() {
+      if let Err(err) = self.project_vars.update(cx, |vars, cx| vars.update_variable(edited.data, cx)) {
+        window.push_notification(err, cx);
+      }
+      self._cell_input_sub = None;
+      if self.cell_input_state.read(cx).focus_handle(cx).is_focused(window)
+        || self
+          .var_kind_select_state
+          .read(cx)
+          .focus_handle(cx)
+          .contains_focused(window, cx)
+      {
+        cx.focus_self(window);
+      }
+      cx.notify();
     }
   }
 
@@ -389,7 +393,7 @@ impl TableDelegate for VariableDataTableDelegate {
   }
 
   fn render_tr(&mut self, row_ix: usize, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> Stateful<Div> {
-    let is_editing = matches!(self.cell_state, CellState::CellEdited(_, _, _));
+    let is_editing = self.edited_cell.is_some();
     div().id(("row", row_ix)).when(!is_editing, |this| {
       this
         .on_drag(
@@ -408,6 +412,16 @@ impl TableDelegate for VariableDataTableDelegate {
     })
   }
 
+  fn context_menu(
+    &mut self,
+    _row_ix: usize,
+    menu: PopupMenu,
+    _window: &mut Window,
+    _cx: &mut Context<TableState<Self>>,
+  ) -> PopupMenu {
+    Self::build_row_context_menu(menu)
+  }
+
   fn render_td(
     &mut self,
     row_ix: usize,
@@ -416,37 +430,82 @@ impl TableDelegate for VariableDataTableDelegate {
     cx: &mut Context<TableState<Self>>,
   ) -> impl IntoElement {
     let var = &self.project_vars.read(cx).references[row_ix];
-    match &self.cell_state {
-      CellState::CellEdited(row, col, _) if *row == row_ix && *col == col_ix => match col_ix {
+    match &self.edited_cell {
+      Some(edited) if edited.is_at(row_ix, col_ix) => match col_ix {
         0 | 2 | 3 => Input::new(&self.cell_input_state).small().into_any_element(),
         1 => Select::new(&self.var_kind_select_state).small().into_any_element(),
         _ => unreachable!(),
       },
       _ => match col_ix {
-        0 => h_flex().size_full().child(var.name.clone()),
-        1 => h_flex().size_full().child(SharedString::new(format!("{}", var.kind))),
+        0 => h_flex()
+          .size_full()
+          .child(var.name.clone())
+          // Force selection on right click, or the .context_menu below will consume the event, hence the table never receives the rightClick event
+          .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |table, _, window, cx| {
+              table.focus_handle(cx).focus(window, cx);
+              table.set_selected_cell(row_ix, col_ix, cx);
+            }),
+          )
+          .context_menu(Self::build_cell_context_menu())
+          .into_any_element(),
+        1 => h_flex()
+          .size_full()
+          .child(SharedString::new(format!("{}", var.kind)))
+          .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |table, _, window, cx| {
+              table.focus_handle(cx).focus(window, cx);
+              table.set_selected_cell(row_ix, col_ix, cx);
+            }),
+          )
+          .context_menu(Self::build_cell_context_menu())
+          .into_any_element(),
         2 => {
           let (overridden, effective_value) = self.effective_value(var);
-          h_flex().size_full().when_else(
-            overridden,
-            |this| {
-              this
-                .justify_between()
-                .child(Label::new(effective_value.clone()).text_color(cx.theme().green))
-                .child(Button::new("btn-revert-var").xsmall().ghost().icon(IconName::Undo).on_click({
-                  let table = cx.entity();
-                  move |_, _, cx| {
-                    cx.stop_propagation();
-                    table.update(cx, |table, cx| {
-                      table.delegate_mut().revert_override(row_ix, cx);
-                    });
-                  }
-                }))
-            },
-            |this| this.child(Label::new(effective_value.clone())),
-          )
+          h_flex()
+            .size_full()
+            .on_mouse_down(
+              MouseButton::Right,
+              cx.listener(move |table, _, window, cx| {
+                table.focus_handle(cx).focus(window, cx);
+                table.set_selected_cell(row_ix, col_ix, cx);
+              }),
+            )
+            .context_menu(Self::build_cell_context_menu())
+            .when_else(
+              overridden,
+              |this| {
+                this
+                  .justify_between()
+                  .child(Label::new(effective_value.clone()).text_color(cx.theme().green))
+                  .child(Button::new("btn-revert-var").xsmall().ghost().icon(IconName::Undo).on_click({
+                    let table = cx.entity();
+                    move |_, _, cx| {
+                      cx.stop_propagation();
+                      table.update(cx, |table, cx| {
+                        table.delegate_mut().revert_override(row_ix, cx);
+                      });
+                    }
+                  }))
+              },
+              |this| this.child(Label::new(effective_value.clone())),
+            )
+            .into_any_element()
         }
-        3 => h_flex().size_full().child(var.description.clone()),
+        3 => h_flex()
+          .size_full()
+          .child(var.description.clone())
+          .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |table, _, window, cx| {
+              table.focus_handle(cx).focus(window, cx);
+              table.set_selected_cell(row_ix, col_ix, cx);
+            }),
+          )
+          .context_menu(Self::build_cell_context_menu())
+          .into_any_element(),
         _ => unreachable!(),
       }
       .into_any_element(),
@@ -454,113 +513,115 @@ impl TableDelegate for VariableDataTableDelegate {
   }
 
   fn render_empty(&mut self, _window: &mut Window, _cx: &mut Context<TableState<Self>>) -> impl IntoElement {
-    div().size_full().items_center().child("No Data").into_any_element()
+    component::empty::Empty::new().header(
+      EmptyHeader::new()
+        .title(EmptyTitle::new().child("No variable defined"))
+        .description(EmptyDescription::new().child("Add a variable by clicking the '+' button")),
+    )
   }
 }
 
 impl Render for VariableEditor {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-    let table_state = self.table_state.clone();
-    let switch_on = table_state.read(cx).delegate().viewing_profile;
-    let (is_editing, no_selection) = self.table_state.read_with(cx, |this, _| {
-      let delegate = this.delegate();
+    let (switch_on, is_editing, is_selection) = self.table_state.read_with(cx, |table, _| {
       (
-        matches!(delegate.cell_state, CellState::CellEdited(_, _, _)),
-        matches!(delegate.cell_state, CellState::Unselected),
+        table.delegate().viewing_profile.is_some(),
+        table.delegate().edited_cell.is_some(),
+        table.selected_cell().is_some() || table.selected_row().is_some(),
       )
     });
-
+    let focus_handle = self.table_state.focus_handle(cx);
     v_flex()
-      .track_focus(&table_state.focus_handle(cx))
-      .on_action(cx.listener(Self::on_delete_action))
-      .on_action(cx.listener(Self::on_duplicate_action))
-      .on_action(cx.listener(Self::on_escape_action))
+      .track_focus(&focus_handle)
+      .on_action(cx.listener(Self::on_action_delete))
+      .on_action(cx.listener(Self::on_action_duplicate))
+      .on_action(cx.listener(Self::on_action_edit))
+      .on_action(cx.listener(Self::on_action_new))
       .p_1()
       .size_full()
       .gap_y_2()
       .child(
+        h_flex().w_full().justify_between().child(
+          h_flex()
+            .gap_x_2()
+            .child(
+              Switch::new("switch-show-profile")
+                .label(SharedString::new("Show for profile"))
+                .checked(switch_on)
+                .small()
+                .on_click({
+                  let table_state = self.table_state.clone();
+                  move |value, _, cx| {
+                    table_state.update(cx, |state, cx| {
+                      let delegate = state.delegate_mut();
+                      if *value {
+                        delegate.viewing_profile = delegate.profile_select_state.read(cx).selected_value().copied();
+                      } else {
+                        delegate.viewing_profile = None;
+                      }
+                    })
+                  }
+                }),
+            )
+            .when(switch_on, |this| {
+              this.child({
+                let profile_select_state = &self.table_state.read(cx).delegate().profile_select_state;
+                Select::new(profile_select_state).small().min_w_32()
+              })
+            }),
+        ),
+      )
+      .child(
         h_flex()
+          .gap_x_2()
           .w_full()
-          .justify_between()
+          .justify_end()
           .child(
-            h_flex()
-              .gap_x_2()
-              .child(
-                Switch::new("switch-show-profile")
-                  .label(SharedString::new("Show for profile"))
-                  .checked(switch_on.is_some())
-                  .small()
-                  .on_click({
-                    let table_state = table_state.clone();
-                    move |value, _, cx| {
-                      table_state.update(cx, |state, cx| {
-                        let delegate = state.delegate_mut();
-                        if *value {
-                          delegate.viewing_profile = delegate.profile_select_state.read(cx).selected_value().copied();
-                        } else {
-                          delegate.viewing_profile = None;
-                        }
-                      })
-                    }
-                  }),
-              )
-              .when(switch_on.is_some(), |this| {
-                this.child({
-                  let profile_select_state = &table_state.read(cx).delegate().profile_select_state;
-                  Select::new(profile_select_state).small().min_w_32()
-                })
+            Button::new("btn-add-var")
+              .ghost()
+              .small()
+              .disabled(is_editing)
+              .icon(IconName::Plus)
+              .tooltip_with_action("Add a new variable", &New, None)
+              .on_click({
+                let focus_handle = focus_handle.clone();
+                move |_, window, cx| {
+                  focus_handle.focus(window, cx);
+                  window.dispatch_action(Box::new(New), cx)
+                }
               }),
           )
           .child(
-            h_flex()
-              .gap_x_2()
-              .flex_row_reverse()
-              .child(
-                Button::new("btn-delete-variable")
-                  .ghost()
-                  .small()
-                  .disabled(is_editing || no_selection)
-                  .icon(IconName::Delete)
-                  .tooltip_with_action("Delete the selected variable", &Delete, None)
-                  .on_click(move |_, window, cx| {
-                    window.dispatch_action(Box::new(Delete), cx);
-                  }),
-              )
-              .child(Separator::vertical())
-              .child(
-                Button::new("btn-duplicate-variable")
-                  .ghost()
-                  .small()
-                  .disabled(is_editing || no_selection)
-                  .icon(IconName::Copy)
-                  .tooltip_with_action("Duplicate the selected variable", &Duplicate, None)
-                  .on_click({
-                    let table_state = table_state.clone();
-                    move |_, _, cx| {
-                      table_state.update(cx, |this, cx| {
-                        this.delegate_mut().add_variable(cx);
-                      });
-                    }
-                  }),
-              )
-              .child(
-                Button::new("btn-add-variable")
-                  .ghost()
-                  .small()
-                  .disabled(is_editing)
-                  .icon(IconName::Plus)
-                  .tooltip("Adds a new variable")
-                  .on_click({
-                    let table_state = table_state.clone();
-                    move |_, _, cx| {
-                      table_state.update(cx, |this, cx| {
-                        this.delegate_mut().add_variable(cx);
-                      });
-                    }
-                  }),
-              ),
+            Button::new("btn-duplicate-var")
+              .ghost()
+              .small()
+              .disabled(is_editing || !is_selection)
+              .icon(IconName::Copy)
+              .tooltip_with_action("Duplicate the selected var", &Duplicate, None)
+              .on_click({
+                let focus_handle = focus_handle.clone();
+                move |_, window, cx| {
+                  focus_handle.focus(window, cx);
+                  window.dispatch_action(Box::new(Duplicate), cx)
+                }
+              }),
+          )
+          .child(Separator::vertical())
+          .child(
+            Button::new("btn-delete-var")
+              .ghost()
+              .small()
+              .disabled(is_editing || !is_selection)
+              .icon(IconName::Delete)
+              .tooltip_with_action("Delete the selected variable", &Delete, None)
+              .on_click({
+                move |_, window, cx| {
+                  focus_handle.focus(window, cx);
+                  window.dispatch_action(Box::new(Delete), cx)
+                }
+              }),
           ),
       )
-      .child(DataTable::new(&self.table_state).small())
+      .child(DataTable::new(&self.table_state).small().focus_ring(false))
   }
 }

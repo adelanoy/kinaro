@@ -4,13 +4,13 @@ use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::{
   App, AppContext, Context, Entity, FocusHandle, Focusable, IntoElement, ParentElement, Render, Styled, Subscription, Window,
 };
-use ki_workspace::variable::{ProfileInfo, ProjectVariables, ProjectVariablesEvent};
+use ki_workspace::variable::{Profile, ProjectVariables, ProjectVariablesEvent};
 use uuid::Uuid;
 
 pub struct ProfileSelector {
   focus_handle: FocusHandle,
   _vars_event_sub: Subscription,
-  profile_select_state: Entity<SelectState<Vec<ProfileInfo>>>,
+  profile_select_state: Entity<SelectState<Vec<Profile>>>,
 }
 
 impl ProfileSelector {
@@ -18,7 +18,7 @@ impl ProfileSelector {
     let profile_select_state = cx.new(|cx| SelectState::new(vec![], Some(IndexPath::default()), window, cx));
     cx.subscribe(&profile_select_state, {
       let vars = vars.clone();
-      move |_, _, event: &SelectEvent<Vec<ProfileInfo>>, cx| match event {
+      move |_, _, event: &SelectEvent<Vec<Profile>>, cx| match event {
         SelectEvent::Confirm(value) => vars.update(cx, |this, cx| this.switch_profile(*value, cx)),
       }
     })
@@ -26,7 +26,7 @@ impl ProfileSelector {
 
     let _vars_event_sub = cx.subscribe_in(&vars, window, move |this, vars, event, window, cx| match event {
       ProjectVariablesEvent::ProfilesChanged => {
-        this.update_profiles_select_state(vars.read(cx).profile_infos(), window, cx);
+        this.update_profiles_select_state(vars.read(cx).profiles.clone(), window, cx);
       }
       ProjectVariablesEvent::ActiveProfile(id) => {
         this.update_selected_profile_select_state(id, window, cx);
@@ -40,13 +40,13 @@ impl ProfileSelector {
       profile_select_state,
     };
 
-    this.update_profiles_select_state(vars.read(cx).profile_infos(), window, cx);
+    this.update_profiles_select_state(vars.read(cx).profiles.clone(), window, cx);
     this.update_selected_profile_select_state(&vars.read(cx).active_profile(), window, cx);
 
     this
   }
 
-  fn update_profiles_select_state(&self, profiles: Vec<ProfileInfo>, window: &mut Window, cx: &mut Context<Self>) {
+  fn update_profiles_select_state(&self, profiles: Vec<Profile>, window: &mut Window, cx: &mut Context<Self>) {
     self
       .profile_select_state
       .update(cx, |state, cx| state.set_items(profiles, window, cx));

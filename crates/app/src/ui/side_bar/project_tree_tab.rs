@@ -1,9 +1,6 @@
-use crate::actions::{
-  AddDelayStep, AddTestCase, AddTestSuite, CopyId, CopyPath, Delete, Duplicate, Escape, MoveDown, MoveUp,
-  PROJECT_TREE_CONTEXT_KEY, Rename, SwitchNodeActiveStatus,
-};
 use crate::app;
 use crate::ui::components::tree::{ProjectTreeNode, Tree, TreeDelegate, TreeEvent, TreeState};
+use gpui_kit::base::actions::Cancel;
 use gpui_kit::base::input::{Copy, Paste};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{
@@ -15,10 +12,14 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
+use ki_app_shared::actions::{
+  AddDelayStep, AddTestCase, AddTestSuite, CopyId, CopyPath, Delete, Duplicate, Edit, MoveDown, MoveUp, PROJECT_TREE_CONTEXT_KEY,
+  SwitchNodeActiveStatus,
+};
 use ki_app_shared::dialog::show_rename_dialog;
 use ki_app_shared::panel::PanelDescriptor;
 use ki_assets::icon::IconAsset;
-use ki_utils::ui::MovingLabel;
+use ki_utils::ui::{ContextMenuBuilder, MovingLabel};
 use ki_utils::{CASE, DropPosition, STEP, SUITE, SidebarPanel};
 use ki_utils::{Offset, TestPath};
 use ki_workspace::error::ProjectError;
@@ -26,9 +27,6 @@ use ki_workspace::test::{TestMetadataOwner, TestsContainer, can_move};
 use ki_workspace::{Project, TestStep, TestSuite, TestSuiteChild};
 use log::warn;
 use std::collections::HashSet;
-
-/// Builds the context menu of a tree node.
-type ContextMenuBuilder = dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu;
 
 /// The project tree panel: shows the project's test suites, cases and steps as a tree, and edits
 /// them through keyboard actions, a context menu and drag and drop.
@@ -131,7 +129,7 @@ impl ProjectTree {
   }
 
   /// Clears the selection.
-  fn on_action_escape(&mut self, _action: &Escape, _window: &mut Window, cx: &mut Context<Self>) {
+  fn on_action_escape(&mut self, _action: &Cancel, _window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree_state, cx| tree_state.clear_selection(cx));
   }
 
@@ -158,7 +156,7 @@ impl ProjectTree {
   }
 
   /// Opens the rename dialog of the selected node.
-  fn on_action_rename(&mut self, _: &Rename, window: &mut Window, cx: &mut Context<Self>) {
+  fn on_action_rename(&mut self, _: &Edit, window: &mut Window, cx: &mut Context<Self>) {
     self.tree_state.update(cx, |tree, cx| {
       let Some(path) = tree.selected_path() else {
         warn!("ProjectTree:on_rename_node: no tree_state selected path");
@@ -704,7 +702,7 @@ fn build_context_menu(node: &ProjectTreeNode) -> Box<ContextMenuBuilder> {
       .menu_with_icon("Duplicate", IconAsset::Duplicate, Box::new(Duplicate))
       .separator()
       .menu_with_check("Enabled", !disabled, Box::new(SwitchNodeActiveStatus))
-      .menu_with_icon("Rename", IconAsset::Rename, Box::new(Rename))
+      .menu_with_icon("Rename", IconAsset::Rename, Box::new(Edit))
       .separator()
       .menu_with_icon("Delete", IconName::Delete, Box::new(Delete))
       .separator()

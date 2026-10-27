@@ -3767,6 +3767,7 @@ dependencies = [
  "gpui-kit",
  "ki_utils",
  "ki_workspace",
+ "serde",
 ]
 
 [[package]]
