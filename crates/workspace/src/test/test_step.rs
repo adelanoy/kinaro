@@ -216,10 +216,11 @@ impl TestMetadataOwner for TestStep {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::test::step_rest::{RestBody, RestMethod};
+  use crate::test::step_rest::RestBody;
   use crate::test::test_fixtures::*;
   use gpui_kit::TestAppContext;
-  use ki_project::{FileDelayData, FileRestBody, FileRestData, FileRestMethod};
+  use ki_project::{FileDelayData, FileRestBody, FileRestData};
+  use ki_utils::http::{ContentType, HttpMethod};
 
   #[gpui_kit::test]
   fn new_delay_has_a_fresh_id(cx: &mut TestAppContext) {
@@ -265,11 +266,11 @@ mod tests {
     let file = FileTestStep {
       info: file_meta(Uuid::new_v4(), "Rest"),
       data: FileStepData::RestStep(FileRestData {
-        method: FileRestMethod::Post,
+        method: HttpMethod::Post,
         endpoint: "/items".to_string(),
         params: vec![],
         body: FileRestBody::Raw {
-          content_type: "application/json".to_string(),
+          content_type: ContentType::ApplicationJson,
           lines: vec!["{".to_string(), "}".to_string()],
         },
       }),
@@ -282,7 +283,7 @@ mod tests {
         panic!("should be a rest step");
       };
       let rest = rest.read(cx);
-      assert_eq!(rest.method, RestMethod::Post);
+      assert_eq!(rest.method, HttpMethod::Post);
       assert!(matches!(rest.body, RestBody::Raw { .. }));
       assert_eq!(
         serde_json::to_value(step.get_file(cx)).unwrap(),

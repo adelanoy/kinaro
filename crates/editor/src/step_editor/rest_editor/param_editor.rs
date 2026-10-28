@@ -12,12 +12,16 @@ use gpui_kit::component::separator::Separator;
 use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
 use gpui_kit::component::{ActiveTheme, Disableable, FocusableExt, Icon, IconName, Sizable, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{App, AppContext, Context, Entity, Focusable, InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString, Styled, Subscription, Window, px};
+use gpui_kit::{
+  App, AppContext, Context, Entity, Focusable, InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString,
+  Styled, Subscription, Window, px,
+};
 use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
 use ki_app_shared::panel::PanelDescriptor;
 use ki_app_shared::{ContextMenuBuilder, EditedCell};
 use ki_assets::icon::IconAsset;
-use ki_workspace::test::step_rest::{RestData, RestParam, RestParamType};
+use ki_utils::http::RestParamType;
+use ki_workspace::test::step_rest::{RestData, RestParam};
 
 pub struct RestParamEditor {
   table_state: Entity<TableState<RestParamDataTableDelegate>>,
@@ -95,9 +99,7 @@ impl RestParamEditor {
     cx: &mut Context<Self>,
   ) {
     table.update(cx, |this, cx| match event {
-      TableEvent::SelectCell(row_ix, col_ix) => {
-        this.delegate_mut().select_cell(*row_ix, *col_ix, window, cx)
-      }
+      TableEvent::SelectCell(row_ix, col_ix) => this.delegate_mut().select_cell(*row_ix, *col_ix, window, cx),
       TableEvent::DoubleClickedCell(row_ix, col_ix) => this.delegate_mut().begin_edit(*row_ix, *col_ix, window, cx),
       TableEvent::ClearSelection => this.delegate_mut().clear_selection(),
       _ => {}
@@ -148,24 +150,29 @@ impl RestParamDataTableDelegate {
     cx.notify();
   }
 
-  fn build_cell_context_menu(col_ix: usize) -> Box<ContextMenuBuilder> {
+  fn build_cell_context_menu(col_ix: usize, editable: bool) -> Box<ContextMenuBuilder> {
     let builder = move |menu: PopupMenu, _window: &mut Window, _cx: &mut Context<PopupMenu>| {
-      let menu = if col_ix != 0 {
+      let menu = if col_ix != 0 && editable {
         menu.menu_with_icon("Edit", IconAsset::Pencil, Box::new(Edit)).separator()
       } else {
         menu
       };
-      Self::build_row_context_menu(menu)
+      Self::build_row_context_menu(editable, menu)
     };
     Box::new(builder)
   }
 
-  fn build_row_context_menu(menu: PopupMenu) -> PopupMenu {
-    menu
-      .menu_with_icon("New", IconName::Plus, Box::new(New))
-      .menu_with_icon("Duplicate", IconName::Copy, Box::new(Duplicate))
-      .separator()
-      .menu_with_icon("Delete", IconName::Delete, Box::new(Delete))
+  fn build_row_context_menu(editable: bool, menu: PopupMenu) -> PopupMenu {
+    menu.menu_with_icon("New", IconName::Plus, Box::new(New)).map(|menu| {
+      if editable {
+        menu
+          .menu_with_icon("Duplicate", IconName::Copy, Box::new(Duplicate))
+          .separator()
+          .menu_with_icon("Delete", IconName::Delete, Box::new(Delete))
+      } else {
+        menu
+      }
+    })
   }
 
   /// Starts editing `cell`, unless another cell is already being edited or `cell` is not editable.
@@ -332,12 +339,13 @@ impl TableDelegate for RestParamDataTableDelegate {
 
   fn context_menu(
     &mut self,
-    _row_ix: usize,
+    row_ix: usize,
     menu: PopupMenu,
     _window: &mut Window,
-    _cx: &mut Context<TableState<Self>>,
+    cx: &mut Context<TableState<Self>>,
   ) -> PopupMenu {
-    Self::build_row_context_menu(menu)
+    let editable = !self.rest_data.read(cx).params()[row_ix].generated();
+    Self::build_row_context_menu(editable, menu)
   }
 
   fn render_td(
@@ -359,36 +367,42 @@ impl TableDelegate for RestParamDataTableDelegate {
     } else {
       let param = &self.rest_data.read(cx).params()[row_ix];
       let is_disabled = param.disabled;
+      let editable = !param.generated();
       match col_ix {
         0 => h_flex()
           .size_full()
-          .items_center()
-          // Force selection on right click, or the .context_menu below will consume the event, hence the table never receives the rightClick event
-          .on_mouse_down(
-            MouseButton::Right,
-            cx.listener(move |table, _, window, cx| {
-              table.focus_handle(cx).focus(window, cx);
-              table.set_selected_cell(row_ix, col_ix, cx);
-            }),
-          )
-          .context_menu(Self::build_cell_context_menu(0))
-          .child(
-            Checkbox::new(format!("param-enabled-{}", row_ix))
-              .checked(!param.disabled)
-              .on_change(cx.listener(move |table, value, _, cx| {
-                let delegate = table.delegate_mut();
-                let mut param = delegate.rest_data.read(cx).params()[row_ix].clone();
-                param.disabled = !value;
-                delegate
-                  .rest_data
-                  .update(cx, |rest, cx| rest.update_params(row_ix, param, cx));
-                cx.notify();
-              })),
-          )
+          .when(editable, |this| {
+            this
+              .items_center()
+              // Force selection on right click, or the .context_menu below will consume the event, hence the table never receives the rightClick event
+              .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |table, _, window, cx| {
+                  table.focus_handle(cx).focus(window, cx);
+                  table.set_selected_cell(row_ix, col_ix, cx);
+                }),
+              )
+              .child(
+                Checkbox::new(format!("param-enabled-{}", row_ix))
+                  .checked(!param.disabled)
+                  .on_change(cx.listener(move |table, value, _, cx| {
+                    let delegate = table.delegate_mut();
+                    let mut param = delegate.rest_data.read(cx).params()[row_ix].clone();
+                    param.disabled = !value;
+                    delegate
+                      .rest_data
+                      .update(cx, |rest, cx| rest.update_params(row_ix, param, cx));
+                    cx.notify();
+                  })),
+              )
+          })
+          .context_menu(Self::build_cell_context_menu(0, editable))
           .into_any_element(),
         1 => h_flex()
           .size_full()
-          .child(Label::new(param.name.clone()).when(is_disabled, |label| label.text_color(cx.theme().muted_foreground)))
+          .child(Label::new(param.name.clone()).when(is_disabled || !editable, |label| {
+            label.text_color(cx.theme().muted_foreground)
+          }))
           .on_mouse_down(
             MouseButton::Right,
             cx.listener(move |table, _, window, cx| {
@@ -396,11 +410,13 @@ impl TableDelegate for RestParamDataTableDelegate {
               table.set_selected_cell(row_ix, col_ix, cx);
             }),
           )
-          .context_menu(Self::build_cell_context_menu(1))
+          .context_menu(Self::build_cell_context_menu(1, editable))
           .into_any_element(),
         2 => h_flex()
           .size_full()
-          .child(Label::new(&param.param_type).when(is_disabled, |label| label.text_color(cx.theme().muted_foreground)))
+          .child(Label::new(&param.param_type).when(is_disabled || !editable, |label| {
+            label.text_color(cx.theme().muted_foreground)
+          }))
           .on_mouse_down(
             MouseButton::Right,
             cx.listener(move |table, _, window, cx| {
@@ -408,11 +424,13 @@ impl TableDelegate for RestParamDataTableDelegate {
               table.set_selected_cell(row_ix, col_ix, cx);
             }),
           )
-          .context_menu(Self::build_cell_context_menu(2))
+          .context_menu(Self::build_cell_context_menu(2, editable))
           .into_any_element(),
         3 => h_flex()
           .size_full()
-          .child(Label::new(param.value.clone()).when(is_disabled, |label| label.text_color(cx.theme().muted_foreground)))
+          .child(Label::new(param.value.clone()).when(is_disabled || !editable, |label| {
+            label.text_color(cx.theme().muted_foreground)
+          }))
           .on_mouse_down(
             MouseButton::Right,
             cx.listener(move |table, _, window, cx| {
@@ -420,7 +438,7 @@ impl TableDelegate for RestParamDataTableDelegate {
               table.set_selected_cell(row_ix, col_ix, cx);
             }),
           )
-          .context_menu(Self::build_cell_context_menu(3))
+          .context_menu(Self::build_cell_context_menu(3, editable))
           .into_any_element(),
         _ => unreachable!(),
       }
