@@ -1,9 +1,9 @@
+use crate::step_editor::rest_editor::RestEditorPanel;
 use gpui_kit::component::Icon;
-use gpui_kit::{div, App, Context, Entity, IntoElement, Render, Window, AppContext, ParentElement};
+use gpui_kit::{App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Window, div};
 use ki_app_shared::panel::PanelDescriptor;
 use ki_assets::icon::IconAsset;
 use ki_workspace::test::step_rest::RestData;
-use crate::step_editor::rest_editor::RestEditorPanel;
 
 pub struct RestBodyEditor {
   _rest_data: Entity<RestData>,

@@ -6,7 +6,7 @@ pub mod ui;
 pub use conversion::{from_multiline, to_multiline};
 pub use date_time::*;
 pub use shared::*;
-pub use ui::{CellState, next_available_name};
+pub use ui::{EditedCell, next_available_name};
 
 /// Clipboard metadata of a copied test suite
 pub const SUITE: &str = "Suite";

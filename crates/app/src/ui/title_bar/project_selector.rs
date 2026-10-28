@@ -1,4 +1,3 @@
-use crate::actions::{CreateProject, OpenProject};
 use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants};
 use gpui_kit::component::dialog::{DialogAction, DialogClose, DialogFooter};
 use gpui_kit::component::input::{Input, InputState};
@@ -12,6 +11,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
+use ki_app_shared::actions::{CreateProject, OpenProject};
 use ki_assets::icon::IconAsset;
 use ki_workspace::{Project, Workspace, WorkspaceEvent, WorkspaceProjectInfo};
 use std::path::PathBuf;

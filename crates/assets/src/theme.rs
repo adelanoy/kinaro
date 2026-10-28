@@ -34,6 +34,7 @@ pub(crate) fn init(cx: &mut App) {
   if let Some(theme) = ThemeRegistry::global(cx).themes().get("Ayu Dark").cloned() {
     Theme::global_mut(cx).apply_config(&theme);
   }
+  Theme::global_mut(cx).focus_ring = false;
   let theme_prefs = AppState::read(cx, |app_state| app_state.theme);
   Theme::change(theme_prefs, None, cx);
 }

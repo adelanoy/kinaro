@@ -15,7 +15,10 @@ impl SuiteEditor {
   /// Creates the editor of `suite`.
   pub fn new(suite: Entity<TestSuite>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
     let header_editor = cx.new(|_| MetadataEditor::new(suite.clone()));
-    Self { suite, metadata_editor: header_editor }
+    Self {
+      suite,
+      metadata_editor: header_editor,
+    }
   }
 
   /// Returns the label of the editor's tab: the current name of the test suite.

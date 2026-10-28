@@ -5,7 +5,7 @@ use gpui_kit::{Context, EventEmitter, SharedString};
 use ki_project::{FileProfile, FileProjectVariables, FileVariable, FileVariableKind};
 use ki_utils::ui::next_available_name;
 use log::warn;
-use std::cmp::Ordering;
+use std::cmp::{Ordering, min};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use uuid::Uuid;
@@ -88,22 +88,17 @@ impl ProjectVariables {
   /// Adds a profile with the given name
   /// # Events
   /// Emits a [`ProjectVariablesEvent::ProfilesChanged`]
-  pub fn add_profile(&mut self, index: Option<usize>, name: &str, cx: &mut Context<Self>) {
-    let name = next_available_name(name, self.profiles.iter().map(|p| p.name.clone()));
+  pub fn add_profile(&mut self, row_ix: Option<usize>, cx: &mut Context<Self>) {
+    let name = next_available_name("new profile", self.profiles.iter().map(|p| p.name.clone()));
     let new_profile = Profile {
       id: Uuid::new_v4(),
-      name: SharedString::new(name),
+      name,
       description: Default::default(),
     };
-    if let Some(index) = index {
-      if index > self.profiles.len() - 1 {
-        self.profiles.push(new_profile);
-      } else {
-        self.profiles.insert(index, new_profile);
-      }
-    } else {
-      self.profiles.push(new_profile);
-    }
+    let ix = row_ix
+      .map(|ix| min(ix + 1, self.profiles.len()))
+      .unwrap_or(self.profiles.len());
+    self.profiles.insert(ix, new_profile);
     cx.emit(ProjectVariablesEvent::ProfilesChanged);
   }
 
@@ -135,27 +130,18 @@ impl ProjectVariables {
   /// Duplicates a profile, attributing a new id and copying all fields. Name is appended with *_X* where X is an integer.
   ///
   /// The copy is placed right after the original
-  /// # Result
-  /// Returns a [`ProjectError::ProfileNotFound`] if the row is out of bound
   /// # Events
   /// Emits a [`ProjectVariablesEvent::ProfilesChanged`] if the profile
-  pub fn duplicate_profile(&mut self, index: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
+  pub fn duplicate_profile(&mut self, index: usize, cx: &mut Context<Self>) {
     let Some(profile) = self.profiles.get(index) else {
-      warn!("Failed to duplicate profile at index: {}", index);
-      return Err(ProjectError::ProfileNotFound);
+      return;
     };
     let mut duplicated_profile = profile.clone();
     duplicated_profile.id = Uuid::new_v4();
     duplicated_profile.name = next_available_name(&profile.name, self.profiles.iter().map(|p| p.name.clone()));
-
-    let index = index + 1;
-    if index >= self.profiles.len() {
-      self.profiles.push(duplicated_profile);
-    } else {
-      self.profiles.insert(index, duplicated_profile);
-    }
+    let ix = min(index + 1, self.profiles.len());
+    self.profiles.insert(ix, duplicated_profile);
     cx.emit(ProjectVariablesEvent::ProfilesChanged);
-    Ok(())
   }
 
   /// Moves a profile from one position to another
@@ -178,33 +164,20 @@ impl ProjectVariables {
     Ok(())
   }
 
-  pub fn profile_infos(&self) -> Vec<ProfileInfo> {
-    self
-      .profiles
-      .iter()
-      .map(|p| ProfileInfo {
-        id: p.id,
-        name: p.name.clone(),
-        description: p.description.clone(),
-      })
-      .collect()
-  }
-
   /// Merges a profile attributes
   ///
   /// # Result
   /// Returns a copy of the new profiles list if it was modified, else *None*
   ///
   /// Returns a [`ProjectError::ProfileNotFound`] if the profile could not be found by its id
-  pub fn update_profile(&mut self, updated_profile: &ProfileInfo, cx: &mut Context<Self>) -> ProjectResult<()> {
+  pub fn update_profile(&mut self, updated_profile: Profile, cx: &mut Context<Self>) -> ProjectResult<()> {
     let Some(profile) = self.profiles.iter_mut().find(|p| p.id == updated_profile.id) else {
       warn!("Attempt to edit non existing profile with id: {}", updated_profile.id);
       return Err(ProjectError::ProfileNotFound);
     };
 
-    if updated_profile != profile {
-      profile.name = updated_profile.name.clone();
-      profile.description = updated_profile.description.clone();
+    if updated_profile != *profile {
+      *profile = updated_profile;
       cx.emit(ProjectVariablesEvent::ProfilesChanged);
     }
     Ok(())
@@ -234,8 +207,8 @@ impl ProjectVariables {
   }
 
   ///// VARIABLES
-  pub fn add_variable(&mut self, index: Option<usize>, name: &str, cx: &mut Context<Self>) {
-    let name = next_available_name(name, self.references.iter().map(|p| p.name.clone()));
+  pub fn add_variable(&mut self, index: Option<usize>, cx: &mut Context<Self>) {
+    let name = next_available_name("new variable", self.references.iter().map(|p| p.name.clone()));
     let new_var = VariableReference {
       id: Uuid::new_v4(),
       name: SharedString::new(name),
@@ -244,15 +217,10 @@ impl ProjectVariables {
       value: SharedString::new(""),
       overrides: HashMap::new(),
     };
-    if let Some(index) = index {
-      if index > self.references.len() - 1 {
-        self.references.push(new_var);
-      } else {
-        self.references.insert(index, new_var);
-      }
-    } else {
-      self.references.push(new_var);
-    }
+    let ix = index
+      .map(|ix| min(ix + 1, self.references.len()))
+      .unwrap_or(self.profiles.len());
+    self.references.insert(ix, new_var);
     cx.emit(ProjectVariablesEvent::VariablesChanged);
   }
 
@@ -278,27 +246,18 @@ impl ProjectVariables {
   /// Duplicates a variable, attributing a new id and copying all fields. Name is appended with *_X* where X is an integer.
   ///
   /// The copy is placed right after the original
-  /// # Result
-  /// Returns a [`ProjectError::VariableNotFound`] if the row is out of bound
   /// # Events
   /// Emits a [`ProjectVariablesEvent::VariablesChanged`] if the profile
-  pub fn duplicate_variable(&mut self, index: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
+  pub fn duplicate_variable(&mut self, index: usize, cx: &mut Context<Self>) {
     let Some(var) = self.references.get(index) else {
-      warn!("Failed to duplicate variable at index: {}", index);
-      return Err(ProjectError::VariableNotFound);
+      return;
     };
     let mut duplicated_var = var.clone();
     duplicated_var.id = Uuid::new_v4();
     duplicated_var.name = next_available_name(&var.name, self.references.iter().map(|p| p.name.clone()));
-
-    let index = index + 1;
-    if index >= self.references.len() {
-      self.references.push(duplicated_var);
-    } else {
-      self.references.insert(index, duplicated_var);
-    }
+    let ix = min(index + 1, self.profiles.len());
+    self.references.insert(ix, duplicated_var);
     cx.emit(ProjectVariablesEvent::VariablesChanged);
-    Ok(())
   }
 
   /// Merges a variable attributes.
@@ -307,11 +266,7 @@ impl ProjectVariables {
   /// # Result
   ///
   /// Returns a [`ProjectError::VariableNotFound`] if the profile could not be found by its id
-  pub fn update_variable(
-    &mut self,
-    updated_variable: VariableReference,
-    cx: &mut Context<Self>,
-  ) -> ProjectResult<()> {
+  pub fn update_variable(&mut self, updated_variable: VariableReference, cx: &mut Context<Self>) -> ProjectResult<()> {
     let Some(var) = self.references.iter_mut().find(|p| p.id == updated_variable.id) else {
       warn!("Attempt to edit non existing variable with id: {}", updated_variable.id);
       return Err(ProjectError::VariableNotFound);
@@ -470,26 +425,7 @@ impl PartialOrd for Profile {
   }
 }
 
-#[derive(Clone, Debug)]
-pub struct ProfileInfo {
-  pub id: Uuid,
-  pub name: SharedString,
-  pub description: SharedString,
-}
-
-impl PartialEq<Profile> for ProfileInfo {
-  fn eq(&self, other: &Profile) -> bool {
-    self.id == other.id && self.name == other.name && self.description == other.description
-  }
-}
-
-impl PartialEq for ProfileInfo {
-  fn eq(&self, other: &Self) -> bool {
-    self.id == other.id
-  }
-}
-
-impl SelectItem for ProfileInfo {
+impl SelectItem for Profile {
   type Value = Uuid;
 
   fn title(&self) -> SharedString {

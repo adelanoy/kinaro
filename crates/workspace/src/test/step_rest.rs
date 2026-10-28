@@ -7,6 +7,8 @@ use ki_assets::icon::IconAsset;
 use ki_project::{
   FileFormField, FileMultipartPart, FileRestBody, FileRestData, FileRestMethod, FileRestParam, FileRestParamType,
 };
+use log::warn;
+use std::cmp::min;
 use std::path::PathBuf;
 
 const REST_GET_COLOR: &str = "#38bdf8";
@@ -139,6 +141,30 @@ impl From<&RestParamType> for FileRestParamType {
       RestParamType::Header => FileRestParamType::Header,
       RestParamType::Cookie => FileRestParamType::Cookie,
     }
+  }
+}
+
+impl SelectItem for RestParamType {
+  type Value = RestParamType;
+
+  fn title(&self) -> SharedString {
+    self.into()
+  }
+
+  fn value(&self) -> &Self::Value {
+    self
+  }
+}
+
+impl From<&RestParamType> for SharedString {
+  fn from(value: &RestParamType) -> Self {
+    match value {
+      RestParamType::Path => "Path",
+      RestParamType::Query => "Query",
+      RestParamType::Header => "Header",
+      RestParamType::Cookie => "Cookie",
+    }
+    .into()
   }
 }
 
@@ -343,6 +369,40 @@ pub struct RestData {
 }
 
 impl RestData {
+  pub fn add_param(&mut self, row_ix: Option<usize>, cx: &mut Context<Self>) {
+    let ix = row_ix
+      .map(|ix| min(ix + 1, self.params.len()))
+      .unwrap_or(self.params.len());
+    let name = ki_utils::next_available_name("Param", self.params.iter().map(|param| param.name.clone()));
+    let param = RestParam {
+      param_type: RestParamType::Query,
+      name,
+      value: Default::default(),
+      disabled: false,
+    };
+    self.params.insert(ix, param);
+    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+  }
+
+  pub fn delete_param(&mut self, row_ix: usize, cx: &mut Context<Self>) {
+    if row_ix >= self.params.len() {
+      return;
+    }
+    self.params.remove(row_ix);
+    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+  }
+
+  pub fn duplicate_param(&mut self, row_ix: usize, cx: &mut Context<Self>) {
+    let Some(mut param) = self.params.get(row_ix).cloned() else {
+      return;
+    };
+    let name = ki_utils::next_available_name(&param.name, self.params.iter().map(|param| param.name.clone()));
+    param.name = name;
+    let ix = min(row_ix + 1, self.params.len());
+    self.params.insert(ix, param);
+    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+  }
+
   #[inline]
   pub fn endpoint(&self) -> SharedString {
     self.endpoint.clone()
@@ -391,6 +451,11 @@ impl RestData {
     self.method
   }
 
+  #[inline]
+  pub fn params(&self) -> &[RestParam] {
+    &self.params
+  }
+
   pub fn set_endpoint(&mut self, endpoint: SharedString, cx: &mut Context<Self>) {
     if self.endpoint != endpoint {
       self.endpoint = endpoint;
@@ -405,6 +470,20 @@ impl RestData {
       true
     } else {
       false
+    }
+  }
+
+  pub fn update_params(&mut self, row_ix: usize, param: RestParam, cx: &mut Context<Self>) {
+    if row_ix >= self.params.len() {
+      warn!(
+        "RestParams::update_params: Attempted to update a non-existent index: {}",
+        row_ix
+      );
+      return;
+    }
+    if self.params[row_ix] != param {
+      self.params[row_ix] = param;
+      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
     }
   }
 }

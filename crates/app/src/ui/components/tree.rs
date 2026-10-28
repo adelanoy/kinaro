@@ -1,10 +1,11 @@
-use crate::actions::{Down, Enter, Escape, Left, Right, Up};
+use gpui_kit::base::actions::Cancel;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::component::{ActiveTheme, Icon, IconName, h_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
+use ki_app_shared::actions::{Down, Enter, Left, Right, Up};
 use ki_utils::TestPath;
 use std::ops::Range;
 use uuid::Uuid;
@@ -270,7 +271,7 @@ impl<D: TreeDelegate> RenderOnce for Tree<D> {
       .p_1()
       .track_focus(&focus_handle)
       .key_context(TREE_CONTEXT)
-      .on_action(window.listener_for(&self.state, |state, _: &Escape, _, cx| state.clear_selection(cx)))
+      .on_action(window.listener_for(&self.state, |state, _: &Cancel, _, cx| state.clear_selection(cx)))
       .on_action(window.listener_for(&self.state, TreeState::on_action_left))
       .on_action(window.listener_for(&self.state, TreeState::on_action_right))
       .on_action(window.listener_for(&self.state, TreeState::on_action_up))

@@ -1,9 +1,12 @@
+use gpui_kit::base::actions::Cancel;
 use gpui_kit::{App, KeyBinding, NoAction, actions};
+
 pub const PROJECT_TREE_CONTEXT_KEY: &str = "ProjectTree";
+pub const TABLE_CONTEXT_KEY: &str = "Table";
 
 // SHARED
 actions!([
-  CopyId, CopyPath, Delete, Down, Duplicate, Enter, Escape, Left, MoveUp, MoveDown, MoveLeft, MoveRight, Rename, Right, Up
+  CopyId, CopyPath, Delete, Down, Duplicate, Enter, Left, MoveUp, MoveDown, MoveLeft, MoveRight, New, Edit, Right, Up
 ]);
 
 // WORKSPACE
@@ -19,17 +22,18 @@ pub fn init(cx: &mut App) {
     KeyBinding::new("ctrl-alt-p", CopyPath, None),
     KeyBinding::new("delete", Delete, None),
     KeyBinding::new("ctrl-d", Duplicate, None),
-    KeyBinding::new("escape", Escape, None),
+    KeyBinding::new("escape", Cancel, None),
     KeyBinding::new("enter", Enter, None),
     KeyBinding::new("ctrl-up", MoveUp, None),
     KeyBinding::new("ctrl-down", MoveDown, None),
     KeyBinding::new("ctrl-left", MoveLeft, None),
     KeyBinding::new("ctrl-right", MoveRight, None),
+    KeyBinding::new("ctrl-shift-n", New, None),
     KeyBinding::new("up", Up, None),
     KeyBinding::new("down", Down, None),
     KeyBinding::new("left", Left, None),
     KeyBinding::new("right", Right, None),
-    KeyBinding::new("f2", Rename, None),
+    KeyBinding::new("f2", Edit, None),
     // WORKSPACE
     KeyBinding::new("ctrl-n", CreateProject, None),
     KeyBinding::new("ctrl-o", OpenProject, None),
