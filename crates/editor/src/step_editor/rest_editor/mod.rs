@@ -15,7 +15,8 @@ use gpui_kit::{
   Window, div,
 };
 use ki_app_shared::panel::{Panel, PanelContainer};
-use ki_workspace::test::step_rest::{RestData, RestMethod};
+use ki_utils::http::HttpMethod;
+use ki_workspace::test::step_rest::RestData;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RestEditorPanel {
@@ -26,7 +27,7 @@ enum RestEditorPanel {
 pub struct RestEditor {
   rest_data: Entity<RestData>,
   endpoint_input_state: Entity<InputState>,
-  method_select_state: Entity<SelectState<Vec<RestMethod>>>,
+  method_select_state: Entity<SelectState<Vec<HttpMethod>>>,
   panel_container: PanelContainer<RestEditorPanel>,
   _subs: Vec<Subscription>,
 }
@@ -34,17 +35,17 @@ pub struct RestEditor {
 impl RestEditor {
   pub fn new(rest_data: Entity<RestData>, window: &mut Window, cx: &mut Context<RestEditor>) -> Self {
     let url_input_state = cx.new(|cx| InputState::new(window, cx).default_value(rest_data.read(cx).endpoint().clone()));
-    let init_method_ix = RestMethod::ALL
+    let init_method_ix = HttpMethod::ALL
       .iter()
       .position(|method| *method == rest_data.read(cx).method())
       .map(IndexPath::new);
-    let method_select_state = cx.new(|cx| SelectState::new(RestMethod::ALL.to_vec(), init_method_ix, window, cx));
+    let method_select_state = cx.new(|cx| SelectState::new(HttpMethod::ALL.to_vec(), init_method_ix, window, cx));
     let _subs = vec![
       cx.subscribe(&url_input_state, |this, _, e: &InputEvent, cx| match e {
         InputEvent::PressEnter { .. } | InputEvent::Blur => this.handle_endpoint_select_event(cx),
         _ => {}
       }),
-      cx.subscribe(&method_select_state, |this, _, _: &SelectEvent<Vec<RestMethod>>, cx| {
+      cx.subscribe(&method_select_state, |this, _, _: &SelectEvent<Vec<HttpMethod>>, cx| {
         this.handle_method_select_event(cx)
       }),
     ];

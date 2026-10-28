@@ -1,6 +1,7 @@
 pub mod conversion;
 pub mod date_time;
 pub mod shared;
+pub mod http;
 
 pub use conversion::{from_multiline, to_multiline};
 pub use date_time::*;

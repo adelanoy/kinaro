@@ -1,33 +1,12 @@
+use ki_utils::http::{ContentType, HttpMethod, RestParamType};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-
-#[derive(Serialize, Deserialize, Eq, PartialEq, Copy, Clone, Debug)]
-#[serde(rename_all = "UPPERCASE")]
-pub enum FileRestMethod {
-  Get,
-  Post,
-  Put,
-  Delete,
-  Patch,
-  Head,
-  Options,
-}
-
-/// Where a [`FileRestParam`] is placed in the outgoing request.
-#[derive(Serialize, Deserialize, Eq, PartialEq, Copy, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub enum FileRestParamType {
-  Path,
-  Query,
-  Header,
-  Cookie,
-}
 
 /// A name/value pair sent as part of the request.
 #[derive(Serialize, Deserialize, Eq, PartialEq, Clone, Debug)]
 pub struct FileRestParam {
   #[serde(rename = "type")]
-  pub param_type: FileRestParamType,
+  pub param_type: RestParamType,
   pub name: String,
   pub value: String,
   #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -73,7 +52,7 @@ pub enum FileRestBody {
   /// Free text (JSON, XML, plain text...) sent as-is.
   Raw {
     #[serde(rename = "contentType")]
-    content_type: String,
+    content_type: ContentType,
     /// One entry per line, so version control diffs only the lines that
     /// actually changed instead of one escaped multiline string.
     lines: Vec<String>,
@@ -99,7 +78,7 @@ impl FileRestBody {
 #[derive(Serialize, Deserialize, Eq, PartialEq, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct FileRestData {
-  pub method: FileRestMethod,
+  pub method: HttpMethod,
   pub endpoint: String,
   #[serde(default, skip_serializing_if = "Vec::is_empty")]
   pub params: Vec<FileRestParam>,
@@ -112,7 +91,7 @@ mod tests {
   use super::*;
   use serde_json::json;
 
-  fn param(param_type: FileRestParamType, name: &str, value: &str) -> FileRestParam {
+  fn param(param_type: RestParamType, name: &str, value: &str) -> FileRestParam {
     FileRestParam {
       param_type,
       name: name.into(),
@@ -128,7 +107,7 @@ mod tests {
   #[test]
   fn minimal_step_omits_params_and_body() {
     let step = FileRestData {
-      method: FileRestMethod::Get,
+      method: HttpMethod::Get,
       endpoint: "/users".into(),
       params: vec![],
       body: FileRestBody::None,
@@ -142,12 +121,12 @@ mod tests {
 
   #[test]
   fn params_serialize_with_type_and_skip_disabled_when_false() {
-    let mut disabled = param(FileRestParamType::Header, "X-Trace", "1");
+    let mut disabled = param(RestParamType::Header, "X-Trace", "1");
     disabled.disabled = true;
     let step = FileRestData {
-      method: FileRestMethod::Get,
+      method: HttpMethod::Get,
       endpoint: "/users/{id}".into(),
-      params: vec![param(FileRestParamType::Path, "id", "42"), disabled],
+      params: vec![param(RestParamType::Path, "id", "42"), disabled],
       body: FileRestBody::None,
     };
 
@@ -166,11 +145,11 @@ mod tests {
   #[test]
   fn raw_body_is_tagged_and_stored_by_line() {
     let step = FileRestData {
-      method: FileRestMethod::Post,
+      method: HttpMethod::Post,
       endpoint: "/users".into(),
       params: vec![],
       body: FileRestBody::Raw {
-        content_type: "application/json".into(),
+        content_type: ContentType::ApplicationJson,
         lines: vec!["{".into(), "}".into()],
       },
     };
@@ -182,6 +161,26 @@ mod tests {
       json!({ "type": "raw", "contentType": "application/json", "lines": ["{", "}"] })
     );
     assert_eq!(roundtrip(&step), step);
+  }
+
+  #[test]
+  fn content_type_serializes_as_mime_string() {
+    let types = [
+      (ContentType::ApplicationJson, "application/json"),
+      (ContentType::Other("text/csv".into()), "text/csv"),
+    ];
+    for (content_type, mime) in types {
+      assert_eq!(serde_json::to_value(&content_type).unwrap(), json!(mime));
+      assert_eq!(serde_json::from_value::<ContentType>(json!(mime)).unwrap(), content_type);
+    }
+  }
+
+  #[test]
+  fn known_content_type_is_matched_case_insensitively() {
+    assert_eq!(
+      serde_json::from_value::<ContentType>(json!("Application/JSON")).unwrap(),
+      ContentType::ApplicationJson
+    );
   }
 
   #[test]
@@ -214,7 +213,7 @@ mod tests {
       },
     ] {
       let step = FileRestData {
-        method: FileRestMethod::Put,
+        method: HttpMethod::Put,
         endpoint: "/upload".into(),
         params: vec![],
         body,

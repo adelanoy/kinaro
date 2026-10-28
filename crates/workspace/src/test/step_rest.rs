@@ -1,172 +1,12 @@
 use crate::test::{TestsContainer, TestsContainerEvent};
 use gpui_kit::component::Icon;
-use gpui_kit::component::label::Label;
-use gpui_kit::component::select::SelectItem;
-use gpui_kit::{App, Context, Hsla, IntoElement, Rgba, SharedString, Styled, WeakEntity, Window};
+use gpui_kit::{Context, SharedString, Styled, WeakEntity};
 use ki_assets::icon::IconAsset;
-use ki_project::{
-  FileFormField, FileMultipartPart, FileRestBody, FileRestData, FileRestMethod, FileRestParam, FileRestParamType,
-};
+use ki_project::{FileFormField, FileMultipartPart, FileRestBody, FileRestData, FileRestParam};
+use ki_utils::http::{ContentType, HTTP_HEADER_CONTENT_TYPE, HttpMethod, RestParamType};
 use log::warn;
 use std::cmp::min;
 use std::path::PathBuf;
-
-const REST_GET_COLOR: &str = "#38bdf8";
-const REST_POST_COLOR: &str = "#fcd34d";
-const REST_PUT_COLOR: &str = "#b45309";
-const REST_DELETE_COLOR: &str = "#ef4444";
-const REST_PATCH_COLOR: &str = "#9333ea";
-const REST_OPTIONS_COLOR: &str = "#4ade80";
-const REST_HEAD_COLOR: &str = "#ec4899";
-
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
-pub enum RestMethod {
-  Get,
-  Post,
-  Put,
-  Delete,
-  Patch,
-  Head,
-  Options,
-}
-
-impl RestMethod {
-  pub const ALL: &'static [RestMethod] = &[
-    RestMethod::Get,
-    RestMethod::Post,
-    RestMethod::Put,
-    RestMethod::Delete,
-    RestMethod::Patch,
-  ];
-
-  pub fn color(&self) -> impl Into<Hsla> {
-    let hex_str = match self {
-      RestMethod::Get => REST_GET_COLOR,
-      RestMethod::Post => REST_POST_COLOR,
-      RestMethod::Put => REST_PUT_COLOR,
-      RestMethod::Delete => REST_DELETE_COLOR,
-      RestMethod::Patch => REST_PATCH_COLOR,
-      RestMethod::Head => REST_OPTIONS_COLOR,
-      RestMethod::Options => REST_HEAD_COLOR,
-    };
-    Rgba::try_from(hex_str).unwrap()
-  }
-}
-
-impl SelectItem for RestMethod {
-  type Value = RestMethod;
-
-  fn title(&self) -> SharedString {
-    match self {
-      RestMethod::Get => "Get".into(),
-      RestMethod::Post => "Post".into(),
-      RestMethod::Put => "Put".into(),
-      RestMethod::Delete => "Delete".into(),
-      RestMethod::Patch => "Patch".into(),
-      RestMethod::Head => "Head".into(),
-      RestMethod::Options => "Options".into(),
-    }
-  }
-
-  fn render(&self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-    Label::new(self.title()).text_color(self.color())
-  }
-
-  fn value(&self) -> &Self::Value {
-    match self {
-      RestMethod::Get => &RestMethod::Get,
-      RestMethod::Post => &RestMethod::Post,
-      RestMethod::Put => &RestMethod::Put,
-      RestMethod::Delete => &RestMethod::Delete,
-      RestMethod::Patch => &RestMethod::Patch,
-      RestMethod::Head => &RestMethod::Head,
-      RestMethod::Options => &RestMethod::Options,
-    }
-  }
-}
-
-impl From<FileRestMethod> for RestMethod {
-  fn from(method: FileRestMethod) -> Self {
-    match method {
-      FileRestMethod::Get => RestMethod::Get,
-      FileRestMethod::Post => RestMethod::Post,
-      FileRestMethod::Put => RestMethod::Put,
-      FileRestMethod::Delete => RestMethod::Delete,
-      FileRestMethod::Patch => RestMethod::Patch,
-      FileRestMethod::Head => RestMethod::Head,
-      FileRestMethod::Options => RestMethod::Options,
-    }
-  }
-}
-
-impl From<&RestMethod> for FileRestMethod {
-  fn from(method: &RestMethod) -> Self {
-    match method {
-      RestMethod::Get => FileRestMethod::Get,
-      RestMethod::Post => FileRestMethod::Post,
-      RestMethod::Put => FileRestMethod::Put,
-      RestMethod::Delete => FileRestMethod::Delete,
-      RestMethod::Patch => FileRestMethod::Patch,
-      RestMethod::Head => FileRestMethod::Head,
-      RestMethod::Options => FileRestMethod::Options,
-    }
-  }
-}
-
-/// Where a [`RestParam`] is placed in the outgoing request.
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
-pub enum RestParamType {
-  Path,
-  Query,
-  Header,
-  Cookie,
-}
-
-impl From<FileRestParamType> for RestParamType {
-  fn from(param_type: FileRestParamType) -> Self {
-    match param_type {
-      FileRestParamType::Path => RestParamType::Path,
-      FileRestParamType::Query => RestParamType::Query,
-      FileRestParamType::Header => RestParamType::Header,
-      FileRestParamType::Cookie => RestParamType::Cookie,
-    }
-  }
-}
-
-impl From<&RestParamType> for FileRestParamType {
-  fn from(param_type: &RestParamType) -> Self {
-    match param_type {
-      RestParamType::Path => FileRestParamType::Path,
-      RestParamType::Query => FileRestParamType::Query,
-      RestParamType::Header => FileRestParamType::Header,
-      RestParamType::Cookie => FileRestParamType::Cookie,
-    }
-  }
-}
-
-impl SelectItem for RestParamType {
-  type Value = RestParamType;
-
-  fn title(&self) -> SharedString {
-    self.into()
-  }
-
-  fn value(&self) -> &Self::Value {
-    self
-  }
-}
-
-impl From<&RestParamType> for SharedString {
-  fn from(value: &RestParamType) -> Self {
-    match value {
-      RestParamType::Path => "Path",
-      RestParamType::Query => "Query",
-      RestParamType::Header => "Header",
-      RestParamType::Cookie => "Cookie",
-    }
-    .into()
-  }
-}
 
 /// A name/value pair sent as part of the request.
 #[derive(Eq, PartialEq, Clone, Debug)]
@@ -175,6 +15,14 @@ pub struct RestParam {
   pub name: SharedString,
   pub value: SharedString,
   pub disabled: bool,
+  generated: bool,
+}
+
+impl RestParam {
+  #[inline]
+  pub fn generated(&self) -> bool {
+    self.generated
+  }
 }
 
 impl From<FileRestParam> for RestParam {
@@ -186,10 +34,11 @@ impl From<FileRestParam> for RestParam {
       disabled,
     } = param;
     RestParam {
-      param_type: param_type.into(),
+      param_type,
       name: name.into(),
       value: value.into(),
       disabled,
+      generated: false,
     }
   }
 }
@@ -197,10 +46,22 @@ impl From<FileRestParam> for RestParam {
 impl From<&RestParam> for FileRestParam {
   fn from(param: &RestParam) -> Self {
     FileRestParam {
-      param_type: (&param.param_type).into(),
+      param_type: param.param_type,
       name: param.name.to_string(),
       value: param.value.to_string(),
       disabled: param.disabled,
+    }
+  }
+}
+
+impl From<&ContentType> for RestParam {
+  fn from(value: &ContentType) -> Self {
+    Self {
+      param_type: RestParamType::Header,
+      name: HTTP_HEADER_CONTENT_TYPE.clone(),
+      value: value.as_str().into(),
+      disabled: false,
+      generated: true,
     }
   }
 }
@@ -303,7 +164,7 @@ pub enum RestBody {
   None,
   /// Free text (JSON, XML, plain text...) sent as-is.
   Raw {
-    content_type: SharedString,
+    content_type: ContentType,
     /// One entry per line, so version control diffs only the lines that
     /// actually changed instead of one escaped multiline string.
     lines: Vec<SharedString>,
@@ -325,7 +186,7 @@ impl From<FileRestBody> for RestBody {
     match body {
       FileRestBody::None => RestBody::None,
       FileRestBody::Raw { content_type, lines } => RestBody::Raw {
-        content_type: content_type.into(),
+        content_type,
         lines: lines.into_iter().map(Into::into).collect(),
       },
       FileRestBody::FormUrlEncoded { fields } => RestBody::FormUrlEncoded {
@@ -344,7 +205,7 @@ impl From<&RestBody> for FileRestBody {
     match body {
       RestBody::None => FileRestBody::None,
       RestBody::Raw { content_type, lines } => FileRestBody::Raw {
-        content_type: content_type.to_string(),
+        content_type: content_type.clone(),
         lines: lines.iter().map(|line| line.to_string()).collect(),
       },
       RestBody::FormUrlEncoded { fields } => FileRestBody::FormUrlEncoded {
@@ -362,7 +223,7 @@ impl From<&RestBody> for FileRestBody {
 pub struct RestData {
   /// The container holding this step, notified of the changes made to the step
   pub(crate) container: WeakEntity<TestsContainer>,
-  pub(crate) method: RestMethod,
+  pub(crate) method: HttpMethod,
   pub(crate) endpoint: SharedString,
   pub(crate) params: Vec<RestParam>,
   pub(crate) body: RestBody,
@@ -370,15 +231,14 @@ pub struct RestData {
 
 impl RestData {
   pub fn add_param(&mut self, row_ix: Option<usize>, cx: &mut Context<Self>) {
-    let ix = row_ix
-      .map(|ix| min(ix + 1, self.params.len()))
-      .unwrap_or(self.params.len());
+    let ix = row_ix.map(|ix| min(ix + 1, self.params.len())).unwrap_or(self.params.len());
     let name = ki_utils::next_available_name("Param", self.params.iter().map(|param| param.name.clone()));
     let param = RestParam {
       param_type: RestParamType::Query,
       name,
       value: Default::default(),
       disabled: false,
+      generated: false,
     };
     self.params.insert(ix, param);
     _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
@@ -411,13 +271,13 @@ impl RestData {
   pub fn icon(&self) -> Icon {
     let color = self.method.color();
     match self.method {
-      RestMethod::Get => Icon::new(IconAsset::StepRestGet).text_color(color),
-      RestMethod::Post => Icon::new(IconAsset::StepRestPost).text_color(color),
-      RestMethod::Put => Icon::new(IconAsset::StepRestPut).text_color(color),
-      RestMethod::Delete => Icon::new(IconAsset::StepRestDelete).text_color(color),
-      RestMethod::Patch => Icon::new(IconAsset::StepRestPatch).text_color(color),
-      RestMethod::Head => Icon::new(IconAsset::StepRestHead).text_color(color),
-      RestMethod::Options => Icon::new(IconAsset::StepRestOptions).text_color(color),
+      HttpMethod::Get => Icon::new(IconAsset::StepRestGet).text_color(color),
+      HttpMethod::Post => Icon::new(IconAsset::StepRestPost).text_color(color),
+      HttpMethod::Put => Icon::new(IconAsset::StepRestPut).text_color(color),
+      HttpMethod::Delete => Icon::new(IconAsset::StepRestDelete).text_color(color),
+      HttpMethod::Patch => Icon::new(IconAsset::StepRestPatch).text_color(color),
+      HttpMethod::Head => Icon::new(IconAsset::StepRestHead).text_color(color),
+      HttpMethod::Options => Icon::new(IconAsset::StepRestOptions).text_color(color),
     }
   }
 
@@ -428,26 +288,32 @@ impl RestData {
       params,
       body,
     } = step;
+    let body = body.into();
+    // Generated params
+    let mut params: Vec<RestParam> = params.into_iter().map(Into::into).collect();
+    if let RestBody::Raw { content_type, .. } = &body {
+      params.push(RestParam::from(content_type))
+    }
     RestData {
       container,
-      method: method.into(),
+      method,
       endpoint: endpoint.into(),
-      params: params.into_iter().map(Into::into).collect(),
-      body: body.into(),
+      params,
+      body,
     }
   }
 
   pub fn get_file(&self) -> FileRestData {
     FileRestData {
-      method: (&self.method).into(),
+      method: self.method,
       endpoint: self.endpoint.to_string(),
-      params: self.params.iter().map(Into::into).collect(),
+      params: self.params.iter().filter(|p| !p.generated).map(Into::into).collect(),
       body: (&self.body).into(),
     }
   }
 
   #[inline]
-  pub fn method(&self) -> RestMethod {
+  pub fn method(&self) -> HttpMethod {
     self.method
   }
 
@@ -463,7 +329,7 @@ impl RestData {
     }
   }
 
-  pub fn set_method(&mut self, method: RestMethod, cx: &mut Context<Self>) -> bool {
+  pub fn set_method(&mut self, method: HttpMethod, cx: &mut Context<Self>) -> bool {
     if self.method != method {
       self.method = method;
       _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
@@ -485,5 +351,91 @@ impl RestData {
       self.params[row_ix] = param;
       _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::test::test_fixtures::load;
+  use gpui_kit::TestAppContext;
+
+  fn file_param(param_type: RestParamType, name: &str, value: &str) -> FileRestParam {
+    FileRestParam {
+      param_type,
+      name: name.into(),
+      value: value.into(),
+      disabled: false,
+    }
+  }
+
+  fn file_rest(params: Vec<FileRestParam>, body: FileRestBody) -> FileRestData {
+    FileRestData {
+      method: HttpMethod::Post,
+      endpoint: "/items".into(),
+      params,
+      body,
+    }
+  }
+
+  fn raw_body(content_type: ContentType) -> FileRestBody {
+    FileRestBody::Raw {
+      content_type,
+      lines: vec!["{}".into()],
+    }
+  }
+
+  #[gpui_kit::test]
+  fn raw_body_generates_a_content_type_header_after_user_params(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    for (content_type, mime) in [
+      (ContentType::ApplicationJson, "application/json"),
+      (ContentType::Other("text/csv".into()), "text/csv"),
+    ] {
+      let file = file_rest(vec![file_param(RestParamType::Query, "page", "1")], raw_body(content_type));
+      let rest = RestData::from_file(file, tests.downgrade());
+
+      let [user, generated] = rest.params() else {
+        panic!(
+          "expected the user param followed by the generated one, got {:?}",
+          rest.params()
+        );
+      };
+      assert!(!user.generated());
+      assert!(generated.generated());
+      assert_eq!(generated.param_type, RestParamType::Header);
+      assert_eq!(generated.name, *HTTP_HEADER_CONTENT_TYPE);
+      assert_eq!(generated.value, mime);
+      assert!(!generated.disabled);
+    }
+  }
+
+  #[gpui_kit::test]
+  fn non_raw_bodies_generate_no_params(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    for body in [
+      FileRestBody::None,
+      FileRestBody::FormUrlEncoded { fields: vec![] },
+      FileRestBody::Multipart { parts: vec![] },
+      FileRestBody::Binary { path: "blob.bin".into() },
+    ] {
+      let rest = RestData::from_file(file_rest(vec![], body), tests.downgrade());
+      assert!(rest.params().is_empty(), "unexpected params {:?}", rest.params());
+    }
+  }
+
+  #[gpui_kit::test]
+  fn get_file_saves_only_user_params(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    // A user-defined Content-Type header must be kept, unlike the generated one
+    let user_params = vec![
+      file_param(RestParamType::Query, "page", "1"),
+      file_param(RestParamType::Header, "Content-Type", "application/xml"),
+    ];
+    let file = file_rest(user_params, raw_body(ContentType::ApplicationJson));
+    let rest = RestData::from_file(file.clone(), tests.downgrade());
+
+    assert_eq!(rest.params().iter().filter(|param| param.generated()).count(), 1);
+    assert_eq!(rest.get_file(), file);
   }
 }

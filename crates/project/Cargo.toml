@@ -14,4 +14,3 @@ serde_json.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
-log = "0.4.29"

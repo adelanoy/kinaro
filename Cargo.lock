@@ -3710,7 +3710,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "ki_utils",
- "log",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
