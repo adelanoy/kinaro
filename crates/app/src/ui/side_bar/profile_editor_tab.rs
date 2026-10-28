@@ -7,13 +7,14 @@ use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, T
 use gpui_kit::component::{Disableable, FocusableExt, Icon, IconName, Sizable, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
+use uuid::Uuid;
 use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
+use ki_app_shared::{ContextMenuBuilder, EditedCell, MovingLabel};
 use ki_app_shared::panel::PanelDescriptor;
 use ki_assets::icon::IconAsset;
 use ki_utils::SidebarPanel;
-use ki_utils::ui::{ContextMenuBuilder, EditedCell, MovingLabel};
 use ki_workspace::Project;
-use ki_workspace::variable::{Profile, ProjectVariables};
+use ki_workspace::variable::{DraggedProfile, Profile, ProjectVariables};
 
 pub(in crate::ui::side_bar) struct ProfileEditor {
   table_state: Entity<TableState<ProfileDataTableDelegate>>,
@@ -283,7 +284,7 @@ impl ProfileDataTableDelegate {
     }
   }
 
-  fn move_profile(&mut self, from: usize, to: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+  fn move_profile(&mut self, from: Uuid, to: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
     if let Err(err) = self.project_vars.update(cx, |this, cx| this.move_profile(from, to, cx)) {
       window.push_notification(err, cx);
     }
@@ -305,20 +306,21 @@ impl TableDelegate for ProfileDataTableDelegate {
 
   fn render_tr(&mut self, row_ix: usize, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> Stateful<Div> {
     let is_editing = self.edited_cell.is_some();
+    let id = self.project_vars.read(cx).profiles.get(row_ix).unwrap().id;
     div().id(("row", row_ix)).when(!is_editing, |this| {
       this
         .on_drag(
           MovingLabel {
             label: self.project_vars.read(cx).profiles.get(row_ix).unwrap().name.clone(),
-            data: row_ix,
+            data: DraggedProfile(id),
           },
           |drag, _, _, cx| {
             cx.stop_propagation();
             cx.new(|_| drag.clone())
           },
         )
-        .on_drop(cx.listener(move |table, e: &MovingLabel<usize>, window, cx| {
-          table.delegate_mut().move_profile(e.data, row_ix, window, cx);
+        .on_drop(cx.listener(move |table, e: &MovingLabel<DraggedProfile>, window, cx| {
+          table.delegate_mut().move_profile(e.data.0, row_ix, window, cx);
         }))
     })
   }

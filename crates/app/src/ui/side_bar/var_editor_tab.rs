@@ -16,11 +16,11 @@ use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
 use ki_app_shared::panel::PanelDescriptor;
 use ki_assets::icon::IconAsset;
 use ki_utils::SidebarPanel;
-use ki_utils::ui::{ContextMenuBuilder, EditedCell, MovingLabel};
 use ki_workspace::Project;
-use ki_workspace::variable::{Profile, ProjectVariables, VariableKind, VariableReference};
+use ki_workspace::variable::{DraggedVar, Profile, ProjectVariables, VariableKind, VariableReference};
 use log::warn;
 use uuid::Uuid;
+use ki_app_shared::{ContextMenuBuilder, EditedCell, MovingLabel};
 
 pub struct VariableEditor {
   table_state: Entity<TableState<VariableDataTableDelegate>>,
@@ -363,7 +363,7 @@ impl VariableDataTableDelegate {
     }
   }
 
-  fn move_variable(&mut self, from: usize, to: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+  fn move_variable(&mut self, from: Uuid, to: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
     if let Err(err) = self.project_vars.update(cx, |this, cx| this.move_variable(from, to, cx)) {
       window.push_notification(err, cx);
     }
@@ -394,20 +394,21 @@ impl TableDelegate for VariableDataTableDelegate {
 
   fn render_tr(&mut self, row_ix: usize, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> Stateful<Div> {
     let is_editing = self.edited_cell.is_some();
+    let id = self.project_vars.read(cx).references.get(row_ix).unwrap().id;
     div().id(("row", row_ix)).when(!is_editing, |this| {
       this
         .on_drag(
           MovingLabel {
             label: self.project_vars.read(cx).references.get(row_ix).unwrap().name.clone(),
-            data: row_ix,
+            data: DraggedVar(id),
           },
           |drag, _, _, cx| {
             cx.stop_propagation();
             cx.new(|_| drag.clone())
           },
         )
-        .on_drop(cx.listener(move |table, e: &MovingLabel<usize>, window, cx| {
-          table.delegate_mut().move_variable(e.data, row_ix, window, cx);
+        .on_drop(cx.listener(move |table, e: &MovingLabel<DraggedVar>, window, cx| {
+          table.delegate_mut().move_variable(e.data.0, row_ix, window, cx);
         }))
     })
   }

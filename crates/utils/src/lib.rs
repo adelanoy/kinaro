@@ -1,12 +1,11 @@
 pub mod conversion;
 pub mod date_time;
 pub mod shared;
-pub mod ui;
 
 pub use conversion::{from_multiline, to_multiline};
 pub use date_time::*;
+use gpui_kit::SharedString;
 pub use shared::*;
-pub use ui::{EditedCell, next_available_name};
 
 /// Clipboard metadata of a copied test suite
 pub const SUITE: &str = "Suite";
@@ -32,9 +31,54 @@ pub fn moved_index(ix: usize, from: usize, to: usize) -> usize {
   }
 }
 
+/// Computes a name based on the given name, appended with '_X' where X is an integer and where the `name_X` is the first available in the collection.
+///
+/// X is incremented at each attempt
+///
+/// If the name is available without any suffix in the collection, returns *name*
+pub fn next_available_name(name: &str, mut collection_it: impl Iterator<Item = SharedString> + Clone) -> SharedString {
+  // clone the iterator so it can be used a second time after
+  if collection_it.clone().find(|p| p == name).is_none() {
+    return SharedString::new(name);
+  }
+
+  let mut final_name = name.to_string();
+  {
+    let mut i = 1;
+    loop {
+      if collection_it.any(|p| *p == final_name) {
+        final_name = format!("{name}_{i}");
+        i += 1;
+      } else {
+        break;
+      }
+    }
+  }
+  SharedString::new(final_name)
+}
+
 #[cfg(test)]
 mod test {
-  use crate::moved_index;
+  use crate::{moved_index, next_available_name};
+  use gpui_kit::SharedString;
+
+  #[test]
+  fn next_available_name_no_append() {
+    let reference_collection = [SharedString::new("old_item")];
+    let new_item = next_available_name("new_item", reference_collection.into_iter());
+    assert_eq!(new_item, "new_item");
+  }
+
+  #[test]
+  fn next_available_name_append() {
+    let mut reference_collection = vec![SharedString::new("item")];
+    let new_item = next_available_name("item", reference_collection.clone().into_iter());
+    assert_eq!(new_item, "item_1");
+
+    reference_collection.push(SharedString::new(new_item));
+    let new_item = next_available_name("item", reference_collection.into_iter());
+    assert_eq!(new_item, "item_2");
+  }
 
   #[test]
   fn moved_index_forward() {

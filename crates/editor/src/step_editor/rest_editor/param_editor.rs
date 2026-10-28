@@ -12,15 +12,11 @@ use gpui_kit::component::separator::Separator;
 use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
 use gpui_kit::component::{ActiveTheme, Disableable, FocusableExt, Icon, IconName, Sizable, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{
-  App, AppContext, Context, Entity, Focusable, InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString,
-  Styled, Subscription, Window, px,
-};
+use gpui_kit::{App, AppContext, Context, Entity, Focusable, InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString, Styled, Subscription, Window, px};
 use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
 use ki_app_shared::panel::PanelDescriptor;
+use ki_app_shared::{ContextMenuBuilder, EditedCell};
 use ki_assets::icon::IconAsset;
-use ki_utils::EditedCell;
-use ki_utils::ui::ContextMenuBuilder;
 use ki_workspace::test::step_rest::{RestData, RestParam, RestParamType};
 
 pub struct RestParamEditor {

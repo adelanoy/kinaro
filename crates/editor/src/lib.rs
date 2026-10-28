@@ -18,11 +18,11 @@ use gpui_kit::{
   Render, SharedString, StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, div,
 };
 use ki_settings::app_state::AppState;
-use ki_utils::ui::MovingLabel;
 use ki_utils::{DropPosition, TestPath, moved_index};
 use ki_workspace::Project;
 use ki_workspace::test::{TestsContainer, TestsContainerEvent};
 use log::warn;
+use ki_app_shared::MovingLabel;
 
 pub enum EditorEvent {
   ToggleSidebar,

@@ -3,7 +3,7 @@ use crate::error::{ProjectError, ProjectResult};
 use gpui_kit::component::select::SelectItem;
 use gpui_kit::{Context, EventEmitter, SharedString};
 use ki_project::{FileProfile, FileProjectVariables, FileVariable, FileVariableKind};
-use ki_utils::ui::next_available_name;
+use ki_utils::next_available_name;
 use log::warn;
 use std::cmp::{Ordering, min};
 use std::collections::HashMap;
@@ -150,13 +150,16 @@ impl ProjectVariables {
   /// Returns a copy of the new profiles list
   ///
   /// Returns a [`ProjectError::ProfileNotFound`] if both indexes are identical, or if either one of them is out of bound
-  pub fn move_profile(&mut self, from_ix: usize, to_ix: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
+  pub fn move_profile(&mut self, from_id: Uuid, to_ix: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
+    let Some(from_ix) = self.profiles.iter().position(|p| p.id == from_id) else {
+      return Err(ProjectError::ProfileNotFound);
+    };
     if from_ix == to_ix {
       return Ok(());
     }
     let max_ix = self.profiles.len() - 1;
-    if from_ix == to_ix || from_ix > max_ix || to_ix > max_ix {
-      return Err(ProjectError::ProfileNotFound);
+    if from_ix > max_ix || to_ix > max_ix {
+      return Err(ProjectError::OperationNotAllowed);
     }
     let profile_to_move = self.profiles.remove(from_ix);
     self.profiles.insert(to_ix, profile_to_move);
@@ -281,13 +284,16 @@ impl ProjectVariables {
     Ok(())
   }
 
-  pub fn move_variable(&mut self, from_ix: usize, to_ix: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
+  pub fn move_variable(&mut self, from_id: Uuid, to_ix: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
+    let Some(from_ix) = self.references.iter().position(|p| p.id == from_id) else {
+      return Err(ProjectError::VariableNotFound);
+    };
     if from_ix == to_ix {
       return Ok(());
     }
     let max_ix = self.references.len() - 1;
-    if from_ix == to_ix || from_ix > max_ix || to_ix > max_ix {
-      return Err(ProjectError::VariableNotFound);
+    if from_ix > max_ix || to_ix > max_ix {
+      return Err(ProjectError::OperationNotAllowed);
     }
     let var_to_move = self.references.remove(from_ix);
     self.references.insert(to_ix, var_to_move);
@@ -436,3 +442,9 @@ impl SelectItem for Profile {
     &self.id
   }
 }
+
+#[derive(PartialEq, Clone, Debug)]
+pub struct DraggedVar(pub Uuid);
+
+#[derive(PartialEq, Clone, Debug)]
+pub struct DraggedProfile(pub Uuid);

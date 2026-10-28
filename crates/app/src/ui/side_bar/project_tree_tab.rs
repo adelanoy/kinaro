@@ -19,7 +19,6 @@ use ki_app_shared::actions::{
 use ki_app_shared::dialog::show_rename_dialog;
 use ki_app_shared::panel::PanelDescriptor;
 use ki_assets::icon::IconAsset;
-use ki_utils::ui::{ContextMenuBuilder, MovingLabel};
 use ki_utils::{CASE, DropPosition, STEP, SUITE, SidebarPanel};
 use ki_utils::{Offset, TestPath};
 use ki_workspace::error::ProjectError;
@@ -27,6 +26,7 @@ use ki_workspace::test::{TestMetadataOwner, TestsContainer, can_move};
 use ki_workspace::{Project, TestStep, TestSuite, TestSuiteChild};
 use log::warn;
 use std::collections::HashSet;
+use ki_app_shared::{ContextMenuBuilder, MovingLabel};
 
 /// The project tree panel: shows the project's test suites, cases and steps as a tree, and edits
 /// them through keyboard actions, a context menu and drag and drop.
