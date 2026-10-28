@@ -1,11 +1,9 @@
-use gpui_kit::base::{IndexPath, h_flex};
+use crate::ui::components::profile_select;
+use gpui_kit::base::h_flex;
 use gpui_kit::component::Sizable;
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
-use gpui_kit::{
-  App, AppContext, Context, Entity, FocusHandle, Focusable, IntoElement, ParentElement, Render, Styled, Subscription, Window,
-};
+use gpui_kit::{App, Context, Entity, FocusHandle, Focusable, IntoElement, ParentElement, Render, Styled, Subscription, Window};
 use ki_workspace::variable::{Profile, ProjectVariables, ProjectVariablesEvent};
-use uuid::Uuid;
 
 pub struct ProfileSelector {
   focus_handle: FocusHandle,
@@ -15,7 +13,7 @@ pub struct ProfileSelector {
 
 impl ProfileSelector {
   pub fn new(vars: Entity<ProjectVariables>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-    let profile_select_state = cx.new(|cx| SelectState::new(vec![], Some(IndexPath::default()), window, cx));
+    let profile_select_state = profile_select(&vars, window, cx);
     cx.subscribe(&profile_select_state, {
       let vars = vars.clone();
       move |_, _, event: &SelectEvent<Vec<Profile>>, cx| match event {
@@ -26,42 +24,27 @@ impl ProfileSelector {
 
     let _vars_event_sub = cx.subscribe_in(&vars, window, move |this, vars, event, window, cx| match event {
       ProjectVariablesEvent::ProfilesChanged => {
-        this.update_profiles_select_state(vars.read(cx).profiles.clone(), window, cx);
+        this
+          .profile_select_state
+          .update(cx, |state, cx| state.set_items(vars.read(cx).profiles.clone(), window, cx));
       }
-      ProjectVariablesEvent::ActiveProfile(id) => {
-        this.update_selected_profile_select_state(id, window, cx);
-      }
+      ProjectVariablesEvent::ActiveProfile(id) => match id {
+        None => this
+          .profile_select_state
+          .update(cx, |state, cx| state.set_selected_index(None, window, cx)),
+        Some(id) => {
+          this
+            .profile_select_state
+            .update(cx, |state, cx| state.set_selected_value(id, window, cx));
+        }
+      },
       _ => {}
     });
 
-    let this = Self {
+    Self {
       focus_handle: cx.focus_handle(),
       _vars_event_sub,
       profile_select_state,
-    };
-
-    this.update_profiles_select_state(vars.read(cx).profiles.clone(), window, cx);
-    this.update_selected_profile_select_state(&vars.read(cx).active_profile(), window, cx);
-
-    this
-  }
-
-  fn update_profiles_select_state(&self, profiles: Vec<Profile>, window: &mut Window, cx: &mut Context<Self>) {
-    self
-      .profile_select_state
-      .update(cx, |state, cx| state.set_items(profiles, window, cx));
-  }
-
-  fn update_selected_profile_select_state(&self, id: &Option<Uuid>, window: &mut Window, cx: &mut Context<Self>) {
-    match id {
-      None => self
-        .profile_select_state
-        .update(cx, |state, cx| state.set_selected_index(None, window, cx)),
-      Some(id) => {
-        self
-          .profile_select_state
-          .update(cx, |state, cx| state.set_selected_value(id, window, cx));
-      }
     }
   }
 }

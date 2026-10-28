@@ -1,3 +1,4 @@
+use crate::ui::components::profile_select;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::empty::{EmptyDescription, EmptyHeader, EmptyTitle};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
@@ -14,13 +15,13 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
 use ki_app_shared::panel::PanelDescriptor;
+use ki_app_shared::{ContextMenuBuilder, EditedCell, MovingLabel};
 use ki_assets::icon::IconAsset;
 use ki_utils::SidebarPanel;
 use ki_workspace::Project;
 use ki_workspace::variable::{DraggedVar, Profile, ProjectVariables, VariableKind, VariableReference};
 use log::warn;
 use uuid::Uuid;
-use ki_app_shared::{ContextMenuBuilder, EditedCell, MovingLabel};
 
 pub struct VariableEditor {
   table_state: Entity<TableState<VariableDataTableDelegate>>,
@@ -253,10 +254,9 @@ impl VariableDataTableDelegate {
       Column::new("var_value", "Value").width(px(200.0)),
       Column::new("var_description", "Description").width(px(250.0)),
     ];
-    let project_vars = project.read(cx).variables.clone();
-    let profile_infos = project_vars.read(cx).profiles.clone();
+    let vars = project.read(cx).variables.clone();
 
-    let profile_select_state = cx.new(|cx| SelectState::new(profile_infos, Some(IndexPath::default()), window, cx));
+    let profile_select_state = profile_select(&vars, window, cx);
     cx.subscribe_in(
       &profile_select_state,
       window,
@@ -290,7 +290,7 @@ impl VariableDataTableDelegate {
     let cell_input_state = cx.new(|cx| InputState::new(window, cx));
 
     Self {
-      project_vars,
+      project_vars: vars,
       table_columns,
       edited_cell: None,
       profile_select_state,
@@ -545,6 +545,7 @@ impl Render for VariableEditor {
         h_flex().w_full().justify_between().child(
           h_flex()
             .gap_x_2()
+            .h_5()
             .child(
               Switch::new("switch-show-profile")
                 .label(SharedString::new("Show for profile"))

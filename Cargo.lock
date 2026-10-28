@@ -3721,7 +3721,7 @@ dependencies = [
 name = "ki_settings"
 version = "0.1.0"
 dependencies = [
- "dirs 5.0.1",
+ "dirs 6.0.0",
  "gpui-kit",
  "ki_utils",
  "log",
@@ -3763,7 +3763,7 @@ name = "kinaro"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "dirs 5.0.1",
+ "dirs 6.0.0",
  "gpui-kit",
  "ki_app_shared",
  "ki_assets",
