@@ -3,6 +3,7 @@ pub mod icon;
 pub mod theme;
 
 use anyhow::anyhow;
+use gpui_kit::component::ThemeMode;
 use gpui_kit::{App, AssetSource, Result, SharedString};
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
@@ -27,7 +28,7 @@ impl AssetSource for Assets {
   }
 }
 
-pub fn init(cx: &mut App) {
+pub fn init(theme: ThemeMode, cx: &mut App) {
   font::init(cx);
-  theme::init(cx);
+  theme::init(theme, cx);
 }

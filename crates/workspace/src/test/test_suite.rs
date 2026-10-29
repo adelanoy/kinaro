@@ -7,6 +7,7 @@ use gpui_kit::component::Icon;
 use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, SharedString, WeakEntity};
 use ki_assets::icon::IconAsset;
 use ki_project::{FileSuiteChild, FileTestCase, FileTestStep, FileTestSuite};
+use ki_utils::http::HttpMethod;
 use ki_utils::{CASE, Offset, STEP};
 use log::{debug, warn};
 use std::cmp::min;
@@ -132,15 +133,32 @@ impl TestSuite {
   ///
   /// # Events
   /// [`TestsContainerEvent::TestAdded`] on the owning container, with the path of the new step.
-  pub fn add_new_delay_step(&mut self, path: TestPath, cx: &mut Context<Self>) -> TestPath {
-    let position = self.position_after(&path, cx).unwrap_or(self.children.len());
+  pub fn add_delay_step(&mut self, path: TestPath, cx: &mut Context<Self>) -> TestPath {
     let name = ki_utils::next_available_name("new Delay", self.children.iter().map(|child| child.name(cx)));
     let new_step = cx.new(|cx| TestStep::new_delay(&self.meta.path, name, self.container.clone(), cx));
-    let path = new_step.read(cx).meta.path;
-    self.children.insert(position, TestSuiteChild::Step(new_step));
-    _ = self
-      .container
-      .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(path)));
+    self.add_step(path, new_step, cx)
+  }
+
+  /// Adds a new Rest step sending a `method` request relative to `path`: right after the child `path` points to or
+  /// goes through, or appended at the end when `path` is the suite itself or no child matches. The new
+  /// step gets a fresh id and a unique name. Returns its path.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestAdded`] on the owning container, with the path of the new step.
+  pub fn add_rest_step(&mut self, path: TestPath, method: HttpMethod, cx: &mut Context<Self>) -> TestPath {
+    let name = ki_utils::next_available_name(
+      &format!("{} Request", method.as_str()),
+      self.children.iter().map(|child| child.name(cx)),
+    );
+    let new_step = cx.new(|cx| TestStep::new_rest(&self.meta.path, name, method, self.container.clone(), cx));
+    self.add_step(path, new_step, cx)
+  }
+
+  fn add_step(&mut self, path: TestPath, step: Entity<TestStep>, cx: &mut Context<Self>) -> TestPath {
+    let position = self.position_after(&path, cx).unwrap_or(self.children.len());
+    let path = step.read(cx).meta.path;
+    self.children.insert(position, TestSuiteChild::Step(step));
+    _ = self.container.update(cx, |container, cx| container.emit_new_test(path, cx));
     path
   }
 
@@ -156,9 +174,7 @@ impl TestSuite {
     let new_case = TestCase::new(self.meta.id(), name, self.container.clone());
     let path = new_case.meta.path;
     self.children.insert(position, TestSuiteChild::Case(cx.new(|_| new_case)));
-    _ = self
-      .container
-      .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(path)));
+    _ = self.container.update(cx, |container, cx| container.emit_new_test(path, cx));
     path
   }
 
@@ -218,12 +234,10 @@ impl TestSuite {
     let child = &self.children[ix];
     let new_name = ki_utils::next_available_name(&child.name(cx), self.children.iter().map(|child| child.name(cx)));
     let copy = child.duplicate(new_name, &self.meta.path, cx);
-    let new_path = copy.path(cx);
+    let path = copy.path(cx);
     self.children.insert(ix + 1, copy);
-    _ = self
-      .container
-      .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(new_path)));
-    Ok(new_path)
+    _ = self.container.update(cx, |container, cx| container.emit_new_test(path, cx));
+    Ok(path)
   }
 
   /// Builds a suite from its on-disk representation. With `new_id`, the suite and all of its
@@ -359,11 +373,9 @@ impl TestSuite {
       return;
     };
     let child = TestSuiteChild::from_file(file_child, self.meta.id(), true, self.container.clone(), cx);
-    let new_path = child.path(cx);
+    let path = child.path(cx);
     self.children.insert(ix, child);
-    _ = self
-      .container
-      .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(new_path)));
+    _ = self.container.update(cx, |container, cx| container.emit_new_test(path, cx));
   }
 
   /// Returns the index right after the child `path` points to or goes through, or `None` when no
@@ -524,8 +536,8 @@ mod tests {
     let (p, tests) = fixture(cx);
     let events = record_events(&tests, cx);
     let suite = suite(&tests, p.suite_a, cx);
-    let first = suite.update(cx, |suite, cx| suite.add_new_delay_step(p.case_a, cx));
-    let second = suite.update(cx, |suite, cx| suite.add_new_delay_step(p.suite_a, cx));
+    let first = suite.update(cx, |suite, cx| suite.add_delay_step(p.case_a, cx));
+    let second = suite.update(cx, |suite, cx| suite.add_delay_step(p.suite_a, cx));
     assert_eq!(
       child_names(&tests, p.suite_a, cx),
       vec!["Case A", "new Delay", "Suite step A", "new Delay_1"]

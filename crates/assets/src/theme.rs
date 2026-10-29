@@ -1,6 +1,5 @@
 use gpui_kit::App;
-use gpui_kit::component::{Theme, ThemeRegistry};
-use ki_settings::app_state::AppState;
+use gpui_kit::component::{Theme, ThemeMode, ThemeRegistry};
 use log::warn;
 use std::borrow::Cow;
 
@@ -21,7 +20,7 @@ impl ThemeAsset {
   }
 }
 
-pub(crate) fn init(cx: &mut App) {
+pub(crate) fn init(theme: ThemeMode, cx: &mut App) {
   let theme_asset = ThemeAsset::Ayu.load_theme_asset(cx);
   if let Err(err) = ThemeRegistry::global_mut(cx).load_themes_from_str(str::from_utf8(&theme_asset).unwrap()) {
     warn!("Error while loading themes: {err}");
@@ -35,6 +34,5 @@ pub(crate) fn init(cx: &mut App) {
     Theme::global_mut(cx).apply_config(&theme);
   }
   Theme::global_mut(cx).focus_ring = false;
-  let theme_prefs = AppState::read(cx, |app_state| app_state.theme);
-  Theme::change(theme_prefs, None, cx);
+  Theme::change(theme, None, cx);
 }

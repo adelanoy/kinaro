@@ -1,5 +1,6 @@
 use gpui_kit::base::actions::Cancel;
-use gpui_kit::{App, KeyBinding, NoAction, actions};
+use gpui_kit::{Action, App, KeyBinding, NoAction, actions};
+use ki_utils::http::HttpMethod;
 
 pub const PROJECT_TREE_CONTEXT_KEY: &str = "ProjectTree";
 pub const TABLE_CONTEXT_KEY: &str = "Table";
@@ -14,6 +15,13 @@ actions!([CreateProject, OpenProject]);
 
 // PROJECT TREE
 actions!([AddTestSuite, AddTestCase, AddDelayStep, SwitchNodeActiveStatus]);
+
+/// Adds a new Rest step sending a `method` request.
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = project_tree, no_json)]
+pub struct AddRestStep {
+  pub method: HttpMethod,
+}
 
 pub fn init(cx: &mut App) {
   cx.bind_keys([

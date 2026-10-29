@@ -104,8 +104,8 @@ impl<D: TreeDelegate> TreeState<D> {
   }
 
   fn on_node_right_click(&mut self, path: TestPath, cx: &mut Context<TreeState<D>>) {
-    cx.stop_propagation();
     self.selected_path = Some(path);
+    cx.notify();
   }
 
   fn on_action_left(&mut self, _action: &Left, _window: &mut Window, cx: &mut Context<TreeState<D>>) {
@@ -230,9 +230,14 @@ impl<D: TreeDelegate> Render for TreeState<D> {
                   let path = *path;
                   cx.listener(move |this, e, _, cx| this.on_node_click(e, path, cx))
                 })
-                .on_mouse_down(MouseButton::Right, {
+                // Capture phase: the node's context menu stops the bubbling right click before it reaches the row
+                .capture_any_mouse_down({
                   let path = *path;
-                  cx.listener(move |this, _, _, cx| this.on_node_right_click(path, cx))
+                  cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                    if e.button == MouseButton::Right {
+                      this.on_node_right_click(path, cx)
+                    }
+                  })
                 })
             })
             .collect()

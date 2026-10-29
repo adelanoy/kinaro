@@ -7,14 +7,14 @@ use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, T
 use gpui_kit::component::{Disableable, FocusableExt, Icon, IconName, Sizable, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
-use uuid::Uuid;
 use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
-use ki_app_shared::{ContextMenuBuilder, EditedCell, MovingLabel};
 use ki_app_shared::panel::PanelDescriptor;
+use ki_app_shared::{ContextMenuBuilder, EditedCell, MovingLabel};
 use ki_assets::icon::IconAsset;
 use ki_utils::SidebarPanel;
 use ki_workspace::Project;
 use ki_workspace::variable::{DraggedProfile, Profile, ProjectVariables};
+use uuid::Uuid;
 
 pub(in crate::ui::side_bar) struct ProfileEditor {
   table_state: Entity<TableState<ProfileDataTableDelegate>>,

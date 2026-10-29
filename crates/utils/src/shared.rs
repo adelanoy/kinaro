@@ -84,6 +84,14 @@ impl TestPath {
     matches!(self, TestPath::SuiteStep(_, _))
   }
 
+  pub fn parent(&self) -> Option<TestPath> {
+    match self {
+      TestPath::Suite(_) => None,
+      TestPath::Case(suite_id, _) | TestPath::SuiteStep(suite_id, _) => Some(TestPath::Suite(*suite_id)),
+      TestPath::Step(suite_id, case_id, _) => Some(TestPath::Case(*suite_id, *case_id)),
+    }
+  }
+
   /// Returns the id of the step this path points to, or `None` for a suite or case path.
   pub fn step_id(&self) -> Option<Uuid> {
     match *self {

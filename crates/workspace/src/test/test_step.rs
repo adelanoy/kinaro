@@ -5,6 +5,7 @@ use gpui_kit::component::Icon;
 use gpui_kit::{App, AppContext, Context, Entity, Rgba, SharedString, Styled, WeakEntity};
 use ki_assets::icon::IconAsset;
 use ki_project::{FileStepData, FileTestStep};
+use ki_utils::http::{HttpMethod, LOCALHOST_ENDPOINT};
 use ki_utils::time::TimeUnit;
 use uuid::Uuid;
 
@@ -133,16 +134,33 @@ impl TestStep {
   pub fn new_delay(parent_path: &TestPath, name: SharedString, container: WeakEntity<TestsContainer>, cx: &mut App) -> Self {
     Self {
       container: container.clone(),
-      meta: TestMetadata {
-        path: TestPath::new_step(parent_path, Uuid::new_v4()),
-        name,
-        description: None,
-        disabled: false,
-      },
+      meta: TestMetadata::new_step(name, parent_path),
       data: StepData::Delay(cx.new(|_| DelayData {
         container,
         duration: 1000,
         unit: TimeUnit::Millisecond,
+      })),
+    }
+  }
+
+  /// Creates a new Rest step sending a `method` request to the default endpoint, placed where
+  /// `parent_path` points, with a freshly generated id.
+  pub fn new_rest(
+    parent_path: &TestPath,
+    name: SharedString,
+    method: HttpMethod,
+    container: WeakEntity<TestsContainer>,
+    cx: &mut App,
+  ) -> Self {
+    Self {
+      container: container.clone(),
+      meta: TestMetadata::new_step(name, parent_path),
+      data: StepData::Rest(cx.new(|_| RestData {
+        container,
+        method,
+        endpoint: LOCALHOST_ENDPOINT.clone(),
+        params: vec![],
+        body: Default::default(),
       })),
     }
   }

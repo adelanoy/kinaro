@@ -19,7 +19,8 @@ pub(super) fn init_app(config_dir: PathBuf, cx: &mut App) {
 
   info!("Initializing component lib");
   gpui_kit::init(cx);
-  ki_assets::init(cx);
+  let theme_prefs = AppState::read(cx, |app_state| app_state.theme);
+  ki_assets::init(theme_prefs, cx);
   actions::init(cx);
 }
 

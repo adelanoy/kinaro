@@ -97,6 +97,16 @@ impl TestMetadata {
     }
   }
 
+  /// Builds a new metadata for a step placed where `parent` points (see [`TestPath::new_step`]).
+  pub(crate) fn new_step(name: SharedString, parent: &TestPath) -> Self {
+    Self {
+      path: TestPath::new_step(parent, Uuid::new_v4()),
+      name,
+      description: None,
+      disabled: false,
+    }
+  }
+
   /// Builds the metadata of a step placed where `parent` points (see [`TestPath::new_step`]) from
   /// its on-disk representation, with a freshly generated id.
   pub(crate) fn new_step_from_file(file_test_info: FileTestMetadata, parent: &TestPath) -> Self {
@@ -324,6 +334,13 @@ impl TestsContainer {
     } else {
       Err(ProjectError::TestNotFound(*path))
     }
+  }
+
+  pub(crate) fn emit_new_test(&mut self, path: TestPath, cx: &mut Context<Self>) {
+    if let Some(parent) = path.parent() {
+      self.opened_tree_nodes.insert(parent);
+    }
+    cx.emit(TestsContainerEvent::TestAdded(path));
   }
 
   /// Marks the node at `id` as expanded in the project tree.
