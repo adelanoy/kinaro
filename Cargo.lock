@@ -3686,7 +3686,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "gpui-kit",
- "ki_settings",
  "log",
  "rust-embed",
 ]
@@ -3736,6 +3735,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "gpui-kit",
+ "ki_assets",
  "serde",
  "uuid",
 ]

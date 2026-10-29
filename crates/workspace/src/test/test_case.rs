@@ -6,6 +6,7 @@ use gpui_kit::component::Icon;
 use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, SharedString, WeakEntity};
 use ki_assets::icon::IconAsset;
 use ki_project::{FileTestCase, FileTestStep};
+use ki_utils::http::HttpMethod;
 use ki_utils::{Offset, STEP};
 use log::{debug, warn};
 use std::cmp::min;
@@ -35,19 +36,36 @@ impl TestCase {
   /// # Events
   /// [`TestsContainerEvent::TestAdded`] on the owning container, with the path of the new step.
   pub fn add_delay_step(&mut self, path: TestPath, cx: &mut Context<Self>) -> TestPath {
+    let name = ki_utils::next_available_name("new Delay", self.steps.iter().map(|step| step.read(cx).meta.name.clone()));
+    let new_step = cx.new(|cx| TestStep::new_delay(&self.meta.path, name, self.container.clone(), cx));
+    self.add_step(path, new_step, cx)
+  }
+
+  /// Adds a new Rest step sending a `method` request relative to `path`: right after the step at `path`, or
+  /// appended at the end when `path` is the case itself or no step matches. The new
+  /// step gets a fresh id and a unique name. Returns its path.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestAdded`] on the owning container, with the path of the new step.
+  pub fn add_rest_step(&mut self, path: TestPath, method: HttpMethod, cx: &mut Context<Self>) -> TestPath {
+    let name = ki_utils::next_available_name(
+      &format!("{} Request", method.as_str()),
+      self.steps.iter().map(|step| step.read(cx).meta.name.clone()),
+    );
+    let new_step = cx.new(|cx| TestStep::new_rest(&self.meta.path, name, method, self.container.clone(), cx));
+    self.add_step(path, new_step, cx)
+  }
+
+  fn add_step(&mut self, path: TestPath, step: Entity<TestStep>, cx: &mut Context<Self>) -> TestPath {
     let position = self
       .steps
       .iter()
       .position(|step| step.read(cx).meta.path.is_parent(&path))
       .map(|pos| min(pos + 1, self.steps.len()))
       .unwrap_or(self.steps.len());
-    let name = ki_utils::next_available_name("new Delay", self.steps.iter().map(|step| step.read(cx).meta.name.clone()));
-    let new_step = cx.new(|cx| TestStep::new_delay(&self.meta.path, name, self.container.clone(), cx));
-    let path = new_step.read(cx).meta.path;
-    self.steps.insert(position, new_step);
-    _ = self
-      .container
-      .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(path)));
+    let path = step.read(cx).meta.path;
+    self.steps.insert(position, step);
+    _ = self.container.update(cx, |container, cx| container.emit_new_test(path, cx));
     path
   }
 
@@ -105,12 +123,10 @@ impl TestCase {
       self.steps.iter().map(|step| step.read(cx).meta.name.clone()),
     );
     let new_step = step.update(cx, |step, cx| step.duplicate(new_name, &self.meta.path, cx));
-    let new_path = new_step.meta.path;
+    let path = new_step.meta.path;
     self.steps.insert(min(ix + 1, self.steps.len()), cx.new(|_| new_step));
-    _ = self
-      .container
-      .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(new_path)));
-    Ok(new_path)
+    _ = self.container.update(cx, |container, cx| container.emit_new_test(path, cx));
+    Ok(path)
   }
 
   /// Builds a case of the suite `suite_id` from its on-disk representation. With `new_id`, the
@@ -239,11 +255,9 @@ impl TestCase {
       return;
     };
     let step = cx.new(|cx| TestStep::from_file(file_step, &self.meta.path, self.container.clone(), true, cx));
-    let new_path = step.read(cx).meta.path;
+    let path = step.read(cx).meta.path;
     self.steps.insert(ix, step);
-    _ = self
-      .container
-      .update(cx, |_, cx| cx.emit(TestsContainerEvent::TestAdded(new_path)));
+    _ = self.container.update(cx, |container, cx| container.emit_new_test(path, cx));
   }
 
   /// Removes the step at `path` and returns it, or `None` when no step of this case is at `path`.

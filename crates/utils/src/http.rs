@@ -1,9 +1,12 @@
-use std::sync::LazyLock;
-use gpui_kit::{App, Hsla, IntoElement, Rgba, SharedString, Styled, Window};
+use gpui_kit::component::Icon;
 use gpui_kit::component::label::Label;
 use gpui_kit::component::select::SelectItem;
+use gpui_kit::{App, Hsla, IntoElement, Rgba, SharedString, Styled, Window};
+use ki_assets::icon::IconAsset;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::sync::LazyLock;
 
+pub static LOCALHOST_ENDPOINT: LazyLock<SharedString> = LazyLock::new(|| SharedString::new("http://localhost:8080"));
 pub static HTTP_HEADER_CONTENT_TYPE: LazyLock<SharedString> = LazyLock::new(|| SharedString::new("Content-Type"));
 const REST_GET_COLOR: &str = "#38bdf8";
 const REST_POST_COLOR: &str = "#fcd34d";
@@ -35,6 +38,19 @@ impl HttpMethod {
     HttpMethod::Options,
   ];
 
+  /// The method's name, as sent in a request (`GET`, `POST`, ...).
+  pub fn as_str(&self) -> &'static str {
+    match self {
+      HttpMethod::Get => "GET",
+      HttpMethod::Post => "POST",
+      HttpMethod::Put => "PUT",
+      HttpMethod::Delete => "DELETE",
+      HttpMethod::Patch => "PATCH",
+      HttpMethod::Head => "HEAD",
+      HttpMethod::Options => "OPTIONS",
+    }
+  }
+
   pub fn color(&self) -> impl Into<Hsla> {
     let hex_str = match self {
       HttpMethod::Get => REST_GET_COLOR,
@@ -46,6 +62,18 @@ impl HttpMethod {
       HttpMethod::Options => REST_OPTIONS_COLOR,
     };
     Rgba::try_from(hex_str).unwrap()
+  }
+
+  pub fn icon(&self) -> Icon {
+    match self {
+      HttpMethod::Get => Icon::new(IconAsset::StepRestGet).text_color(self.color()),
+      HttpMethod::Post => Icon::new(IconAsset::StepRestPost).text_color(self.color()),
+      HttpMethod::Put => Icon::new(IconAsset::StepRestPut).text_color(self.color()),
+      HttpMethod::Delete => Icon::new(IconAsset::StepRestDelete).text_color(self.color()),
+      HttpMethod::Patch => Icon::new(IconAsset::StepRestPatch).text_color(self.color()),
+      HttpMethod::Head => Icon::new(IconAsset::StepRestHead).text_color(self.color()),
+      HttpMethod::Options => Icon::new(IconAsset::StepRestOptions).text_color(self.color()),
+    }
   }
 }
 
@@ -111,7 +139,7 @@ impl From<&RestParamType> for SharedString {
       RestParamType::Header => "Header",
       RestParamType::Cookie => "Cookie",
     }
-      .into()
+    .into()
   }
 }
 

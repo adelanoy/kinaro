@@ -13,12 +13,14 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_app_shared::actions::{
-  AddDelayStep, AddTestCase, AddTestSuite, CopyId, CopyPath, Delete, Duplicate, Edit, MoveDown, MoveUp, PROJECT_TREE_CONTEXT_KEY,
-  SwitchNodeActiveStatus,
+  AddDelayStep, AddRestStep, AddTestCase, AddTestSuite, CopyId, CopyPath, Delete, Duplicate, Edit, MoveDown, MoveUp,
+  PROJECT_TREE_CONTEXT_KEY, SwitchNodeActiveStatus,
 };
 use ki_app_shared::dialog::show_rename_dialog;
 use ki_app_shared::panel::PanelDescriptor;
+use ki_app_shared::{ContextMenuBuilder, MovingLabel};
 use ki_assets::icon::IconAsset;
+use ki_utils::http::HttpMethod;
 use ki_utils::{CASE, DropPosition, STEP, SUITE, SidebarPanel};
 use ki_utils::{Offset, TestPath};
 use ki_workspace::error::ProjectError;
@@ -26,7 +28,6 @@ use ki_workspace::test::{TestMetadataOwner, TestsContainer, can_move};
 use ki_workspace::{Project, TestStep, TestSuite, TestSuiteChild};
 use log::warn;
 use std::collections::HashSet;
-use ki_app_shared::{ContextMenuBuilder, MovingLabel};
 
 /// The project tree panel: shows the project's test suites, cases and steps as a tree, and edits
 /// them through keyboard actions, a context menu and drag and drop.
@@ -58,6 +59,19 @@ impl ProjectTree {
         return;
       };
       if let Some(new_path) = tree.delegate_mut().add_delay_step(path, window, cx) {
+        tree.set_selected_path(Some(new_path));
+      }
+    });
+  }
+
+  /// Adds a new Rest step sending the action's method relative to the selected node, and selects it.
+  fn on_action_add_rest_step(&mut self, action: &AddRestStep, window: &mut Window, cx: &mut Context<Self>) {
+    self.tree_state.update(cx, |tree, cx| {
+      let Some(path) = tree.selected_path() else {
+        warn!("ProjectTree:on_action_add_rest_step: no tree_state selected path");
+        return;
+      };
+      if let Some(new_path) = tree.delegate_mut().add_rest_step(path, action.method, window, cx) {
         tree.set_selected_path(Some(new_path));
       }
     });
@@ -273,12 +287,40 @@ impl ProjectTreeDelegate {
         .tests
         .read(cx)
         .suite_from_path(&path, cx)
-        .map(|suite| suite.update(cx, |suite, cx| suite.add_new_delay_step(path, cx))),
+        .map(|suite| suite.update(cx, |suite, cx| suite.add_delay_step(path, cx))),
       TestPath::Case(_, _) | TestPath::Step(_, _, _) => self
         .tests
         .read(cx)
         .case_from_path(&path, cx)
         .map(|case| case.update(cx, |case, cx| case.add_delay_step(path, cx))),
+    };
+    if new_path.is_none() {
+      window.push_notification(ProjectError::TestNotFound(path), cx);
+    }
+    new_path
+  }
+
+  /// Adds a new Rest step sending a `method` request relative to `path`: as a suite step when
+  /// `path` is a suite or a suite step, as a step of the case otherwise. Returns the new step's
+  /// path, or `None` after pushing a notification if that fails.
+  fn add_rest_step(
+    &mut self,
+    path: TestPath,
+    method: HttpMethod,
+    window: &mut Window,
+    cx: &mut Context<TreeState<Self>>,
+  ) -> Option<TestPath> {
+    let new_path = match path {
+      TestPath::Suite(_) | TestPath::SuiteStep(_, _) => self
+        .tests
+        .read(cx)
+        .suite_from_path(&path, cx)
+        .map(|suite| suite.update(cx, |suite, cx| suite.add_rest_step(path, method, cx))),
+      TestPath::Case(_, _) | TestPath::Step(_, _, _) => self
+        .tests
+        .read(cx)
+        .case_from_path(&path, cx)
+        .map(|case| case.update(cx, |case, cx| case.add_rest_step(path, method, cx))),
     };
     if new_path.is_none() {
       window.push_notification(ProjectError::TestNotFound(path), cx);
@@ -684,15 +726,33 @@ fn build_context_menu(node: &ProjectTreeNode) -> Box<ContextMenuBuilder> {
   let last = node.last;
   let builder = move |menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
     menu
-      .submenu_with_icon(Some(IconName::Plus.into()), "New", window, cx, move |submenu, _, _| {
-        let mut submenu = submenu;
-        if matches!(path, TestPath::Suite(_)) {
-          submenu = submenu.menu_with_icon("Test Suite", IconAsset::TestSuite, Box::new(AddTestSuite));
-        }
-        if matches!(path, TestPath::Suite(_) | TestPath::Case(_, _)) {
-          submenu = submenu.menu_with_icon("Test Case", IconAsset::TestCase, Box::new(AddTestCase));
-        }
-        submenu.menu_with_icon("Test Step", IconAsset::TestStep, Box::new(AddDelayStep))
+      .submenu_with_icon(Some(IconName::Plus.into()), "New", window, cx, move |submenu, window, cx| {
+        submenu
+          .when(matches!(path, TestPath::Suite(_)), |submenu| {
+            submenu.menu_with_icon("Test Suite", IconAsset::TestSuite, Box::new(AddTestSuite))
+          })
+          .when(matches!(path, TestPath::Suite(_) | TestPath::Case(_, _)), |submenu| {
+            submenu.menu_with_icon("Test Case", IconAsset::TestCase, Box::new(AddTestCase))
+          })
+          .submenu_with_icon(
+            Some(IconAsset::TestStep.into()),
+            "Test Step",
+            window,
+            cx,
+            move |submenu, _, _| {
+              HttpMethod::ALL
+              .iter()
+              .fold(submenu, |submenu, method| {
+                submenu.menu_with_icon(
+                  format!("{} Request", method.as_str()),
+                  method.icon(),
+                  Box::new(AddRestStep { method: *method }),
+                )
+              })
+              .separator()
+              .menu_with_icon("Delay", IconAsset::TestStep, Box::new(AddDelayStep))
+            },
+          )
       })
       .separator()
       .menu_with_icon("Copy", IconName::Copy, Box::new(Copy))
@@ -804,6 +864,7 @@ impl Render for ProjectTree {
       .key_context(PROJECT_TREE_CONTEXT_KEY)
       .on_action(cx.listener(Self::on_action_add_test_case))
       .on_action(cx.listener(Self::on_action_add_delay_step))
+      .on_action(cx.listener(Self::on_action_add_rest_step))
       .on_action(cx.listener(Self::on_action_add_test_suite))
       .on_action(cx.listener(Self::on_action_copy))
       .on_action(cx.listener(Self::on_action_copy_id))
