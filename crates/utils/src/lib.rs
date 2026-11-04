@@ -3,10 +3,13 @@ pub mod date_time;
 pub mod http;
 pub mod shared;
 
+use std::sync::LazyLock;
 pub use conversion::{from_multiline, to_multiline};
 pub use date_time::*;
 use gpui_kit::SharedString;
 pub use shared::*;
+
+pub static EMPTY_SHARED_STRING: LazyLock<SharedString> = LazyLock::new(|| SharedString::new(""));
 
 /// Clipboard metadata of a copied test suite
 pub const SUITE: &str = "Suite";

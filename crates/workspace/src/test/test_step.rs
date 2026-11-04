@@ -288,7 +288,7 @@ mod tests {
         endpoint: "/items".to_string(),
         params: vec![],
         body: FileRestBody::Raw {
-          content_type: ContentType::ApplicationJson,
+          content_type: ContentType::Json,
           lines: vec!["{".to_string(), "}".to_string()],
         },
       }),

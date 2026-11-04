@@ -1,6 +1,6 @@
 use gpui_kit::component::Icon;
 use gpui_kit::component::tab::Tab;
-use gpui_kit::{AnyView, App, Entity, ParentElement, Render, SharedString, Styled, Window};
+use gpui_kit::{AnyView, App, AppContext, Context, Entity, ParentElement, Render, SharedString, Styled, Window};
 
 pub struct PanelContainer<D> {
   selected_ix: usize,
@@ -56,7 +56,7 @@ impl<D: Clone + 'static> Panel<D> {
     let title = T::name();
     let icon = T::icon();
     let panel_type = T::panel_type();
-    let view = T::new(entity, window, cx);
+    let view = cx.new(|cx| T::new(entity, window, cx));
 
     Self {
       title: SharedString::from(title),
@@ -74,5 +74,5 @@ pub trait PanelDescriptor<D, E>: Render {
 
   fn panel_type() -> D;
 
-  fn new(entity: Entity<E>, window: &mut Window, cx: &mut App) -> Entity<Self>;
+  fn new(entity: Entity<E>, window: &mut Window, cx: &mut Context<Self>) -> Self;
 }

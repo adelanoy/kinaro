@@ -1,6 +1,7 @@
 use crate::metadata_editor::MetadataEditor;
 use crate::step_editor::delay_editor::DelayEditor;
 use crate::step_editor::rest_editor::RestEditor;
+use gpui_kit::base::v_flex;
 use gpui_kit::component::Icon;
 use gpui_kit::component::separator::Separator;
 use gpui_kit::prelude::FluentBuilder;
@@ -76,11 +77,11 @@ impl StepEditor {
 
 impl Render for StepEditor {
   fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-    div()
+    v_flex()
       .size_full()
       .child(self.metadata_editor.clone())
       .child(Separator::horizontal())
-      .child(div().size_full().map(|this| match &self.data_editor {
+      .child(div().w_full().flex_1().min_h_0().map(|this| match &self.data_editor {
         StepDataEditor::Delay(editor) => this.child(editor.clone()),
         StepDataEditor::Rest(editor) => this.child(editor.clone()),
       }))

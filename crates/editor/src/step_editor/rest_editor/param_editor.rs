@@ -120,17 +120,15 @@ impl PanelDescriptor<RestEditorPanel, RestData> for RestParamEditor {
     RestEditorPanel::Params
   }
 
-  fn new(entity: Entity<RestData>, window: &mut Window, cx: &mut App) -> Entity<Self> {
-    cx.new(|cx| {
-      let table_state = cx.new(|cx| {
-        TableState::new(RestParamDataTableDelegate::new(entity, window, cx), window, cx)
-          .cell_selectable(true)
-          .row_selectable(true)
-          .col_selectable(false)
-      });
-      let _table_sub = cx.subscribe_in(&table_state, window, Self::on_table_event);
-      RestParamEditor { table_state, _table_sub }
-    })
+  fn new(entity: Entity<RestData>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    let table_state = cx.new(|cx| {
+      TableState::new(RestParamDataTableDelegate::new(entity, window, cx), window, cx)
+        .cell_selectable(true)
+        .row_selectable(true)
+        .col_selectable(false)
+    });
+    let _table_sub = cx.subscribe_in(&table_state, window, Self::on_table_event);
+    RestParamEditor { table_state, _table_sub }
   }
 }
 
@@ -147,7 +145,6 @@ struct RestParamDataTableDelegate {
 impl RestParamDataTableDelegate {
   fn add_param(&mut self, row_ix: Option<usize>, cx: &mut Context<TableState<Self>>) {
     self.rest_data.update(cx, |params, cx| params.add_param(row_ix, cx));
-    cx.notify();
   }
 
   fn build_cell_context_menu(col_ix: usize, editable: bool) -> Box<ContextMenuBuilder> {
@@ -226,7 +223,6 @@ impl RestParamDataTableDelegate {
   }
   fn duplicate_param(&mut self, row_ix: usize, cx: &mut Context<TableState<Self>>) {
     self.rest_data.update(cx, |params, cx| params.duplicate_param(row_ix, cx));
-    cx.notify();
   }
 
   fn clear_selection(&mut self) {

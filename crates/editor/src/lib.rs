@@ -6,6 +6,8 @@ mod suite_editor;
 use crate::case_editor::CaseEditor;
 use crate::step_editor::StepEditor;
 use crate::suite_editor::SuiteEditor;
+use gpui_kit::base::input::language_config::LanguageConfig;
+use gpui_kit::base::input::{AutoClosingPair, BracketPair, SyntaxContext, set_language_config};
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::button::{Button, ButtonVariants, Toggle};
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyTitle};
@@ -23,6 +25,38 @@ use ki_utils::{DropPosition, TestPath, moved_index};
 use ki_workspace::Project;
 use ki_workspace::test::{TestsContainer, TestsContainerEvent};
 use log::warn;
+
+pub fn init(cx: &mut App) {
+  let json_rules = LanguageConfig::default()
+    .brackets([
+      BracketPair::new("{", "}"),
+      BracketPair::new("(", ")"),
+      BracketPair::new("[", "]"),
+    ])
+    .auto_closing_pairs([
+      AutoClosingPair::new("{", "}").not_in([SyntaxContext::String, SyntaxContext::Comment]),
+      AutoClosingPair::new("(", ")").not_in([SyntaxContext::String, SyntaxContext::Comment]),
+      AutoClosingPair::new("\"", "\"").not_in([SyntaxContext::String, SyntaxContext::Comment]),
+      AutoClosingPair::new("[", "]").not_in([SyntaxContext::String, SyntaxContext::Comment]),
+    ]);
+  set_language_config("json", json_rules, cx);
+
+  let xml_rules = LanguageConfig::default()
+    .brackets([BracketPair::new("<", ">")])
+    .auto_closing_pairs([
+      AutoClosingPair::new("<", ">").not_in([SyntaxContext::String, SyntaxContext::Comment]),
+      AutoClosingPair::new("\"", "\"").not_in([SyntaxContext::String, SyntaxContext::Comment]),
+    ]);
+  set_language_config("xml", xml_rules, cx);
+
+  let yaml_rules = LanguageConfig::default()
+    .brackets([BracketPair::new("{", "}"), BracketPair::new("[", "]")])
+    .auto_closing_pairs([
+      AutoClosingPair::new("{", "}").not_in([SyntaxContext::String, SyntaxContext::Comment]),
+      AutoClosingPair::new("[", "]").not_in([SyntaxContext::String, SyntaxContext::Comment]),
+    ]);
+  set_language_config("yaml", yaml_rules, cx);
+}
 
 pub enum EditorEvent {
   ToggleSidebar,
@@ -427,7 +461,7 @@ impl Render for EditorView {
             ),
         )
       }))
-      .child(div().size_full().map(|this| {
+      .child(div().w_full().flex_1().min_h_0().map(|this| {
         match self.active_tab.and_then(|tab| self.tabs.get(tab)).map(|tab| &tab.editor) {
           Some(TestEditor::Suite(editor)) => this.child(editor.clone()),
           Some(TestEditor::Case(editor)) => this.child(editor.clone()),

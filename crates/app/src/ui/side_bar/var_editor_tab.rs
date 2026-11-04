@@ -117,18 +117,16 @@ impl PanelDescriptor<SidebarPanel, Project> for VariableEditor {
     SidebarPanel::Variable
   }
 
-  fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<Self> {
-    cx.new(|cx| {
-      let table_state = cx.new(|cx| {
-        TableState::new(VariableDataTableDelegate::new(project, window, cx), window, cx)
-          .row_selectable(true)
-          .col_selectable(false)
-          .cell_selectable(true)
-      });
-      cx.subscribe_in(&table_state, window, Self::on_table_event).detach();
+  fn new(project: Entity<Project>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    let table_state = cx.new(|cx| {
+      TableState::new(VariableDataTableDelegate::new(project, window, cx), window, cx)
+        .row_selectable(true)
+        .col_selectable(false)
+        .cell_selectable(true)
+    });
+    cx.subscribe_in(&table_state, window, Self::on_table_event).detach();
 
-      Self { table_state }
-    })
+    Self { table_state }
   }
 }
 
@@ -538,7 +536,6 @@ impl Render for VariableEditor {
       .on_action(cx.listener(Self::on_action_duplicate))
       .on_action(cx.listener(Self::on_action_edit))
       .on_action(cx.listener(Self::on_action_new))
-      .p_1()
       .size_full()
       .gap_y_2()
       .child(

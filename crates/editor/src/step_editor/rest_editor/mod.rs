@@ -137,6 +137,6 @@ impl Render for RestEditor {
           }))
           .children(self.panel_container.tabs()),
       )
-      .child(self.panel_container.view())
+      .child(div().w_full().flex_1().min_h_0().child(self.panel_container.view()))
   }
 }

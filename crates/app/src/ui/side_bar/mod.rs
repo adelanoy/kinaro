@@ -57,8 +57,8 @@ impl Render for ProjectSidebar {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     v_flex()
       .size_full()
-      .gap_y_1()
-      .pt_1()
+      .gap_y_2()
+      .p_1()
       .child(div().px_1().child(self.profile_selector.clone()))
       .child(Separator::horizontal())
       .child(
