@@ -1,12 +1,23 @@
 use crate::test::{TestsContainer, TestsContainerEvent};
 use gpui_kit::component::Icon;
-use gpui_kit::{Context, SharedString, Styled, WeakEntity};
-use ki_assets::icon::IconAsset;
+use gpui_kit::{Context, SharedString, WeakEntity};
 use ki_project::{FileFormField, FileMultipartPart, FileRestBody, FileRestData, FileRestParam};
-use ki_utils::http::{ContentType, HTTP_HEADER_CONTENT_TYPE, HttpMethod, RestParamType};
+use ki_utils::EMPTY_SHARED_STRING;
+use ki_utils::http::{
+  CONTENT_TYPE_FORM_DATA, CONTENT_TYPE_FORM_URL_ENCODED, ContentType, HTTP_HEADER_CONTENT_TYPE, HttpMethod, RestParamType,
+};
 use log::warn;
 use std::cmp::min;
 use std::path::PathBuf;
+
+/// Display name of [`RestBody::None`].
+pub const REST_BODY_NONE: &str = "None";
+/// Display name of [`RestBody::Raw`].
+pub const REST_BODY_RAW: &str = "Raw";
+/// Display name of [`RestBody::FormUrlEncoded`].
+pub const REST_BODY_FORM_URL_ENCODED: &str = "Form URL Encoded";
+/// Display name of [`RestBody::Multipart`].
+pub const REST_BODY_MULTIPART: &str = "Multipart";
 
 /// A name/value pair sent as part of the request.
 #[derive(Eq, PartialEq, Clone, Debug)]
@@ -164,10 +175,12 @@ pub enum RestBody {
   None,
   /// Free text (JSON, XML, plain text...) sent as-is.
   Raw {
+    /// The content-type of the body. Generates an ad-hoc 'Content-Type' header. Although, it can be superseded by user-made header.
+    ///
+    /// This is also used to set up the body's text editor.
     content_type: ContentType,
-    /// One entry per line, so version control diffs only the lines that
-    /// actually changed instead of one escaped multiline string.
-    lines: Vec<SharedString>,
+    /// Text sent in the request's body. It is split into lines when saved to file, to be diff-friendly.
+    content: SharedString,
   },
   FormUrlEncoded {
     fields: Vec<FormField>,
@@ -175,10 +188,23 @@ pub enum RestBody {
   Multipart {
     parts: Vec<MultipartPart>,
   },
-  /// The raw bytes of a single file.
-  Binary {
-    path: PathBuf,
-  },
+}
+
+impl RestBody {
+  /// Display names of every body type, in the order they are offered to the user.
+  ///
+  /// Each name converts back to an empty body of its type through `RestBody::from(&str)`.
+  pub const ALL: &'static [&str] = &[REST_BODY_NONE, REST_BODY_RAW, REST_BODY_FORM_URL_ENCODED, REST_BODY_MULTIPART];
+
+  /// Display name of this body's type (one of [`RestBody::ALL`]), regardless of its content.
+  pub fn type_as_str(&self) -> &'static str {
+    match self {
+      RestBody::None => REST_BODY_NONE,
+      RestBody::Raw { .. } => REST_BODY_RAW,
+      RestBody::FormUrlEncoded { .. } => REST_BODY_FORM_URL_ENCODED,
+      RestBody::Multipart { .. } => REST_BODY_MULTIPART,
+    }
+  }
 }
 
 impl From<FileRestBody> for RestBody {
@@ -187,7 +213,7 @@ impl From<FileRestBody> for RestBody {
       FileRestBody::None => RestBody::None,
       FileRestBody::Raw { content_type, lines } => RestBody::Raw {
         content_type,
-        lines: lines.into_iter().map(Into::into).collect(),
+        content: ki_utils::from_multiline(&lines).map(|s| s.into()).unwrap_or_default(),
       },
       FileRestBody::FormUrlEncoded { fields } => RestBody::FormUrlEncoded {
         fields: fields.into_iter().map(Into::into).collect(),
@@ -195,7 +221,6 @@ impl From<FileRestBody> for RestBody {
       FileRestBody::Multipart { parts } => RestBody::Multipart {
         parts: parts.into_iter().map(Into::into).collect(),
       },
-      FileRestBody::Binary { path } => RestBody::Binary { path },
     }
   }
 }
@@ -204,9 +229,9 @@ impl From<&RestBody> for FileRestBody {
   fn from(body: &RestBody) -> Self {
     match body {
       RestBody::None => FileRestBody::None,
-      RestBody::Raw { content_type, lines } => FileRestBody::Raw {
-        content_type: content_type.clone(),
-        lines: lines.iter().map(|line| line.to_string()).collect(),
+      RestBody::Raw { content_type, content } => FileRestBody::Raw {
+        content_type: *content_type,
+        lines: ki_utils::to_multiline(content),
       },
       RestBody::FormUrlEncoded { fields } => FileRestBody::FormUrlEncoded {
         fields: fields.iter().map(Into::into).collect(),
@@ -214,7 +239,26 @@ impl From<&RestBody> for FileRestBody {
       RestBody::Multipart { parts } => FileRestBody::Multipart {
         parts: parts.iter().map(Into::into).collect(),
       },
-      RestBody::Binary { path } => FileRestBody::Binary { path: path.to_owned() },
+    }
+  }
+}
+
+impl From<&str> for RestBody {
+  /// Builds an empty body from its type's display name (see [`RestBody::ALL`]), matched case-insensitively.
+  ///
+  /// A raw body starts as empty plain text. Unknown names fall back to [`RestBody::None`].
+  fn from(value: &str) -> Self {
+    if value.eq_ignore_ascii_case(REST_BODY_RAW) {
+      RestBody::Raw {
+        content_type: ContentType::Text,
+        content: EMPTY_SHARED_STRING.clone(),
+      }
+    } else if value.eq_ignore_ascii_case(REST_BODY_MULTIPART) {
+      RestBody::Multipart { parts: vec![] }
+    } else if value.eq_ignore_ascii_case(REST_BODY_FORM_URL_ENCODED) {
+      RestBody::FormUrlEncoded { fields: vec![] }
+    } else {
+      RestBody::None
     }
   }
 }
@@ -242,6 +286,13 @@ impl RestData {
     };
     self.params.insert(ix, param);
     _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    cx.notify();
+  }
+
+  /// The request body.
+  #[inline]
+  pub fn body(&self) -> &RestBody {
+    &self.body
   }
 
   pub fn delete_param(&mut self, row_ix: usize, cx: &mut Context<Self>) {
@@ -250,6 +301,7 @@ impl RestData {
     }
     self.params.remove(row_ix);
     _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    cx.notify();
   }
 
   pub fn duplicate_param(&mut self, row_ix: usize, cx: &mut Context<Self>) {
@@ -261,6 +313,7 @@ impl RestData {
     let ix = min(row_ix + 1, self.params.len());
     self.params.insert(ix, param);
     _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    cx.notify();
   }
 
   #[inline]
@@ -269,16 +322,7 @@ impl RestData {
   }
 
   pub fn icon(&self) -> Icon {
-    let color = self.method.color();
-    match self.method {
-      HttpMethod::Get => Icon::new(IconAsset::StepRestGet).text_color(color),
-      HttpMethod::Post => Icon::new(IconAsset::StepRestPost).text_color(color),
-      HttpMethod::Put => Icon::new(IconAsset::StepRestPut).text_color(color),
-      HttpMethod::Delete => Icon::new(IconAsset::StepRestDelete).text_color(color),
-      HttpMethod::Patch => Icon::new(IconAsset::StepRestPatch).text_color(color),
-      HttpMethod::Head => Icon::new(IconAsset::StepRestHead).text_color(color),
-      HttpMethod::Options => Icon::new(IconAsset::StepRestOptions).text_color(color),
-    }
+    self.method.icon()
   }
 
   pub fn from_file(step: FileRestData, container: WeakEntity<TestsContainer>) -> Self {
@@ -289,18 +333,18 @@ impl RestData {
       body,
     } = step;
     let body = body.into();
-    // Generated params
-    let mut params: Vec<RestParam> = params.into_iter().map(Into::into).collect();
-    if let RestBody::Raw { content_type, .. } = &body {
-      params.push(RestParam::from(content_type))
-    }
-    RestData {
+    let params: Vec<RestParam> = params.into_iter().map(Into::into).collect();
+
+    let mut this = RestData {
       container,
       method,
       endpoint: endpoint.into(),
       params,
       body,
-    }
+    };
+
+    Self::update_generated_content_type_header(&mut this);
+    this
   }
 
   pub fn get_file(&self) -> FileRestData {
@@ -322,10 +366,98 @@ impl RestData {
     &self.params
   }
 
+  /// Replaces the body with `body` when it is of a different type than the current one.
+  ///
+  /// A body of the same type (e.g. a raw body replacing another raw body) is ignored, whatever its content:
+  /// use [`RestData::set_body_raw_content`] or [`RestData::set_body_raw_content_type`] to edit a raw body.
+  /// The generated `Content-Type` header is updated to match the new body (and removed for [`RestBody::None`]);
+  /// user-made headers are left untouched.
+  ///
+  /// # Events
+  /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the body changed.
+  pub fn set_body(&mut self, body: RestBody, cx: &mut Context<Self>) {
+    use std::mem::discriminant;
+
+    if discriminant(&body) == discriminant(&self.body) {
+      return;
+    }
+    self.body = body;
+
+    self.update_generated_content_type_header();
+    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    cx.notify();
+  }
+
+  /// Makes the generated `Content-Type` header match the body: updated in place if it exists, appended after
+  /// the user params otherwise, and removed when the body has no content type.
+  fn update_generated_content_type_header(&mut self) {
+    let content_type_param = match &self.body {
+      RestBody::Raw { content_type, .. } => Some(RestParam::from(content_type)),
+      RestBody::None => None,
+      RestBody::FormUrlEncoded { .. } => Some(RestParam {
+        param_type: RestParamType::Header,
+        name: HTTP_HEADER_CONTENT_TYPE.clone(),
+        value: CONTENT_TYPE_FORM_URL_ENCODED.into(),
+        disabled: false,
+        generated: true,
+      }),
+      RestBody::Multipart { .. } => Some(RestParam {
+        param_type: RestParamType::Header,
+        name: HTTP_HEADER_CONTENT_TYPE.clone(),
+        value: CONTENT_TYPE_FORM_DATA.into(),
+        disabled: false,
+        generated: true,
+      }),
+    };
+    let existing_pos = self
+      .params
+      .iter()
+      .position(|p| p.name == *HTTP_HEADER_CONTENT_TYPE && p.generated);
+    match (content_type_param, existing_pos) {
+      (Some(content_type), Some(pos)) => self.params[pos] = content_type,
+      (Some(content_type), None) => self.params.push(content_type),
+      (None, Some(pos)) => {
+        self.params.remove(pos);
+      }
+      _ => {}
+    }
+  }
+
+  /// Sets the text of a raw body. Does nothing if the body is not raw, or if the text is unchanged.
+  ///
+  /// # Events
+  /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the text changed.
+  pub fn set_body_raw_content(&mut self, updated_content: SharedString, cx: &mut Context<Self>) {
+    if let RestBody::Raw { content, .. } = &mut self.body
+      && *content != updated_content
+    {
+      *content = updated_content;
+      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+      cx.notify();
+    }
+  }
+
+  /// Sets the content type of a raw body, and updates the generated `Content-Type` header accordingly.
+  /// Does nothing if the body is not raw, or if the content type is unchanged.
+  ///
+  /// # Events
+  /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the content type changed.
+  pub fn set_body_raw_content_type(&mut self, updated_content_type: ContentType, cx: &mut Context<Self>) {
+    if let RestBody::Raw { content_type, .. } = &mut self.body
+      && *content_type != updated_content_type
+    {
+      *content_type = updated_content_type;
+      self.update_generated_content_type_header();
+      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+      cx.notify();
+    }
+  }
+
   pub fn set_endpoint(&mut self, endpoint: SharedString, cx: &mut Context<Self>) {
     if self.endpoint != endpoint {
       self.endpoint = endpoint;
       _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+      cx.notify();
     }
   }
 
@@ -333,6 +465,7 @@ impl RestData {
     if self.method != method {
       self.method = method;
       _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+      cx.notify();
       true
     } else {
       false
@@ -350,6 +483,7 @@ impl RestData {
     if self.params[row_ix] != param {
       self.params[row_ix] = param;
       _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+      cx.notify();
     }
   }
 }
@@ -357,8 +491,11 @@ impl RestData {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::test::test_fixtures::load;
-  use gpui_kit::TestAppContext;
+  use crate::test::test_fixtures::{load, record_events};
+  use gpui_kit::{AppContext, Entity, TestAppContext};
+  use ki_utils::http::{
+    CONTENT_TYPE_FORM_DATA, CONTENT_TYPE_FORM_URL_ENCODED, CONTENT_TYPE_JSON, CONTENT_TYPE_PLAIN_TEXT, CONTENT_TYPE_XML,
+  };
 
   fn file_param(param_type: RestParamType, name: &str, value: &str) -> FileRestParam {
     FileRestParam {
@@ -389,8 +526,9 @@ mod tests {
   fn raw_body_generates_a_content_type_header_after_user_params(cx: &mut TestAppContext) {
     let tests = load(Default::default(), Default::default(), cx);
     for (content_type, mime) in [
-      (ContentType::ApplicationJson, "application/json"),
-      (ContentType::Other("text/csv".into()), "text/csv"),
+      (ContentType::Json, CONTENT_TYPE_JSON),
+      (ContentType::Xml, CONTENT_TYPE_XML),
+      (ContentType::Text, CONTENT_TYPE_PLAIN_TEXT),
     ] {
       let file = file_rest(vec![file_param(RestParamType::Query, "page", "1")], raw_body(content_type));
       let rest = RestData::from_file(file, tests.downgrade());
@@ -411,16 +549,28 @@ mod tests {
   }
 
   #[gpui_kit::test]
-  fn non_raw_bodies_generate_no_params(cx: &mut TestAppContext) {
+  fn no_body_generates_no_params(cx: &mut TestAppContext) {
     let tests = load(Default::default(), Default::default(), cx);
-    for body in [
-      FileRestBody::None,
-      FileRestBody::FormUrlEncoded { fields: vec![] },
-      FileRestBody::Multipart { parts: vec![] },
-      FileRestBody::Binary { path: "blob.bin".into() },
+    let rest = RestData::from_file(file_rest(vec![], FileRestBody::None), tests.downgrade());
+    assert!(rest.params().is_empty(), "unexpected params {:?}", rest.params());
+  }
+
+  #[gpui_kit::test]
+  fn form_bodies_generate_their_content_type_header(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    for (body, mime) in [
+      (FileRestBody::FormUrlEncoded { fields: vec![] }, CONTENT_TYPE_FORM_URL_ENCODED),
+      (FileRestBody::Multipart { parts: vec![] }, CONTENT_TYPE_FORM_DATA),
     ] {
       let rest = RestData::from_file(file_rest(vec![], body), tests.downgrade());
-      assert!(rest.params().is_empty(), "unexpected params {:?}", rest.params());
+      let [generated] = rest.params() else {
+        panic!("expected only the generated Content-Type header, got {:?}", rest.params());
+      };
+      assert!(generated.generated());
+      assert_eq!(generated.param_type, RestParamType::Header);
+      assert_eq!(generated.name, *HTTP_HEADER_CONTENT_TYPE);
+      assert_eq!(generated.value, mime);
+      assert!(!generated.disabled);
     }
   }
 
@@ -432,10 +582,212 @@ mod tests {
       file_param(RestParamType::Query, "page", "1"),
       file_param(RestParamType::Header, "Content-Type", "application/xml"),
     ];
-    let file = file_rest(user_params, raw_body(ContentType::ApplicationJson));
+    let file = file_rest(user_params, raw_body(ContentType::Json));
     let rest = RestData::from_file(file.clone(), tests.downgrade());
 
     assert_eq!(rest.params().iter().filter(|param| param.generated()).count(), 1);
     assert_eq!(rest.get_file(), file);
+  }
+
+  /// Loads `file` as a live REST step owned by `tests`.
+  fn rest_entity(file: FileRestData, tests: &Entity<TestsContainer>, cx: &mut TestAppContext) -> Entity<RestData> {
+    let container = tests.downgrade();
+    cx.new(|_| RestData::from_file(file, container))
+  }
+
+  /// Values of the generated headers of `rest`.
+  fn generated_headers(rest: &Entity<RestData>, cx: &TestAppContext) -> Vec<SharedString> {
+    rest.read_with(cx, |rest, _| {
+      rest
+        .params()
+        .iter()
+        .filter(|p| p.generated())
+        .map(|p| p.value.clone())
+        .collect()
+    })
+  }
+
+  fn raw(content_type: ContentType, content: &str) -> RestBody {
+    RestBody::Raw {
+      content_type,
+      content: content.into(),
+    }
+  }
+
+  #[test]
+  fn body_type_names_convert_back_to_their_type() {
+    assert_eq!(
+      RestBody::ALL,
+      [REST_BODY_NONE, REST_BODY_RAW, REST_BODY_FORM_URL_ENCODED, REST_BODY_MULTIPART]
+    );
+    for &name in RestBody::ALL {
+      assert_eq!(RestBody::from(name).type_as_str(), name);
+    }
+  }
+
+  #[test]
+  fn type_as_str_ignores_the_content() {
+    assert_eq!(raw(ContentType::Json, "{}").type_as_str(), REST_BODY_RAW);
+    let fields = vec![FormField {
+      name: "a".into(),
+      value: "1".into(),
+      disabled: false,
+    }];
+    assert_eq!(RestBody::FormUrlEncoded { fields }.type_as_str(), REST_BODY_FORM_URL_ENCODED);
+  }
+
+  #[test]
+  fn body_from_name_builds_an_empty_body() {
+    assert_eq!(RestBody::from(REST_BODY_RAW), raw(ContentType::Text, ""));
+    assert_eq!(
+      RestBody::from(REST_BODY_FORM_URL_ENCODED),
+      RestBody::FormUrlEncoded { fields: vec![] }
+    );
+    assert_eq!(RestBody::from(REST_BODY_MULTIPART), RestBody::Multipart { parts: vec![] });
+    assert_eq!(RestBody::from(REST_BODY_NONE), RestBody::None);
+  }
+
+  #[test]
+  fn body_from_name_is_case_insensitive_and_falls_back_to_none() {
+    assert_eq!(RestBody::from("raw"), raw(ContentType::Text, ""));
+    assert_eq!(RestBody::from("MULTIPART"), RestBody::Multipart { parts: vec![] });
+    assert_eq!(
+      RestBody::from("form url encoded"),
+      RestBody::FormUrlEncoded { fields: vec![] }
+    );
+    assert_eq!(RestBody::from("Binary"), RestBody::None);
+    assert_eq!(RestBody::from(""), RestBody::None);
+  }
+
+  #[test]
+  fn raw_body_lines_are_joined_and_split_back() {
+    let file = FileRestBody::Raw {
+      content_type: ContentType::Json,
+      lines: vec!["{".into(), "  \"a\": 1".into(), "}".into(), "".into()],
+    };
+    let body = RestBody::from(file.clone());
+    assert_eq!(body, raw(ContentType::Json, "{\n  \"a\": 1\n}\n"));
+    assert_eq!(FileRestBody::from(&body), file);
+  }
+
+  #[test]
+  fn empty_raw_body_is_saved_without_lines() {
+    let file = FileRestBody::Raw {
+      content_type: ContentType::Text,
+      lines: vec![],
+    };
+    let body = RestBody::from(file.clone());
+    assert_eq!(body, raw(ContentType::Text, ""));
+    assert_eq!(FileRestBody::from(&body), file);
+  }
+
+  #[gpui_kit::test]
+  fn body_returns_the_loaded_body(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = rest_entity(file_rest(vec![], raw_body(ContentType::Xml)), &tests, cx);
+    assert_eq!(rest.read_with(cx, |rest, _| rest.body().clone()), raw(ContentType::Xml, "{}"));
+  }
+
+  #[gpui_kit::test]
+  fn set_body_changes_the_type_and_its_generated_header(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let user_param = file_param(RestParamType::Query, "page", "1");
+    let rest = rest_entity(file_rest(vec![user_param], FileRestBody::None), &tests, cx);
+    let events = record_events(&tests, cx);
+
+    for (body, expected_headers) in [
+      (raw(ContentType::Json, ""), vec![CONTENT_TYPE_JSON]),
+      (
+        RestBody::FormUrlEncoded { fields: vec![] },
+        vec![CONTENT_TYPE_FORM_URL_ENCODED],
+      ),
+      (RestBody::Multipart { parts: vec![] }, vec![CONTENT_TYPE_FORM_DATA]),
+      (RestBody::None, vec![]),
+    ] {
+      rest.update(cx, |rest, cx| rest.set_body(body.clone(), cx));
+      assert_eq!(rest.read_with(cx, |rest, _| rest.body().clone()), body);
+      assert_eq!(generated_headers(&rest, cx), expected_headers);
+      // The user param is kept, before the generated header
+      assert_eq!(rest.read_with(cx, |rest, _| rest.params()[0].name.clone()), "page");
+    }
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 4]);
+  }
+
+  #[gpui_kit::test]
+  fn set_body_of_the_same_type_is_ignored(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = rest_entity(file_rest(vec![], raw_body(ContentType::Json)), &tests, cx);
+    let events = record_events(&tests, cx);
+
+    rest.update(cx, |rest, cx| rest.set_body(raw(ContentType::Xml, "other"), cx));
+    assert_eq!(
+      rest.read_with(cx, |rest, _| rest.body().clone()),
+      raw(ContentType::Json, "{}")
+    );
+    assert_eq!(generated_headers(&rest, cx), vec![CONTENT_TYPE_JSON]);
+    assert!(events.borrow().is_empty());
+  }
+
+  #[gpui_kit::test]
+  fn set_body_keeps_a_user_content_type_header(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let user_header = file_param(RestParamType::Header, "Content-Type", "application/xml");
+    let rest = rest_entity(file_rest(vec![user_header.clone()], raw_body(ContentType::Json)), &tests, cx);
+
+    rest.update(cx, |rest, cx| rest.set_body(RestBody::None, cx));
+    assert_eq!(
+      rest.read_with(cx, |rest, _| rest.params().to_vec()),
+      vec![RestParam::from(user_header)]
+    );
+  }
+
+  #[gpui_kit::test]
+  fn set_body_raw_content_notifies_changes_only(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = rest_entity(file_rest(vec![], raw_body(ContentType::Json)), &tests, cx);
+    let events = record_events(&tests, cx);
+
+    rest.update(cx, |rest, cx| rest.set_body_raw_content("{}".into(), cx));
+    assert!(events.borrow().is_empty());
+
+    rest.update(cx, |rest, cx| rest.set_body_raw_content("{\n}".into(), cx));
+    assert_eq!(
+      rest.read_with(cx, |rest, _| rest.body().clone()),
+      raw(ContentType::Json, "{\n}")
+    );
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified]);
+  }
+
+  #[gpui_kit::test]
+  fn set_body_raw_content_type_updates_the_generated_header(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = rest_entity(file_rest(vec![], raw_body(ContentType::Json)), &tests, cx);
+    let events = record_events(&tests, cx);
+
+    rest.update(cx, |rest, cx| rest.set_body_raw_content_type(ContentType::Json, cx));
+    assert!(events.borrow().is_empty());
+
+    rest.update(cx, |rest, cx| rest.set_body_raw_content_type(ContentType::Xml, cx));
+    assert_eq!(rest.read_with(cx, |rest, _| rest.body().clone()), raw(ContentType::Xml, "{}"));
+    assert_eq!(generated_headers(&rest, cx), vec![CONTENT_TYPE_XML]);
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified]);
+  }
+
+  #[gpui_kit::test]
+  fn raw_body_setters_ignore_other_bodies(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = rest_entity(file_rest(vec![], FileRestBody::Multipart { parts: vec![] }), &tests, cx);
+    let events = record_events(&tests, cx);
+
+    rest.update(cx, |rest, cx| {
+      rest.set_body_raw_content("text".into(), cx);
+      rest.set_body_raw_content_type(ContentType::Json, cx);
+    });
+    assert_eq!(
+      rest.read_with(cx, |rest, _| rest.body().clone()),
+      RestBody::Multipart { parts: vec![] }
+    );
+    assert_eq!(generated_headers(&rest, cx), vec![CONTENT_TYPE_FORM_DATA]);
+    assert!(events.borrow().is_empty());
   }
 }

@@ -198,7 +198,8 @@ impl Project {
     }
     let path = self.path.clone();
     self.save_task_queued = Some(cx.spawn(async move |this, cx| {
-      cx.background_executor().timer(Duration::from_millis(500)).await;
+      cx.background_executor().timer(Duration::from_secs(2)).await;
+      _ = this.update(cx, |this, _| this.save_requested = false);
       let file = this
         .read_with(cx, |this, cx| this.to_file(cx))
         .map_err(|e| ProjectError::Io(e.to_string()));

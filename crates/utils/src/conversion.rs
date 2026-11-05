@@ -1,12 +1,17 @@
-/// Splits a multiline string into its individual lines, for storage as a
+/// Splits a multiline string on `\n` into its individual lines, for storage as a
 /// `Vec<String>` in a line-oriented format (e.g. JSON) instead of a single
 /// string with embedded `\n`s, so that version control diffs only the lines
 /// that actually changed.
 ///
-/// A trailing newline is not preserved: `"a\nb\n"` and `"a\nb"` both produce
-/// `["a", "b"]`. Use [`from_multiline`] to rejoin the result.
+/// The split is lossless: trailing newlines become trailing empty lines
+/// (`"a\n"` produces `["a", ""]`), `\r` characters are kept as-is, and an empty
+/// string produces no lines. Use [`from_multiline`] to rejoin the result.
 pub fn to_multiline(s: &str) -> Vec<String> {
-  s.lines().map(String::from).collect()
+  if s.is_empty() {
+    vec![]
+  } else {
+    s.split('\n').map(String::from).collect()
+  }
 }
 
 /// Rejoins lines produced by [`to_multiline`] back into a single string,
@@ -30,8 +35,15 @@ mod tests {
   }
 
   #[test]
-  fn to_multiline_drops_a_trailing_newline() {
-    assert_eq!(to_multiline("a\nb\n"), vec!["a", "b"]);
+  fn to_multiline_keeps_trailing_newlines_as_empty_lines() {
+    assert_eq!(to_multiline("a\nb\n"), vec!["a", "b", ""]);
+    assert_eq!(to_multiline("a\n\n"), vec!["a", "", ""]);
+    assert_eq!(to_multiline("\n"), vec!["", ""]);
+  }
+
+  #[test]
+  fn to_multiline_keeps_carriage_returns() {
+    assert_eq!(to_multiline("a\r\nb"), vec!["a\r", "b"]);
   }
 
   #[test]
@@ -47,7 +59,26 @@ mod tests {
 
   #[test]
   fn round_trips_through_to_then_from() {
-    let original = "line one\nline two\nline three";
-    assert_eq!(from_multiline(&to_multiline(original)), Some(original.to_string()));
+    for original in [
+      "line one\nline two\nline three",
+      "a",
+      "a\n",
+      "a\n\n",
+      "\n",
+      "\n\n",
+      "\na",
+      "a\r\nb\r\n",
+    ] {
+      assert_eq!(
+        from_multiline(&to_multiline(original)),
+        Some(original.to_string()),
+        "round trip of {original:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn empty_string_round_trips_to_none() {
+    assert_eq!(from_multiline(&to_multiline("")), None);
   }
 }

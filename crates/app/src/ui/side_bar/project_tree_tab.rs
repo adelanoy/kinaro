@@ -236,14 +236,12 @@ impl PanelDescriptor<SidebarPanel, Project> for ProjectTree {
     SidebarPanel::ProjectTree
   }
 
-  fn new(project: Entity<Project>, window: &mut Window, cx: &mut App) -> Entity<Self> {
-    cx.new(|cx| {
-      let tests = project.read(cx).tests.clone();
-      let tree_state = cx.new(|cx| TreeState::new(ProjectTreeDelegate::new(tests, window, cx), cx));
-      let _tree_sub = cx.subscribe_in(&tree_state, window, Self::on_tree_event);
+  fn new(project: Entity<Project>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    let tests = project.read(cx).tests.clone();
+    let tree_state = cx.new(|cx| TreeState::new(ProjectTreeDelegate::new(tests, window, cx), cx));
+    let _tree_sub = cx.subscribe_in(&tree_state, window, Self::on_tree_event);
 
-      Self { tree_state, _tree_sub }
-    })
+    Self { tree_state, _tree_sub }
   }
 }
 
@@ -741,16 +739,16 @@ fn build_context_menu(node: &ProjectTreeNode) -> Box<ContextMenuBuilder> {
             cx,
             move |submenu, _, _| {
               HttpMethod::ALL
-              .iter()
-              .fold(submenu, |submenu, method| {
-                submenu.menu_with_icon(
-                  format!("{} Request", method.as_str()),
-                  method.icon(),
-                  Box::new(AddRestStep { method: *method }),
-                )
-              })
-              .separator()
-              .menu_with_icon("Delay", IconAsset::TestStep, Box::new(AddDelayStep))
+                .iter()
+                .fold(submenu, |submenu, method| {
+                  submenu.menu_with_icon(
+                    format!("{} Request", method.as_str()),
+                    method.icon(),
+                    Box::new(AddRestStep { method: *method }),
+                  )
+                })
+                .separator()
+                .menu_with_icon("Delay", IconAsset::TestStep, Box::new(AddDelayStep))
             },
           )
       })
@@ -879,7 +877,6 @@ impl Render for ProjectTree {
       .on_action(cx.listener(Self::on_action_switch_node_active_status))
       .size_full()
       .gap_y_2()
-      .p_1()
       .child(
         h_flex().gap_x_2().w_full().flex_row_reverse().child(
           Button::new("btn-remove-tree-node")

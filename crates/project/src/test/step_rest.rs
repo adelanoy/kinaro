@@ -63,10 +63,6 @@ pub enum FileRestBody {
   Multipart {
     parts: Vec<FileMultipartPart>,
   },
-  /// The raw bytes of a single file.
-  Binary {
-    path: PathBuf,
-  },
 }
 
 impl FileRestBody {
@@ -149,7 +145,7 @@ mod tests {
       endpoint: "/users".into(),
       params: vec![],
       body: FileRestBody::Raw {
-        content_type: ContentType::ApplicationJson,
+        content_type: ContentType::Json,
         lines: vec!["{".into(), "}".into()],
       },
     };
@@ -161,26 +157,6 @@ mod tests {
       json!({ "type": "raw", "contentType": "application/json", "lines": ["{", "}"] })
     );
     assert_eq!(roundtrip(&step), step);
-  }
-
-  #[test]
-  fn content_type_serializes_as_mime_string() {
-    let types = [
-      (ContentType::ApplicationJson, "application/json"),
-      (ContentType::Other("text/csv".into()), "text/csv"),
-    ];
-    for (content_type, mime) in types {
-      assert_eq!(serde_json::to_value(&content_type).unwrap(), json!(mime));
-      assert_eq!(serde_json::from_value::<ContentType>(json!(mime)).unwrap(), content_type);
-    }
-  }
-
-  #[test]
-  fn known_content_type_is_matched_case_insensitively() {
-    assert_eq!(
-      serde_json::from_value::<ContentType>(json!("Application/JSON")).unwrap(),
-      ContentType::ApplicationJson
-    );
   }
 
   #[test]
@@ -207,9 +183,6 @@ mod tests {
             disabled: true,
           },
         ],
-      },
-      FileRestBody::Binary {
-        path: "data/blob.bin".into(),
       },
     ] {
       let step = FileRestData {

@@ -1,18 +1,21 @@
 use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::{ActiveTheme, WindowExt};
-use gpui_kit::{App, ClipboardItem, Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div, px};
+use gpui_kit::{div, px, App, ClipboardItem, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, Subscription};
 use ki_utils::TestPath;
-use std::sync::LazyLock;
 
 pub mod actions;
 pub mod dialog;
 pub mod panel;
 
-pub static EMPTY_SHARED_STRING: LazyLock<SharedString> = LazyLock::new(|| SharedString::new(""));
-
 /// Builds the context menu of a tree node.
 pub type ContextMenuBuilder = dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu;
+
+/// Struct maintaining an entity and its subscription
+pub struct SubbedEntity<T> {
+  pub entity: Entity<T>,
+  pub _sub: Subscription,
+}
 
 /// A table cell being edited, along with its edited value not yet written back.
 pub struct EditedCell<T> {
