@@ -145,6 +145,15 @@ pub enum RestParamType {
   Cookie,
 }
 
+impl RestParamType {
+  pub const ALL: &'static [RestParamType] = &[
+    RestParamType::Path,
+    RestParamType::Query,
+    RestParamType::Header,
+    RestParamType::Cookie,
+  ];
+}
+
 impl SelectItem for RestParamType {
   type Value = RestParamType;
 

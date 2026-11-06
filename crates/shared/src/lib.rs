@@ -1,12 +1,15 @@
 use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::{ActiveTheme, WindowExt};
-use gpui_kit::{div, px, App, ClipboardItem, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, Subscription};
+use gpui_kit::{
+  App, ClipboardItem, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div, px,
+};
 use ki_utils::TestPath;
 
 pub mod actions;
 pub mod dialog;
 pub mod panel;
+pub mod table;
 
 /// Builds the context menu of a tree node.
 pub type ContextMenuBuilder = dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu;
@@ -15,20 +18,6 @@ pub type ContextMenuBuilder = dyn Fn(PopupMenu, &mut Window, &mut Context<PopupM
 pub struct SubbedEntity<T> {
   pub entity: Entity<T>,
   pub _sub: Subscription,
-}
-
-/// A table cell being edited, along with its edited value not yet written back.
-pub struct EditedCell<T> {
-  pub row: usize,
-  pub col: usize,
-  pub data: T,
-}
-
-impl<T> EditedCell<T> {
-  /// Whether this is the cell at `row`/`col`.
-  pub fn is_at(&self, row: usize, col: usize) -> bool {
-    (self.row, self.col) == (row, col)
-  }
 }
 
 /// Used as visual aid when dragging a piece of UI.

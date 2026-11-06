@@ -1,16 +1,14 @@
 use crate::step_editor::rest_editor::RestEditorPanel;
 use gpui_kit::base::input::{InputEvent, InputState};
 use gpui_kit::base::{IndexPath, h_flex, v_flex};
-use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::empty::{Empty, EmptyDescription, EmptyHeader, EmptyTitle};
 use gpui_kit::component::input::Input;
 use gpui_kit::component::label::Label;
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
-use gpui_kit::component::separator::Separator;
 use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
-use gpui_kit::component::{ActiveTheme, Disableable, FocusableExt, Icon, IconName, Sizable, WindowExt};
+use gpui_kit::component::{ActiveTheme, FocusableExt, Icon, IconName, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
   App, AppContext, Context, Entity, Focusable, InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString,
@@ -18,7 +16,8 @@ use gpui_kit::{
 };
 use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
 use ki_app_shared::panel::PanelDescriptor;
-use ki_app_shared::{ContextMenuBuilder, EditedCell};
+use ki_app_shared::table::{DataTableControlBar, EditedCell};
+use ki_app_shared::{ContextMenuBuilder, SubbedEntity};
 use ki_assets::icon::IconAsset;
 use ki_utils::http::RestParamType;
 use ki_workspace::test::step_rest::{RestData, RestParam};
@@ -128,7 +127,7 @@ impl PanelDescriptor<RestEditorPanel, RestData> for RestParamEditor {
         .col_selectable(false)
     });
     let _table_sub = cx.subscribe_in(&table_state, window, Self::on_table_event);
-    RestParamEditor { table_state, _table_sub }
+    Self { table_state, _table_sub }
   }
 }
 
@@ -138,8 +137,7 @@ struct RestParamDataTableDelegate {
   edited_cell: Option<EditedCell<RestParam>>,
   cell_input_state: Entity<InputState>,
   _cell_input_sub: Option<Subscription>,
-  type_select_state: Entity<SelectState<Vec<RestParamType>>>,
-  _type_select_sub: Subscription,
+  type_select_state: SubbedEntity<SelectState<Vec<RestParamType>>>,
 }
 
 impl RestParamDataTableDelegate {
@@ -190,7 +188,7 @@ impl RestParamDataTableDelegate {
             },
           ));
         }
-        2 => self.type_select_state.update(cx, |state, cx| {
+        2 => self.type_select_state.entity.update(cx, |state, cx| {
           state.set_selected_value(&param.param_type, window, cx);
           state.focus(window, cx);
         }),
@@ -221,6 +219,7 @@ impl RestParamDataTableDelegate {
   fn delete_param(&mut self, row_ix: usize, cx: &mut App) {
     self.rest_data.update(cx, |params, cx| params.delete_param(row_ix, cx));
   }
+
   fn duplicate_param(&mut self, row_ix: usize, cx: &mut Context<TableState<Self>>) {
     self.rest_data.update(cx, |params, cx| params.duplicate_param(row_ix, cx));
   }
@@ -238,31 +237,23 @@ impl RestParamDataTableDelegate {
       Column::new("param_value", "Value").width(px(200.0)),
     ];
     let cell_input_state = cx.new(|cx| InputState::new(window, cx));
-    let type_select_state = cx.new(|cx| {
-      SelectState::new(
-        vec![
-          RestParamType::Path,
-          RestParamType::Query,
-          RestParamType::Header,
-          RestParamType::Cookie,
-        ],
-        Some(IndexPath::default()),
+
+    let type_select_state = {
+      let entity = cx.new(|cx| SelectState::new(RestParamType::ALL.to_vec(), Some(IndexPath::default()), window, cx));
+      let _sub = cx.subscribe_in(
+        &entity,
         window,
-        cx,
-      )
-    });
-    let _type_select_sub = cx.subscribe_in(
-      &type_select_state,
-      window,
-      move |table, _, event: &SelectEvent<Vec<RestParamType>>, _, _| match event {
-        SelectEvent::Confirm(value) if value.is_some() => {
-          if let Some(edited) = &mut table.delegate_mut().edited_cell {
-            edited.data.param_type = value.unwrap();
+        move |table, _, event: &SelectEvent<Vec<RestParamType>>, _, _| match event {
+          SelectEvent::Confirm(value) if value.is_some() => {
+            if let Some(edited) = &mut table.delegate_mut().edited_cell {
+              edited.data.param_type = value.unwrap();
+            }
           }
-        }
-        SelectEvent::Confirm(_) => {}
-      },
-    );
+          SelectEvent::Confirm(_) => {}
+        },
+      );
+      SubbedEntity { entity, _sub }
+    };
 
     Self {
       rest_data,
@@ -271,7 +262,6 @@ impl RestParamDataTableDelegate {
       cell_input_state,
       _cell_input_sub: None,
       type_select_state,
-      _type_select_sub,
     }
   }
 
@@ -297,13 +287,6 @@ impl RestParamDataTableDelegate {
     }
   }
 
-  fn select_cell(&mut self, row_ix: usize, col_ix: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-    if self.edited_cell.as_ref().is_some_and(|edited| edited.is_at(row_ix, col_ix)) {
-      return;
-    }
-    self.save_cell(window, cx);
-  }
-
   fn save_cell(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
     if let Some(edited) = self.edited_cell.take() {
       self
@@ -311,12 +294,24 @@ impl RestParamDataTableDelegate {
         .update(cx, |rest, cx| rest.update_params(edited.row, edited.data, cx));
       self._cell_input_sub = None;
       if self.cell_input_state.read(cx).focus_handle(cx).is_focused(window)
-        || self.type_select_state.read(cx).focus_handle(cx).contains_focused(window, cx)
+        || self
+          .type_select_state
+          .entity
+          .read(cx)
+          .focus_handle(cx)
+          .contains_focused(window, cx)
       {
         cx.focus_self(window);
       }
       cx.notify();
     }
+  }
+
+  fn select_cell(&mut self, row_ix: usize, col_ix: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+    if self.edited_cell.as_ref().is_some_and(|edited| edited.is_at(row_ix, col_ix)) {
+      return;
+    }
+    self.save_cell(window, cx);
   }
 }
 
@@ -357,7 +352,7 @@ impl TableDelegate for RestParamDataTableDelegate {
     {
       match col_ix {
         1 | 3 => Input::new(&self.cell_input_state).into_any_element(),
-        2 => Select::new(&self.type_select_state).into_any_element(),
+        2 => Select::new(&self.type_select_state.entity).into_any_element(),
         _ => unreachable!(),
       }
     } else {
@@ -380,7 +375,7 @@ impl TableDelegate for RestParamDataTableDelegate {
               )
               .child(
                 Checkbox::new(format!("param-enabled-{}", row_ix))
-                  .checked(!param.disabled)
+                  .checked(!is_disabled)
                   .on_change(cx.listener(move |table, value, _, cx| {
                     let delegate = table.delegate_mut();
                     let mut param = delegate.rest_data.read(cx).params()[row_ix].clone();
@@ -459,8 +454,9 @@ impl Render for RestParamEditor {
       )
     });
     let focus_handle = self.table_state.focus_handle(cx);
+
     v_flex()
-      .track_focus(&focus_handle.clone())
+      .track_focus(&focus_handle)
       .on_action(cx.listener(Self::on_action_delete))
       .on_action(cx.listener(Self::on_action_duplicate))
       .on_action(cx.listener(Self::on_action_edit))
@@ -470,54 +466,9 @@ impl Render for RestParamEditor {
       .gap_y_2()
       .child(
         h_flex()
-          .gap_x_2()
           .w_full()
           .justify_end()
-          .child(
-            Button::new("btn-add-param")
-              .ghost()
-              .small()
-              .disabled(is_editing)
-              .icon(IconName::Plus)
-              .tooltip_with_action("Add a new param", &New, None)
-              .on_click({
-                let focus_handle = focus_handle.clone();
-                move |_, window, cx| {
-                  focus_handle.focus(window, cx);
-                  window.dispatch_action(Box::new(New), cx)
-                }
-              }),
-          )
-          .child(
-            Button::new("btn-duplicate-param")
-              .ghost()
-              .small()
-              .disabled(is_editing || !is_selection)
-              .icon(IconName::Copy)
-              .tooltip_with_action("Duplicate the selected param", &Duplicate, None)
-              .on_click({
-                let focus_handle = focus_handle.clone();
-                move |_, window, cx| {
-                  focus_handle.focus(window, cx);
-                  window.dispatch_action(Box::new(Duplicate), cx)
-                }
-              }),
-          )
-          .child(Separator::vertical())
-          .child(
-            Button::new("btn-delete-param")
-              .ghost()
-              .small()
-              .disabled(is_editing || !is_selection)
-              .icon(IconName::Delete)
-              .tooltip_with_action("Delete the selected param", &Delete, None)
-              .on_click({
-                move |_, window, cx| {
-                  focus_handle.focus(window, cx);
-                  window.dispatch_action(Box::new(Delete), cx)
-                }
-              }),
-          ),
+          .child(DataTableControlBar::new(focus_handle, is_editing, is_selection)),
       )
       .child(DataTable::new(&self.table_state).focus_ring(false))
   }

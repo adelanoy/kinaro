@@ -1,15 +1,14 @@
-use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::empty::{EmptyDescription, EmptyHeader, EmptyTitle};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu};
-use gpui_kit::component::separator::Separator;
 use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
-use gpui_kit::component::{Disableable, FocusableExt, Icon, IconName, Sizable, WindowExt, h_flex, v_flex};
+use gpui_kit::component::{FocusableExt, Icon, IconName, Sizable, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
 use ki_app_shared::panel::PanelDescriptor;
-use ki_app_shared::{ContextMenuBuilder, EditedCell, MovingLabel};
+use ki_app_shared::table::{DataTableControlBar, EditedCell};
+use ki_app_shared::{ContextMenuBuilder, MovingLabel};
 use ki_assets::icon::IconAsset;
 use ki_utils::SidebarPanel;
 use ki_workspace::Project;
@@ -398,6 +397,7 @@ impl Render for ProfileEditor {
       )
     });
     let focus_handle = self.table_state.focus_handle(cx);
+
     v_flex()
       .track_focus(&focus_handle)
       .on_action(cx.listener(Self::on_action_delete))
@@ -408,54 +408,9 @@ impl Render for ProfileEditor {
       .gap_y_2()
       .child(
         h_flex()
-          .gap_x_2()
           .w_full()
           .justify_end()
-          .child(
-            Button::new("btn-add-profile")
-              .ghost()
-              .small()
-              .disabled(is_editing)
-              .icon(IconName::Plus)
-              .tooltip_with_action("Adds a new profile", &New, None)
-              .on_click({
-                let focus_handle = focus_handle.clone();
-                move |_, window, cx| {
-                  focus_handle.focus(window, cx);
-                  window.dispatch_action(Box::new(New), cx)
-                }
-              }),
-          )
-          .child(
-            Button::new("btn-duplicate-profile")
-              .ghost()
-              .small()
-              .disabled(is_editing || !is_selection)
-              .icon(IconName::Copy)
-              .tooltip_with_action("Duplicate the selected profile", &Duplicate, None)
-              .on_click({
-                let focus_handle = focus_handle.clone();
-                move |_, window, cx| {
-                  focus_handle.focus(window, cx);
-                  window.dispatch_action(Box::new(Duplicate), cx)
-                }
-              }),
-          )
-          .child(Separator::vertical())
-          .child(
-            Button::new("btn-delete-profile")
-              .ghost()
-              .small()
-              .disabled(is_editing || !is_selection)
-              .icon(IconName::Delete)
-              .tooltip_with_action("Delete the selected profile", &Delete, None)
-              .on_click({
-                move |_, window, cx| {
-                  focus_handle.focus(window, cx);
-                  window.dispatch_action(Box::new(Delete), cx)
-                }
-              }),
-          ),
+          .child(DataTableControlBar::new(focus_handle, is_editing, is_selection)),
       )
       .child(DataTable::new(&self.table_state).small().focus_ring(false))
   }

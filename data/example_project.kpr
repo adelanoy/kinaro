@@ -2,7 +2,7 @@
   "name": "example_project",
   "version": 1,
   "created": "2026-09-13T07:43:12",
-  "modified": "2026-11-04T16:02:12",
+  "modified": "2026-11-06T10:53:30",
   "variables": {
     "variables": [
       {
@@ -453,6 +453,56 @@
               "Delay": {
                 "duration": 1000,
                 "unit": "Millisecond"
+              }
+            }
+          },
+          {
+            "type": "Step",
+            "id": "3a22d34a-6c9e-4595-8e88-ff1029c85b32",
+            "name": "Submit product review",
+            "data": {
+              "RestStep": {
+                "method": "POST",
+                "endpoint": "/products/{id}/reviews",
+                "params": [
+                  {
+                    "type": "path",
+                    "name": "id",
+                    "value": "42"
+                  },
+                  {
+                    "type": "header",
+                    "name": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "type": "header",
+                    "name": "Authorization",
+                    "value": "Bearer {token}"
+                  }
+                ],
+                "body": {
+                  "type": "formUrlEncoded",
+                  "fields": [
+                    {
+                      "name": "rating",
+                      "value": "4"
+                    },
+                    {
+                      "name": "title",
+                      "value": "Bright and compact"
+                    },
+                    {
+                      "name": "comment",
+                      "value": "Works great on my desk & uses little power."
+                    },
+                    {
+                      "name": "anonymous",
+                      "value": "true",
+                      "disabled": true
+                    }
+                  ]
+                }
               }
             }
           }
