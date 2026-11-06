@@ -5,17 +5,15 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::label::Label;
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
-use gpui_kit::component::separator::Separator;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, TableState};
-use gpui_kit::component::{
-  ActiveTheme, Disableable, FocusableExt, Icon, IconName, IndexPath, Sizable, WindowExt, h_flex, v_flex,
-};
+use gpui_kit::component::{ActiveTheme, FocusableExt, Icon, IconName, IndexPath, Sizable, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
 use ki_app_shared::panel::PanelDescriptor;
-use ki_app_shared::{ContextMenuBuilder, EditedCell, MovingLabel};
+use ki_app_shared::table::{DataTableControlBar, EditedCell};
+use ki_app_shared::{ContextMenuBuilder, MovingLabel};
 use ki_assets::icon::IconAsset;
 use ki_utils::SidebarPanel;
 use ki_workspace::Project;
@@ -539,87 +537,40 @@ impl Render for VariableEditor {
       .size_full()
       .gap_y_2()
       .child(
-        h_flex().w_full().justify_between().child(
-          h_flex()
-            .gap_x_2()
-            .h_5()
-            .child(
-              Switch::new("switch-show-profile")
-                .label(SharedString::new("Show for profile"))
-                .checked(switch_on)
-                .small()
-                .on_click({
-                  let table_state = self.table_state.clone();
-                  move |value, _, cx| {
-                    table_state.update(cx, |state, cx| {
-                      let delegate = state.delegate_mut();
-                      if *value {
-                        delegate.viewing_profile = delegate.profile_select_state.read(cx).selected_value().copied();
-                      } else {
-                        delegate.viewing_profile = None;
-                      }
-                    })
-                  }
-                }),
-            )
-            .when(switch_on, |this| {
-              this.child({
-                let profile_select_state = &self.table_state.read(cx).delegate().profile_select_state;
-                Select::new(profile_select_state).small().min_w_32()
-              })
-            }),
-        ),
-      )
-      .child(
         h_flex()
-          .gap_x_2()
           .w_full()
-          .justify_end()
+          .justify_between()
           .child(
-            Button::new("btn-add-var")
-              .ghost()
-              .small()
-              .disabled(is_editing)
-              .icon(IconName::Plus)
-              .tooltip_with_action("Add a new variable", &New, None)
-              .on_click({
-                let focus_handle = focus_handle.clone();
-                move |_, window, cx| {
-                  focus_handle.focus(window, cx);
-                  window.dispatch_action(Box::new(New), cx)
-                }
+            h_flex()
+              .gap_x_2()
+              .h_5()
+              .child(
+                Switch::new("switch-show-profile")
+                  .label(SharedString::new("Show for profile"))
+                  .checked(switch_on)
+                  .small()
+                  .on_click({
+                    let table_state = self.table_state.clone();
+                    move |value, _, cx| {
+                      table_state.update(cx, |state, cx| {
+                        let delegate = state.delegate_mut();
+                        if *value {
+                          delegate.viewing_profile = delegate.profile_select_state.read(cx).selected_value().copied();
+                        } else {
+                          delegate.viewing_profile = None;
+                        }
+                      })
+                    }
+                  }),
+              )
+              .when(switch_on, |this| {
+                this.child({
+                  let profile_select_state = &self.table_state.read(cx).delegate().profile_select_state;
+                  Select::new(profile_select_state).small().min_w_32()
+                })
               }),
           )
-          .child(
-            Button::new("btn-duplicate-var")
-              .ghost()
-              .small()
-              .disabled(is_editing || !is_selection)
-              .icon(IconName::Copy)
-              .tooltip_with_action("Duplicate the selected var", &Duplicate, None)
-              .on_click({
-                let focus_handle = focus_handle.clone();
-                move |_, window, cx| {
-                  focus_handle.focus(window, cx);
-                  window.dispatch_action(Box::new(Duplicate), cx)
-                }
-              }),
-          )
-          .child(Separator::vertical())
-          .child(
-            Button::new("btn-delete-var")
-              .ghost()
-              .small()
-              .disabled(is_editing || !is_selection)
-              .icon(IconName::Delete)
-              .tooltip_with_action("Delete the selected variable", &Delete, None)
-              .on_click({
-                move |_, window, cx| {
-                  focus_handle.focus(window, cx);
-                  window.dispatch_action(Box::new(Delete), cx)
-                }
-              }),
-          ),
+          .child(DataTableControlBar::new(focus_handle, is_editing, is_selection)),
       )
       .child(DataTable::new(&self.table_state).small().focus_ring(false))
   }

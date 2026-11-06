@@ -6,7 +6,7 @@ use ki_utils::EMPTY_SHARED_STRING;
 use ki_utils::http::{
   CONTENT_TYPE_FORM_DATA, CONTENT_TYPE_FORM_URL_ENCODED, ContentType, HTTP_HEADER_CONTENT_TYPE, HttpMethod, RestParamType,
 };
-use log::warn;
+use log::error;
 use std::cmp::min;
 use std::path::PathBuf;
 
@@ -194,7 +194,7 @@ impl RestBody {
   /// Display names of every body type, in the order they are offered to the user.
   ///
   /// Each name converts back to an empty body of its type through `RestBody::from(&str)`.
-  pub const ALL: &'static [&str] = &[REST_BODY_NONE, REST_BODY_RAW, REST_BODY_FORM_URL_ENCODED, REST_BODY_MULTIPART];
+  pub const ALL: &'static [&str] = &[REST_BODY_NONE, REST_BODY_RAW, REST_BODY_FORM_URL_ENCODED];
 
   /// Display name of this body's type (one of [`RestBody::ALL`]), regardless of its content.
   pub fn type_as_str(&self) -> &'static str {
@@ -289,6 +289,29 @@ impl RestData {
     cx.notify();
   }
 
+  /// Inserts a new, empty and enabled field in a URL-encoded body, right after the field at `row_ix`, or at the end
+  /// when `row_ix` is `None` or past the last field.
+  ///
+  /// The field is named `Param`, suffixed (`Param_1`, `Param_2`...) when that name is already used by another field.
+  /// Does nothing if the body is not URL-encoded.
+  ///
+  /// # Events
+  /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the field was added.
+  pub fn add_urlencoded_field(&mut self, row_ix: Option<usize>, cx: &mut Context<Self>) {
+    if let RestBody::FormUrlEncoded { fields } = &mut self.body {
+      let ix = row_ix.map(|ix| min(ix + 1, fields.len())).unwrap_or(fields.len());
+      let name = ki_utils::next_available_name("Param", fields.iter().map(|field| field.name.clone()));
+      let field = FormField {
+        name,
+        value: Default::default(),
+        disabled: false,
+      };
+      fields.insert(ix, field);
+      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+      cx.notify();
+    }
+  }
+
   /// The request body.
   #[inline]
   pub fn body(&self) -> &RestBody {
@@ -297,6 +320,7 @@ impl RestData {
 
   pub fn delete_param(&mut self, row_ix: usize, cx: &mut Context<Self>) {
     if row_ix >= self.params.len() {
+      error!("RestData::delete_param: Attempt to delete a non existing index: {row_ix}");
       return;
     }
     self.params.remove(row_ix);
@@ -304,8 +328,27 @@ impl RestData {
     cx.notify();
   }
 
+  /// Removes the field at `row_ix` from a URL-encoded body.
+  ///
+  /// Does nothing if the body is not URL-encoded, or if there is no field at `row_ix` (an error is logged).
+  ///
+  /// # Events
+  /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the field was removed.
+  pub fn delete_urlencoded_field(&mut self, row_ix: usize, cx: &mut Context<Self>) {
+    if let RestBody::FormUrlEncoded { fields } = &mut self.body {
+      if row_ix >= fields.len() {
+        error!("RestData::delete_urlencoded_field: Attempt to delete a non existing index: {row_ix}");
+        return;
+      }
+      fields.remove(row_ix);
+      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+      cx.notify();
+    }
+  }
+
   pub fn duplicate_param(&mut self, row_ix: usize, cx: &mut Context<Self>) {
     let Some(mut param) = self.params.get(row_ix).cloned() else {
+      error!("RestData::duplicate_param: Attempt to duplicate a non existing index: {row_ix}");
       return;
     };
     let name = ki_utils::next_available_name(&param.name, self.params.iter().map(|param| param.name.clone()));
@@ -314,6 +357,29 @@ impl RestData {
     self.params.insert(ix, param);
     _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
     cx.notify();
+  }
+
+  /// Inserts a copy of the field at `row_ix` of a URL-encoded body right after it.
+  ///
+  /// The copy keeps the value and disabled flag of the original, and its name is suffixed (`_1`, `_2`...) so that it
+  /// is unique among the fields. Does nothing if the body is not URL-encoded, or if there is no field at `row_ix`
+  /// (an error is logged).
+  ///
+  /// # Events
+  /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the field was duplicated.
+  pub fn duplicate_urlencoded_field(&mut self, row_ix: usize, cx: &mut Context<Self>) {
+    if let RestBody::FormUrlEncoded { fields } = &mut self.body {
+      let Some(mut field) = fields.get(row_ix).cloned() else {
+        error!("RestData::duplicate_urlencoded_field: Attempt to duplicate a non existing index: {row_ix}");
+        return;
+      };
+      let name = ki_utils::next_available_name(&field.name, fields.iter().map(|field| field.name.clone()));
+      field.name = name;
+      let ix = min(row_ix + 1, fields.len());
+      fields.insert(ix, field);
+      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+      cx.notify();
+    }
   }
 
   #[inline]
@@ -474,8 +540,8 @@ impl RestData {
 
   pub fn update_params(&mut self, row_ix: usize, param: RestParam, cx: &mut Context<Self>) {
     if row_ix >= self.params.len() {
-      warn!(
-        "RestParams::update_params: Attempted to update a non-existent index: {}",
+      error!(
+        "RestData::update_params: Attempted to update a non-existent index: {}",
         row_ix
       );
       return;
@@ -484,6 +550,30 @@ impl RestData {
       self.params[row_ix] = param;
       _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
       cx.notify();
+    }
+  }
+
+  /// Replaces the field at `row_ix` of a URL-encoded body with `field`.
+  ///
+  /// Does nothing if the body is not URL-encoded, if `field` is equal to the current one, or if there is no field at
+  /// `row_ix` (an error is logged).
+  ///
+  /// # Events
+  /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the field changed.
+  pub fn update_urlencoded_field(&mut self, row_ix: usize, field: FormField, cx: &mut Context<Self>) {
+    if let RestBody::FormUrlEncoded { fields } = &mut self.body {
+      if row_ix >= fields.len() {
+        error!(
+          "RestData::update_urlencoded_field: Attempted to update a non-existent index: {}",
+          row_ix
+        );
+        return;
+      }
+      if fields[row_ix] != field {
+        fields[row_ix] = field;
+        _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+        cx.notify();
+      }
     }
   }
 }
@@ -616,10 +706,7 @@ mod tests {
 
   #[test]
   fn body_type_names_convert_back_to_their_type() {
-    assert_eq!(
-      RestBody::ALL,
-      [REST_BODY_NONE, REST_BODY_RAW, REST_BODY_FORM_URL_ENCODED, REST_BODY_MULTIPART]
-    );
+    assert_eq!(RestBody::ALL, [REST_BODY_NONE, REST_BODY_RAW, REST_BODY_FORM_URL_ENCODED]);
     for &name in RestBody::ALL {
       assert_eq!(RestBody::from(name).type_as_str(), name);
     }
@@ -789,5 +876,183 @@ mod tests {
     );
     assert_eq!(generated_headers(&rest, cx), vec![CONTENT_TYPE_FORM_DATA]);
     assert!(events.borrow().is_empty());
+  }
+
+  fn field(name: &str, value: &str, disabled: bool) -> FormField {
+    FormField {
+      name: name.into(),
+      value: value.into(),
+      disabled,
+    }
+  }
+
+  /// Loads a REST step whose URL-encoded body holds `fields`.
+  fn urlencoded_entity(fields: &[FormField], tests: &Entity<TestsContainer>, cx: &mut TestAppContext) -> Entity<RestData> {
+    let fields = fields.iter().map(FileFormField::from).collect();
+    rest_entity(file_rest(vec![], FileRestBody::FormUrlEncoded { fields }), tests, cx)
+  }
+
+  /// Fields of the URL-encoded body of `rest`.
+  fn fields(rest: &Entity<RestData>, cx: &TestAppContext) -> Vec<FormField> {
+    rest.read_with(cx, |rest, _| match rest.body() {
+      RestBody::FormUrlEncoded { fields } => fields.clone(),
+      body => panic!("expected a URL-encoded body, got {body:?}"),
+    })
+  }
+
+  #[gpui_kit::test]
+  fn add_urlencoded_field_inserts_after_the_given_row(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = urlencoded_entity(&[field("a", "1", false), field("b", "2", false)], &tests, cx);
+    let events = record_events(&tests, cx);
+
+    rest.update(cx, |rest, cx| rest.add_urlencoded_field(Some(0), cx));
+    assert_eq!(
+      fields(&rest, cx),
+      vec![field("a", "1", false), field("Param", "", false), field("b", "2", false)]
+    );
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified]);
+  }
+
+  #[gpui_kit::test]
+  fn add_urlencoded_field_appends_without_row_or_past_the_end(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = urlencoded_entity(&[field("a", "1", false)], &tests, cx);
+
+    rest.update(cx, |rest, cx| rest.add_urlencoded_field(None, cx));
+    rest.update(cx, |rest, cx| rest.add_urlencoded_field(Some(42), cx));
+    assert_eq!(
+      fields(&rest, cx),
+      vec![field("a", "1", false), field("Param", "", false), field("Param_1", "", false)]
+    );
+  }
+
+  #[gpui_kit::test]
+  fn add_urlencoded_field_names_are_unique_among_fields_only(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    // A param named "Param" must not affect the name of the new field
+    let file = file_rest(
+      vec![file_param(RestParamType::Query, "Param", "1")],
+      FileRestBody::FormUrlEncoded { fields: vec![] },
+    );
+    let rest = rest_entity(file, &tests, cx);
+
+    rest.update(cx, |rest, cx| rest.add_urlencoded_field(None, cx));
+    assert_eq!(fields(&rest, cx), vec![field("Param", "", false)]);
+  }
+
+  #[gpui_kit::test]
+  fn delete_urlencoded_field_removes_the_row(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = urlencoded_entity(&[field("a", "1", false), field("b", "2", false)], &tests, cx);
+    let events = record_events(&tests, cx);
+
+    rest.update(cx, |rest, cx| rest.delete_urlencoded_field(0, cx));
+    assert_eq!(fields(&rest, cx), vec![field("b", "2", false)]);
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified]);
+  }
+
+  #[gpui_kit::test]
+  fn delete_urlencoded_field_ignores_a_missing_row(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = urlencoded_entity(&[field("a", "1", false)], &tests, cx);
+    let events = record_events(&tests, cx);
+
+    rest.update(cx, |rest, cx| rest.delete_urlencoded_field(1, cx));
+    assert_eq!(fields(&rest, cx), vec![field("a", "1", false)]);
+    assert!(events.borrow().is_empty());
+  }
+
+  #[gpui_kit::test]
+  fn duplicate_urlencoded_field_inserts_a_renamed_copy_after_the_row(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = urlencoded_entity(&[field("a", "1", true), field("b", "2", false)], &tests, cx);
+    let events = record_events(&tests, cx);
+
+    rest.update(cx, |rest, cx| rest.duplicate_urlencoded_field(0, cx));
+    rest.update(cx, |rest, cx| rest.duplicate_urlencoded_field(0, cx));
+    assert_eq!(
+      fields(&rest, cx),
+      vec![
+        field("a", "1", true),
+        field("a_2", "1", true),
+        field("a_1", "1", true),
+        field("b", "2", false),
+      ]
+    );
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 2]);
+  }
+
+  #[gpui_kit::test]
+  fn duplicate_urlencoded_field_ignores_a_missing_row(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = urlencoded_entity(&[field("a", "1", false)], &tests, cx);
+    let events = record_events(&tests, cx);
+
+    rest.update(cx, |rest, cx| rest.duplicate_urlencoded_field(1, cx));
+    assert_eq!(fields(&rest, cx), vec![field("a", "1", false)]);
+    assert!(events.borrow().is_empty());
+  }
+
+  #[gpui_kit::test]
+  fn update_urlencoded_field_notifies_changes_only(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = urlencoded_entity(&[field("a", "1", false), field("b", "2", false)], &tests, cx);
+    let events = record_events(&tests, cx);
+
+    rest.update(cx, |rest, cx| rest.update_urlencoded_field(1, field("b", "2", false), cx));
+    assert!(events.borrow().is_empty());
+
+    rest.update(cx, |rest, cx| rest.update_urlencoded_field(1, field("c", "3", true), cx));
+    assert_eq!(fields(&rest, cx), vec![field("a", "1", false), field("c", "3", true)]);
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified]);
+  }
+
+  #[gpui_kit::test]
+  fn update_urlencoded_field_ignores_a_missing_row(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = urlencoded_entity(&[field("a", "1", false)], &tests, cx);
+    let events = record_events(&tests, cx);
+
+    rest.update(cx, |rest, cx| rest.update_urlencoded_field(1, field("b", "2", false), cx));
+    assert_eq!(fields(&rest, cx), vec![field("a", "1", false)]);
+    assert!(events.borrow().is_empty());
+  }
+
+  #[gpui_kit::test]
+  fn urlencoded_field_methods_ignore_other_bodies(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = rest_entity(file_rest(vec![], raw_body(ContentType::Json)), &tests, cx);
+    let events = record_events(&tests, cx);
+
+    rest.update(cx, |rest, cx| {
+      rest.add_urlencoded_field(None, cx);
+      rest.duplicate_urlencoded_field(0, cx);
+      rest.update_urlencoded_field(0, field("a", "1", false), cx);
+      rest.delete_urlencoded_field(0, cx);
+    });
+    assert_eq!(
+      rest.read_with(cx, |rest, _| rest.body().clone()),
+      raw(ContentType::Json, "{}")
+    );
+    assert!(events.borrow().is_empty());
+  }
+
+  #[gpui_kit::test]
+  fn urlencoded_field_edits_are_saved(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let rest = urlencoded_entity(&[field("a", "1", false)], &tests, cx);
+
+    rest.update(cx, |rest, cx| {
+      rest.add_urlencoded_field(Some(0), cx);
+      rest.update_urlencoded_field(1, field("b", "2", true), cx);
+    });
+    let expected = [field("a", "1", false), field("b", "2", true)];
+    assert_eq!(
+      rest.read_with(cx, |rest, _| rest.get_file().body),
+      FileRestBody::FormUrlEncoded {
+        fields: expected.iter().map(FileFormField::from).collect()
+      }
+    );
   }
 }

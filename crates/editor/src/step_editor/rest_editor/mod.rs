@@ -1,5 +1,6 @@
 mod body_editor;
 mod param_editor;
+mod urlencoded_table;
 
 use crate::step_editor::StepDataEvent;
 use crate::step_editor::rest_editor::body_editor::RestBodyEditor;

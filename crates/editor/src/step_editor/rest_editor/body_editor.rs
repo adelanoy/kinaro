@@ -1,4 +1,5 @@
 use crate::step_editor::rest_editor::RestEditorPanel;
+use crate::step_editor::rest_editor::urlencoded_table::UrlEncodedTable;
 use gpui_kit::base::input::InputEvent;
 use gpui_kit::base::{h_flex, v_flex};
 use gpui_kit::component::input::{Editor, EditorState};
@@ -6,7 +7,7 @@ use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::{Icon, IndexPath, Sizable};
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div, rems};
+use gpui_kit::{AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, div, rems};
 use ki_app_shared::SubbedEntity;
 use ki_app_shared::panel::PanelDescriptor;
 use ki_assets::icon::IconAsset;
@@ -15,8 +16,8 @@ use ki_workspace::test::step_rest::{RestBody, RestData};
 
 enum EditorMode {
   None,
-  Table,
-  Text(SubbedEntity<EditorState>),
+  UrlEncoded(Entity<UrlEncodedTable>),
+  RawText(SubbedEntity<EditorState>),
 }
 
 pub struct RestBodyEditor {
@@ -28,46 +29,62 @@ pub struct RestBodyEditor {
 
 impl RestBodyEditor {
   fn set_editor_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-    let body = self.rest_data.read(cx).body().clone();
-    let editor = match body {
-      RestBody::None => EditorMode::None,
-      RestBody::Raw { content_type, content: lines } => {
-        let language = match content_type {
-          ContentType::Json => "json",
-          ContentType::Xml => "xml",
-          ContentType::Csv => "csv",
-          ContentType::Text => "text",
-          ContentType::Yaml => "yaml",
-        };
-        if let EditorMode::Text(state) = &self.editor_mode
-          && state.entity.read(cx).language_name() == language
-        {
-          return;
-        }
-        let editor_state = cx.new(|cx| {
-          let mut editor = EditorState::new(window, cx)
-            .language(language)
-            .auto_close(true)
-            .smart_indent(true);
-          editor.set_value(lines.clone(), window, cx);
-          editor
-        });
-        let _sub = cx.subscribe(&editor_state, |this, state, e: &InputEvent, cx| {
-          if let InputEvent::Change = e {
-            this
-              .rest_data
-              .update(cx, |rest, cx| rest.set_body_raw_content(state.read(cx).value(), cx))
-          }
-        });
-        EditorMode::Text(SubbedEntity {
-          entity: editor_state,
-          _sub,
-        })
-      }
-      RestBody::FormUrlEncoded { .. } => EditorMode::Table,
-      RestBody::Multipart { .. } => EditorMode::Table,
+    match self.rest_data.read(cx).body() {
+      RestBody::None => self.editor_mode = EditorMode::None,
+      RestBody::Raw { content_type, content } => self.set_raw_editor(*content_type, content.clone(), window, cx),
+      RestBody::FormUrlEncoded { .. } => self.set_urlencoded_editor(window, cx),
+      RestBody::Multipart { .. } => self.editor_mode = EditorMode::None,
     };
-    self.editor_mode = editor;
+  }
+
+  fn set_raw_editor(
+    &mut self,
+    content_type: ContentType,
+    content: SharedString,
+    window: &mut Window,
+    cx: &mut Context<RestBodyEditor>,
+  ) {
+    let language = match content_type {
+      ContentType::Json => "json",
+      ContentType::Xml => "xml",
+      ContentType::Csv => "csv",
+      ContentType::Text => "text",
+      ContentType::Yaml => "yaml",
+    };
+    if let EditorMode::RawText(state) = &self.editor_mode
+      && state.entity.read(cx).language_name() == language
+    {
+      return;
+    }
+    let editor_state = cx.new(|cx| {
+      let mut editor = EditorState::new(window, cx)
+        .language(language)
+        .auto_close(true)
+        .smart_indent(true);
+      editor.set_value(content.clone(), window, cx);
+      editor
+    });
+    let _sub = cx.subscribe(&editor_state, |this, state, e: &InputEvent, cx| {
+      if let InputEvent::Change = e {
+        this
+          .rest_data
+          .update(cx, |rest, cx| rest.set_body_raw_content(state.read(cx).value(), cx))
+      }
+    });
+    self.editor_mode = EditorMode::RawText(SubbedEntity {
+      entity: editor_state,
+      _sub,
+    });
+  }
+
+  fn set_urlencoded_editor(&mut self, window: &mut Window, cx: &mut Context<RestBodyEditor>) {
+    match &mut self.editor_mode {
+      EditorMode::UrlEncoded(_) => {}
+      _ => {
+        let table = cx.new(|cx| UrlEncodedTable::new(self.rest_data.clone(), window, cx));
+        self.editor_mode = EditorMode::UrlEncoded(table);
+      }
+    }
   }
 
   fn set_content_type_select(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -171,8 +188,8 @@ impl Render for RestBodyEditor {
       )
       .child(v_flex().w_full().flex_1().min_h_0().map(|this| match &self.editor_mode {
         EditorMode::None => this,
-        EditorMode::Table => this.child("To be implemented"),
-        EditorMode::Text(editor) => this.child(Editor::new(&editor.entity).h_full()),
+        EditorMode::UrlEncoded(table) => this.child(table.clone()),
+        EditorMode::RawText(editor) => this.child(Editor::new(&editor.entity).h_full()),
       }))
   }
 }
