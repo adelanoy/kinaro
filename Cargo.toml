@@ -28,7 +28,7 @@ ki_workspace = {path = "crates/workspace"}
 ki_editor = {path = "crates/editor" }
 ki_app_shared = {path = "crates/shared" }
 
-gpui-kit = { version = "0.8", default-features = false, features = ["component", "syntect"] }
+gpui-kit = { version = "0.9", default-features = false, features = ["component", "syntect"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["serde", "v4"] }
