@@ -134,6 +134,15 @@ impl TestPath {
       TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => self == other,
     }
   }
+
+  /// Returns a human-readable name of the kind of node the path points to: `"Suite"`, `"Case"` or `"Step"`.
+  pub fn label(&self) -> &'static str {
+    match self {
+      TestPath::Suite(_) => "Suite",
+      TestPath::Case(_, _) => "Case",
+      TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => "Step",
+    }
+  }
 }
 
 /// Formats the path as `/<suite id>`, `/<suite id>/<case or step id>` or

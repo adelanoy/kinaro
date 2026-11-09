@@ -16,7 +16,7 @@ use ki_app_shared::actions::{
   AddDelayStep, AddRestStep, AddTestCase, AddTestSuite, CopyId, CopyPath, Delete, Duplicate, Edit, MoveDown, MoveUp,
   PROJECT_TREE_CONTEXT_KEY, SwitchNodeActiveStatus,
 };
-use ki_app_shared::dialog::show_rename_dialog;
+use ki_app_shared::dialog::EditFieldDialog;
 use ki_app_shared::panel::PanelDescriptor;
 use ki_app_shared::{ContextMenuBuilder, MovingLabel};
 use ki_assets::icon::IconAsset;
@@ -482,25 +482,31 @@ impl ProjectTreeDelegate {
 
   /// Opens the rename dialog of the node at `path`, if it is in the tree.
   fn show_rename_dialog(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    let Some(node) = self.tree_nodes.iter().find(|node| node.path == path) else {
-      warn!("ProjectTreeDelegate:setup_rename_node: unknown path: {}", path);
-      return;
-    };
-    let name = node.label.clone();
+    fn show_dialog<M: TestMetadataOwner>(meta: Entity<M>, window: &mut Window, cx: &mut App) {
+      let (name, kind) = meta.read_with(cx, |meta, _| (meta.name(), meta.path().label()));
+      EditFieldDialog::new(name, {
+        let meta = meta.clone();
+        move |new_value, cx| meta.update(cx, |meta, cx| meta.set_name(new_value, cx))
+      })
+      .title(format!("Rename {}", kind))
+      .description("Enter the new name:")
+      .show(window, cx);
+    }
+
     match path {
       TestPath::Suite(_) => {
         if let Some(suite) = self.tests.read(cx).suite_from_path(&path, cx) {
-          show_rename_dialog(name, suite, window, cx)
+          show_dialog(suite, window, cx);
         }
       }
       TestPath::Case(_, _) => {
         if let Some(case) = self.tests.read(cx).case_from_path(&path, cx) {
-          show_rename_dialog(name, case, window, cx)
+          show_dialog(case, window, cx);
         }
       }
       TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => {
         if let Some(step) = self.tests.read(cx).step_from_path(&path, cx) {
-          show_rename_dialog(name, step, window, cx)
+          show_dialog(step, window, cx);
         }
       }
     };

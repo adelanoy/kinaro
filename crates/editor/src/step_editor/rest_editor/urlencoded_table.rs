@@ -11,12 +11,12 @@ use gpui_kit::{
   App, AppContext, Context, Entity, Focusable, InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString,
   Styled, Subscription, Window, px,
 };
-use log::error;
 use ki_app_shared::ContextMenuBuilder;
 use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
 use ki_app_shared::table::{DataTableControlBar, EditedCell};
 use ki_assets::icon::IconAsset;
 use ki_workspace::test::step_rest::{FormField, RestBody, RestData};
+use log::error;
 
 pub(super) struct UrlEncodedTable {
   table_state: Entity<TableState<UrlEncodedTableDelegate>>,
@@ -271,7 +271,7 @@ impl UrlEncodedTableDelegate {
       _ => {
         error!("The UrlEncodedTable is being used with a Rest Step other than FormUrlEncoded");
         f(&vec![])
-      },
+      }
     }
   }
 }

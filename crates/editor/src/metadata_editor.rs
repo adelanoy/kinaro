@@ -6,7 +6,7 @@ use gpui_kit::component::text::markdown;
 use gpui_kit::component::{ActiveTheme, IconName, Sizable, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{Context, Entity, IntoElement, ParentElement, Render, Styled, TextAlign, Window, div};
-use ki_app_shared::dialog::{show_edit_desc_dialog, show_rename_dialog};
+use ki_app_shared::dialog::EditFieldDialog;
 use ki_assets::icon::IconAsset;
 use ki_workspace::test::TestMetadataOwner;
 
@@ -51,8 +51,15 @@ impl<M: TestMetadataOwner + 'static> Render for MetadataEditor<M> {
                   .small()
                   .on_click({
                     let meta = self.meta.clone();
+                    let kind = meta.read(cx).path().label();
                     move |_, window, cx| {
-                      show_rename_dialog(name.clone(), meta.clone(), window, cx);
+                      let meta = meta.clone();
+                      EditFieldDialog::new(name.clone(), {
+                        move |new_name, cx| meta.update(cx, |meta, cx| meta.set_name(new_name, cx))
+                      })
+                      .title(format!("Rename {}", kind))
+                      .description("Enter the new name:")
+                      .show(window, cx);
                     }
                   }),
               ),
@@ -115,10 +122,21 @@ impl<M: TestMetadataOwner + 'static> Render for MetadataEditor<M> {
             )
             .child(h_flex().gap_x_2().child(Label::new("Description").text_xl()).child(
               Button::new("desc-trigger").icon(IconAsset::Pencil).ghost().small().on_click({
+                let meta = self.meta.clone();
                 let description = description.clone().unwrap_or_default();
-                let meta_owner = self.meta.clone();
                 move |_, window, cx| {
-                  show_edit_desc_dialog(description.clone(), meta_owner.clone(), window, cx);
+                  let meta = meta.clone();
+                  EditFieldDialog::new(description.clone(), {
+                    move |new_desc, cx| {
+                      meta.update(cx, |meta, cx| {
+                        let new_desc = new_desc.map(|value| if value.is_empty() { None } else { Some(value) });
+                        meta.set_description(new_desc, cx)
+                      })
+                    }
+                  })
+                  .title("Edit Description")
+                  .description("Enter the new description:")
+                  .show_markdown(window, cx);
                 }
               }),
             ))

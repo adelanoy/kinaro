@@ -8,7 +8,6 @@ publish.workspace = true
 [dependencies]
 #Internals
 ki_utils.workspace = true
-ki_workspace.workspace = true
 
 #Externals
 gpui-kit.workspace = true
