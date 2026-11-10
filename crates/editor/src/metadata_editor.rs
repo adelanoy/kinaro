@@ -55,7 +55,7 @@ impl<M: TestMetadataOwner + 'static> Render for MetadataEditor<M> {
                     move |_, window, cx| {
                       let meta = meta.clone();
                       EditFieldDialog::new(name.clone(), {
-                        move |new_name, cx| meta.update(cx, |meta, cx| meta.set_name(new_name, cx))
+                        move |new_name, cx| meta.update(cx, |meta, cx| meta.rename(new_name, cx))
                       })
                       .title(format!("Rename {}", kind))
                       .description("Enter the new name:")
@@ -86,7 +86,7 @@ impl<M: TestMetadataOwner + 'static> Render for MetadataEditor<M> {
                     .on_click({
                       let meta_owner = self.meta.clone();
                       move |_, _, cx| {
-                        meta_owner.update(cx, |meta, cx| meta.switch_disabled(cx));
+                        meta_owner.update(cx, |meta, cx| meta.toggle_disabled(cx));
                       }
                     }),
                 ),
@@ -130,7 +130,7 @@ impl<M: TestMetadataOwner + 'static> Render for MetadataEditor<M> {
                     move |new_desc, cx| {
                       meta.update(cx, |meta, cx| {
                         let new_desc = new_desc.map(|value| if value.is_empty() { None } else { Some(value) });
-                        meta.set_description(new_desc, cx)
+                        meta.edit_description(new_desc, cx)
                       })
                     }
                   })

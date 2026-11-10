@@ -73,3 +73,4 @@ The `crates/app` side mirrors this with `TestPath`-driven `ProjectTreeDelegate` 
 - Function documentation should include an Error section whenever it returns a Result, or a derived type (ProjectResult, WorkspaceResult...).
 - Function documentation should include an Event section whenever it emits an event (through the use of `Context::emit(event)`)
 - Documentation of functions/fields should avoid referencing more-private functions and fields
+- Excepted in traits, all impl blocks should present functions sorted in alphabetical order

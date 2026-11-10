@@ -1,4 +1,5 @@
 use crate::error::{ProjectError, ProjectResult};
+use crate::test::history::{MetaHistoryOwner, TestLocation, TestNode};
 use crate::test::{
   DropPosition, TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent, test_step::TestStep,
 };
@@ -7,6 +8,7 @@ use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, SharedString, 
 use ki_assets::icon::IconAsset;
 use ki_project::{FileTestCase, FileTestStep};
 use ki_utils::http::HttpMethod;
+use ki_utils::undo::{History, UndoEntity};
 use ki_utils::{Offset, STEP};
 use log::{debug, warn};
 use std::cmp::min;
@@ -26,6 +28,7 @@ pub struct TestCase {
   pub meta: TestMetadata,
   /// The case's steps, in display order
   steps: Vec<Entity<TestStep>>,
+  history: History<TestCase>,
 }
 
 impl TestCase {
@@ -64,8 +67,10 @@ impl TestCase {
       .map(|pos| min(pos + 1, self.steps.len()))
       .unwrap_or(self.steps.len());
     let path = step.read(cx).meta.path;
-    self.steps.insert(position, step);
-    _ = self.container.update(cx, |container, cx| container.emit_new_test(path, cx));
+    self.steps.insert(position, step.clone());
+    _ = self.container.update(cx, |container, cx| {
+      container.emit_new_test(path, TestNode::Step(step), position, cx)
+    });
     path
   }
 
@@ -86,7 +91,7 @@ impl TestCase {
       .iter()
       .map(|step| {
         let name = step.read(cx).meta.name.clone();
-        cx.new(|cx| step.update(cx, |step, cx| step.duplicate(name, &path, cx)))
+        cx.new(|cx| TestStep::duplicate(step, name, &path, cx))
       })
       .collect();
     Self {
@@ -98,6 +103,7 @@ impl TestCase {
         disabled: self.meta.disabled,
       },
       steps,
+      history: Default::default(),
     }
   }
 
@@ -122,10 +128,13 @@ impl TestCase {
       &step.read(cx).meta.name,
       self.steps.iter().map(|step| step.read(cx).meta.name.clone()),
     );
-    let new_step = step.update(cx, |step, cx| step.duplicate(new_name, &self.meta.path, cx));
-    let path = new_step.meta.path;
-    self.steps.insert(min(ix + 1, self.steps.len()), cx.new(|_| new_step));
-    _ = self.container.update(cx, |container, cx| container.emit_new_test(path, cx));
+    let new_step = cx.new(|cx| TestStep::duplicate(step, new_name, &self.meta.path, cx));
+    let path = new_step.read(cx).meta.path;
+    let position = min(ix + 1, self.steps.len());
+    self.steps.insert(position, new_step.clone());
+    _ = self.container.update(cx, |container, cx| {
+      container.emit_new_test(path, TestNode::Step(new_step), position, cx)
+    });
     Ok(path)
   }
 
@@ -153,6 +162,7 @@ impl TestCase {
         .into_iter()
         .map(|step| cx.new(|cx| TestStep::from_file(step, &path, container.clone(), new_id, cx)))
         .collect(),
+      history: Default::default(),
     }
   }
 
@@ -186,6 +196,14 @@ impl TestCase {
     new_path
   }
 
+  /// Inserts `step` at `index` among the steps (at the end if `index` is out of bound). The step is reparented under
+  /// this case, keeping its id. Returns its path change, as `(old path, new path)`.
+  pub(crate) fn insert_step_at(&mut self, step: Entity<TestStep>, index: usize, cx: &mut Context<Self>) -> (TestPath, TestPath) {
+    let path_update = step.update(cx, |step, _| step.reparent(&self.meta.path, true));
+    self.steps.insert(min(index, self.steps.len()), step);
+    path_update
+  }
+
   /// Creates a new, empty case of the suite `suite_id`, with a freshly generated id.
   pub fn new(suite_id: Uuid, name: SharedString, container: WeakEntity<TestsContainer>) -> Self {
     Self {
@@ -197,6 +215,7 @@ impl TestCase {
         disabled: false,
       },
       steps: vec![],
+      history: Default::default(),
     }
   }
 
@@ -218,7 +237,11 @@ impl TestCase {
     };
     if pos != new_pos {
       self.steps.swap(pos, new_pos);
-      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+      let node = TestNode::Step(self.steps[new_pos].clone());
+      _ = self.container.update(cx, |container, cx| {
+        container.record_move(node, TestLocation::new(&path, pos), TestLocation::new(&path, new_pos));
+        cx.emit(TestsContainerEvent::TestsModified)
+      });
     }
     Ok(())
   }
@@ -256,8 +279,10 @@ impl TestCase {
     };
     let step = cx.new(|cx| TestStep::from_file(file_step, &self.meta.path, self.container.clone(), true, cx));
     let path = step.read(cx).meta.path;
-    self.steps.insert(ix, step);
-    _ = self.container.update(cx, |container, cx| container.emit_new_test(path, cx));
+    self.steps.insert(ix, step.clone());
+    _ = self.container.update(cx, |container, cx| {
+      container.emit_new_test(path, TestNode::Step(step), ix, cx)
+    });
   }
 
   /// Removes the step at `path` and returns it, or `None` when no step of this case is at `path`.
@@ -283,6 +308,11 @@ impl TestCase {
     path_updates
   }
 
+  /// Returns the index of the step at `path`, or `None` when no step of this case is at `path`.
+  pub(crate) fn step_index(&self, path: &TestPath, cx: &App) -> Option<usize> {
+    self.steps.iter().position(|step| step.read(cx).meta.path == *path)
+  }
+
   /// Returns the step of this case addressed by `path`, or `None` when no step matches.
   pub(crate) fn step_from_path(&self, path: &TestPath, cx: &App) -> Option<Entity<TestStep>> {
     self.steps.iter().find(|step| step.read(cx).meta.path == *path).cloned()
@@ -292,6 +322,30 @@ impl TestCase {
   #[inline]
   pub fn steps(&self) -> &[Entity<TestStep>] {
     &self.steps
+  }
+}
+
+impl UndoEntity for TestCase {
+  fn history(&mut self) -> &mut History<Self> {
+    &mut self.history
+  }
+}
+
+impl MetaHistoryOwner for TestCase {
+  fn container(&self) -> WeakEntity<TestsContainer> {
+    self.container.clone()
+  }
+
+  fn meta(&self) -> &TestMetadata {
+    &self.meta
+  }
+
+  fn meta_mut(&mut self) -> &mut TestMetadata {
+    &mut self.meta
+  }
+
+  fn node(cx: &Context<Self>) -> TestNode {
+    TestNode::Case(cx.entity())
   }
 }
 
@@ -319,9 +373,14 @@ impl TestMetadataOwner for TestCase {
     if new_name == self.meta.name {
       return;
     }
-    self.meta.name = new_name.clone();
-    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    self.meta.name = new_name;
     cx.notify();
+  }
+
+  fn rename(&mut self, new_name: SharedString, cx: &mut Context<Self>) {
+    let before = self.meta.clone();
+    self.set_name(new_name, cx);
+    self.record_meta_change(before, cx);
   }
 
   #[inline]
@@ -333,9 +392,14 @@ impl TestMetadataOwner for TestCase {
     if new_description == self.meta.description {
       return;
     }
-    self.meta.description = new_description.clone();
-    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    self.meta.description = new_description;
     cx.notify();
+  }
+
+  fn edit_description(&mut self, new_description: Option<SharedString>, cx: &mut Context<Self>) {
+    let before = self.meta.clone();
+    self.set_description(new_description, cx);
+    self.record_meta_change(before, cx);
   }
 
   #[inline]
@@ -345,8 +409,21 @@ impl TestMetadataOwner for TestCase {
 
   fn switch_disabled(&mut self, cx: &mut Context<Self>) {
     self.meta.disabled = !self.meta.disabled;
-    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
     cx.notify();
+  }
+
+  fn toggle_disabled(&mut self, cx: &mut Context<Self>) {
+    let before = self.meta.clone();
+    self.switch_disabled(cx);
+    self.record_meta_change(before, cx);
+  }
+
+  fn undo_meta(&mut self, cx: &mut Context<Self>) {
+    self.undo(cx);
+  }
+
+  fn redo_meta(&mut self, cx: &mut Context<Self>) {
+    self.redo(cx);
   }
 }
 
@@ -647,26 +724,55 @@ mod tests {
   // Metadata
 
   #[gpui_kit::test]
-  fn metadata_setters_notify_changes_only(cx: &mut TestAppContext) {
+  fn metadata_setters_dont_notify_the_container(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
     let events = record_events(&tests, cx);
     let case = case(&tests, p.case_a, cx);
     case.update(cx, |case, cx| {
-      case.set_name("Case A".into(), cx);
-      case.set_description(None, cx);
-    });
-    assert!(events.borrow().is_empty());
-    case.update(cx, |case, cx| {
       case.set_name("Renamed".into(), cx);
       case.set_description(Some("desc".into()), cx);
-      case.switch_disabled(cx);
       case.switch_disabled(cx);
     });
     case.read_with(cx, |case, _| {
       assert_eq!(case.name(), "Renamed");
       assert_eq!(case.description().as_deref(), Some("desc"));
+      assert!(case.disabled());
+    });
+    assert!(events.borrow().is_empty());
+  }
+
+  #[gpui_kit::test]
+  fn recorded_metadata_edits_notify_changes_only_and_are_undone(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    let case = case(&tests, p.case_a, cx);
+    case.update(cx, |case, cx| {
+      case.rename("Case A".into(), cx);
+      case.edit_description(None, cx);
+    });
+    assert!(events.borrow().is_empty());
+    case.update(cx, |case, cx| {
+      case.rename("Renamed".into(), cx);
+      case.edit_description(Some("desc".into()), cx);
+      case.toggle_disabled(cx);
+    });
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 3]);
+
+    case.update(cx, |case, cx| case.undo_meta(cx));
+    assert!(!case.read_with(cx, |case, _| case.disabled()));
+    case.update(cx, |case, cx| case.undo_meta(cx));
+    assert_eq!(case.read_with(cx, |case, _| case.description()), None);
+    case.update(cx, |case, cx| case.undo_meta(cx));
+    assert_eq!(case.read_with(cx, |case, _| case.name()), "Case A");
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 6]);
+
+    case.update(cx, |case, cx| case.redo_meta(cx));
+    case.read_with(cx, |case, _| {
+      assert_eq!(case.name(), "Renamed");
+      assert_eq!(case.description(), None);
       assert!(!case.disabled());
     });
-    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 4]);
+    // The path is untouched by metadata edits
+    assert_eq!(case.read_with(cx, |case, _| case.path()), p.case_a);
   }
 }

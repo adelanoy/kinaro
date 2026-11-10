@@ -1,3 +1,4 @@
+use crate::test::history::{MetaHistoryOwner, TestNode};
 use crate::test::step_delay::DelayData;
 use crate::test::step_rest::RestData;
 use crate::test::{TestMetadata, TestMetadataOwner, TestPath, TestsContainer, TestsContainerEvent};
@@ -7,7 +8,14 @@ use ki_assets::icon::IconAsset;
 use ki_project::{FileStepData, FileTestStep};
 use ki_utils::http::{HttpMethod, LOCALHOST_ENDPOINT};
 use ki_utils::time::TimeUnit;
+use ki_utils::undo::{Edit, History, UndoEntity};
 use uuid::Uuid;
+
+/// Events emitted by any type of [`StepData`].
+pub enum StepDataEvent {
+  /// The request was changed by an undo or a redo: editors must update their restful states.
+  DataChanged,
+}
 
 /// What a step does when run, one variant per kind of step.
 #[derive(Eq, PartialEq, Clone, Debug)]
@@ -19,10 +27,11 @@ pub enum StepData {
 }
 
 impl StepData {
-  fn duplicate(&self, cx: &mut App) -> StepData {
+  /// Returns a copy of this data, held in new entities owned by the step `parent`.
+  fn duplicate(&self, parent: WeakEntity<TestStep>, cx: &mut App) -> StepData {
     match self {
-      StepData::Rest(data) => StepData::Rest(cx.new(|cx| data.read(cx).clone())),
-      StepData::Delay(data) => StepData::Delay(cx.new(|cx| data.read(cx).clone())),
+      StepData::Rest(data) => StepData::Rest(cx.new(|cx| data.read(cx).duplicate(parent))),
+      StepData::Delay(data) => StepData::Delay(cx.new(|cx| data.read(cx).duplicate(parent))),
     }
   }
 
@@ -34,10 +43,10 @@ impl StepData {
     }
   }
 
-  fn from_file(file: FileStepData, container: WeakEntity<TestsContainer>, cx: &mut App) -> Self {
+  fn from_file(file: FileStepData, parent: WeakEntity<TestStep>, container: WeakEntity<TestsContainer>, cx: &mut App) -> Self {
     match file {
-      FileStepData::RestStep(rest_step) => StepData::Rest(cx.new(|_| RestData::from_file(rest_step, container))),
-      FileStepData::Delay(delay_step) => StepData::Delay(cx.new(|_| DelayData::from_file(delay_step, container))),
+      FileStepData::RestStep(rest_step) => StepData::Rest(cx.new(|_| RestData::from_file(rest_step, parent, container))),
+      FileStepData::Delay(delay_step) => StepData::Delay(cx.new(|_| DelayData::from_file(delay_step, parent, container))),
     }
   }
 
@@ -64,6 +73,7 @@ pub struct TestStep {
   pub meta: TestMetadata,
   /// What the step does when run
   pub(crate) data: StepData,
+  history: History<TestStep>,
 }
 
 impl TestStep {
@@ -84,19 +94,29 @@ impl TestStep {
     }
   }
 
-  /// Returns a copy of this step named `name`, placed where `parent_path` points, with a fresh id.
-  pub(crate) fn duplicate(&self, name: SharedString, parent_path: &TestPath, cx: &mut Context<Self>) -> Self {
-    let path = TestPath::new_step(parent_path, Uuid::new_v4());
-    let data = self.data.duplicate(cx);
+  /// Returns a copy of the step `source` named `name`, placed where `parent_path` points, with a fresh id and an empty
+  /// history.
+  ///
+  /// Meant to be called while creating the copy's entity (`cx.new(|cx| TestStep::duplicate(&source, ..., cx))`): its
+  /// data is attached to that new entity.
+  pub(crate) fn duplicate(source: &Entity<Self>, name: SharedString, parent_path: &TestPath, cx: &mut Context<Self>) -> Self {
+    let (container, meta, data) = source.read_with(cx, |source, _| {
+      (
+        source.container.clone(),
+        TestMetadata {
+          path: TestPath::new_step(parent_path, Uuid::new_v4()),
+          name,
+          description: source.meta.description.clone(),
+          disabled: source.meta.disabled,
+        },
+        source.data.clone(),
+      )
+    });
     Self {
-      container: self.container.clone(),
-      meta: TestMetadata {
-        path,
-        name,
-        description: self.meta.description.clone(),
-        disabled: self.meta.disabled,
-      },
-      data,
+      container,
+      meta,
+      data: data.duplicate(cx.weak_entity(), cx),
+      history: Default::default(),
     }
   }
 
@@ -117,7 +137,8 @@ impl TestStep {
       } else {
         TestMetadata::step_from_file(file_step.info, parent_path)
       },
-      data: StepData::from_file(file_step.data, container, cx),
+      data: StepData::from_file(file_step.data, cx.weak_entity(), container, cx),
+      history: Default::default(),
     }
   }
 
@@ -131,15 +152,23 @@ impl TestStep {
 
   /// Creates a new delay step of 1000 ms placed where `parent_path` points, with a freshly
   /// generated id.
-  pub fn new_delay(parent_path: &TestPath, name: SharedString, container: WeakEntity<TestsContainer>, cx: &mut App) -> Self {
+  pub fn new_delay(
+    parent_path: &TestPath,
+    name: SharedString,
+    container: WeakEntity<TestsContainer>,
+    cx: &mut Context<Self>,
+  ) -> Self {
+    let weak_self = cx.weak_entity();
     Self {
       container: container.clone(),
       meta: TestMetadata::new_step(name, parent_path),
       data: StepData::Delay(cx.new(|_| DelayData {
         container,
+        parent: weak_self,
         duration: 1000,
         unit: TimeUnit::Millisecond,
       })),
+      history: Default::default(),
     }
   }
 
@@ -150,19 +179,26 @@ impl TestStep {
     name: SharedString,
     method: HttpMethod,
     container: WeakEntity<TestsContainer>,
-    cx: &mut App,
+    cx: &mut Context<Self>,
   ) -> Self {
+    let weak_self = cx.weak_entity();
     Self {
       container: container.clone(),
       meta: TestMetadata::new_step(name, parent_path),
       data: StepData::Rest(cx.new(|_| RestData {
         container,
+        parent: weak_self,
         method,
         endpoint: LOCALHOST_ENDPOINT.clone(),
         params: vec![],
         body: Default::default(),
       })),
+      history: Default::default(),
     }
+  }
+
+  pub(crate) fn push_edit(&mut self, edit: Box<dyn Edit<TestStep>>) {
+    self.history.push(edit);
   }
 
   /// Moves this step where `parent` points. With `keep_id` the id is kept, otherwise a fresh one is
@@ -173,6 +209,30 @@ impl TestStep {
     let path_update = (self.path(), new_path);
     self.meta.path = new_path;
     path_update
+  }
+}
+
+impl UndoEntity for TestStep {
+  fn history(&mut self) -> &mut History<Self> {
+    &mut self.history
+  }
+}
+
+impl MetaHistoryOwner for TestStep {
+  fn container(&self) -> WeakEntity<TestsContainer> {
+    self.container.clone()
+  }
+
+  fn meta(&self) -> &TestMetadata {
+    &self.meta
+  }
+
+  fn meta_mut(&mut self) -> &mut TestMetadata {
+    &mut self.meta
+  }
+
+  fn node(cx: &Context<Self>) -> TestNode {
+    TestNode::Step(cx.entity())
   }
 }
 
@@ -200,9 +260,14 @@ impl TestMetadataOwner for TestStep {
     if new_name == self.meta.name {
       return;
     }
-    self.meta.name = new_name.clone();
-    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    self.meta.name = new_name;
     cx.notify();
+  }
+
+  fn rename(&mut self, new_name: SharedString, cx: &mut Context<Self>) {
+    let before = self.meta.clone();
+    self.set_name(new_name, cx);
+    self.record_meta_change(before, cx);
   }
 
   #[inline]
@@ -214,9 +279,14 @@ impl TestMetadataOwner for TestStep {
     if new_description == self.meta.description {
       return;
     }
-    self.meta.description = new_description.clone();
-    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    self.meta.description = new_description;
     cx.notify();
+  }
+
+  fn edit_description(&mut self, new_description: Option<SharedString>, cx: &mut Context<Self>) {
+    let before = self.meta.clone();
+    self.set_description(new_description, cx);
+    self.record_meta_change(before, cx);
   }
 
   #[inline]
@@ -226,8 +296,21 @@ impl TestMetadataOwner for TestStep {
 
   fn switch_disabled(&mut self, cx: &mut Context<Self>) {
     self.meta.disabled = !self.meta.disabled;
-    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
     cx.notify();
+  }
+
+  fn toggle_disabled(&mut self, cx: &mut Context<Self>) {
+    let before = self.meta.clone();
+    self.switch_disabled(cx);
+    self.record_meta_change(before, cx);
+  }
+
+  fn undo_meta(&mut self, cx: &mut Context<Self>) {
+    self.undo(cx);
+  }
+
+  fn redo_meta(&mut self, cx: &mut Context<Self>) {
+    self.redo(cx);
   }
 }
 
@@ -335,6 +418,7 @@ mod tests {
     let step = step(&tests, p.step_a1, cx);
     let minute = cx.new(|_| DelayData {
       container: tests.downgrade(),
+      parent: step.downgrade(),
       duration: 2,
       unit: TimeUnit::Minute,
     });
@@ -370,25 +454,60 @@ mod tests {
   #[gpui_kit::test]
   fn duplicate_gives_a_fresh_id_in_the_parent(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let copy = step(&tests, p.step_a1, cx).update(cx, |step, cx| step.duplicate("Copy".into(), &p.case_b, cx));
-    assert_eq!(copy.name(), "Copy");
-    assert!(p.case_b.is_parent(&copy.path()));
-    assert_ne!(copy.id(), p.step_a1.id());
-    assert_eq!(delay_of(&cx.new(|_| copy), cx), (100, TimeUnit::Millisecond));
-    let copy = step(&tests, p.step_a1, cx).update(cx, |step, cx| step.duplicate("Copy".into(), &p.suite_b, cx));
-    assert!(matches!(copy.path(), TestPath::SuiteStep(suite, _) if suite == p.suite_b.id()));
+    let original = step(&tests, p.step_a1, cx);
+    let copy = cx.new(|cx| TestStep::duplicate(&original, "Copy".into(), &p.case_b, cx));
+    copy.read_with(cx, |copy, _| {
+      assert_eq!(copy.name(), "Copy");
+      assert!(p.case_b.is_parent(&copy.path()));
+      assert_ne!(copy.id(), p.step_a1.id());
+    });
+    assert_eq!(delay_of(&copy, cx), (100, TimeUnit::Millisecond));
+    let copy = cx.new(|cx| TestStep::duplicate(&original, "Copy".into(), &p.suite_b, cx));
+    assert!(matches!(copy.read_with(cx, |copy, _| copy.path()), TestPath::SuiteStep(suite, _) if suite == p.suite_b.id()));
   }
 
   #[gpui_kit::test]
   fn duplicate_does_not_share_the_data(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
     let original = step(&tests, p.step_a1, cx);
-    let copy = original.update(cx, |step, cx| step.duplicate("Copy".into(), &p.case_a, cx));
-    let StepData::Delay(delay) = copy.data().clone() else {
+    let copy = cx.new(|cx| TestStep::duplicate(&original, "Copy".into(), &p.case_a, cx));
+    let StepData::Delay(delay) = copy.read_with(cx, |copy, _| copy.data().clone()) else {
       panic!("should be a delay step");
     };
     delay.update(cx, |delay, cx| delay.update(2, TimeUnit::Minute, cx));
-    assert_eq!(delay_of(&cx.new(|_| copy), cx), (2, TimeUnit::Minute));
+    assert_eq!(delay_of(&copy, cx), (2, TimeUnit::Minute));
+    assert_eq!(delay_of(&original, cx), (100, TimeUnit::Millisecond));
+  }
+
+  #[gpui_kit::test]
+  fn duplicate_attaches_the_data_to_the_copy(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let rest = cx.new(|cx| TestStep::new_rest(&p.case_a, "Rest".into(), HttpMethod::Get, tests.downgrade(), cx));
+    let delay = step(&tests, p.step_a1, cx);
+    for original in [rest, delay] {
+      let copy = cx.new(|cx| TestStep::duplicate(&original, "Copy".into(), &p.case_a, cx));
+      let parent = cx.read(|cx| match copy.read(cx).data() {
+        StepData::Rest(rest) => rest.read(cx).parent.clone(),
+        StepData::Delay(delay) => delay.read(cx).parent.clone(),
+      });
+      assert_eq!(parent, copy.downgrade());
+    }
+  }
+
+  #[gpui_kit::test]
+  fn duplicate_data_edits_go_to_the_copy_history(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let original = step(&tests, p.step_a1, cx);
+    let copy = cx.new(|cx| TestStep::duplicate(&original, "Copy".into(), &p.case_a, cx));
+    let StepData::Delay(delay) = copy.read_with(cx, |copy, _| copy.data().clone()) else {
+      panic!("should be a delay step");
+    };
+    delay.update(cx, |delay, cx| delay.update(2, TimeUnit::Minute, cx));
+    assert!(copy.read_with(cx, |copy, _| copy.history.can_undo()));
+    assert!(!original.read_with(cx, |original, _| original.history.can_undo()));
+
+    copy.update(cx, |copy, cx| copy.undo(cx));
+    assert_eq!(delay_of(&copy, cx), (100, TimeUnit::Millisecond));
     assert_eq!(delay_of(&original, cx), (100, TimeUnit::Millisecond));
   }
 
@@ -421,15 +540,10 @@ mod tests {
   }
 
   #[gpui_kit::test]
-  fn metadata_setters_notify_changes_only(cx: &mut TestAppContext) {
+  fn metadata_setters_dont_notify_the_container(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
     let events = record_events(&tests, cx);
     let step = step(&tests, p.step_b1, cx);
-    step.update(cx, |step, cx| {
-      step.set_name("Step B1".into(), cx);
-      step.set_description(None, cx);
-    });
-    assert!(events.borrow().is_empty());
     step.update(cx, |step, cx| {
       step.set_name("Renamed".into(), cx);
       step.set_description(Some("desc".into()), cx);
@@ -440,6 +554,41 @@ mod tests {
       assert_eq!(step.description().as_deref(), Some("desc"));
       assert!(step.disabled());
     });
+    assert!(events.borrow().is_empty());
+  }
+
+  #[gpui_kit::test]
+  fn recorded_metadata_edits_notify_changes_only_and_are_undone(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    let step = step(&tests, p.step_b1, cx);
+    step.update(cx, |step, cx| {
+      step.rename("Step B1".into(), cx);
+      step.edit_description(None, cx);
+    });
+    assert!(events.borrow().is_empty());
+    step.update(cx, |step, cx| {
+      step.rename("Renamed".into(), cx);
+      step.edit_description(Some("desc".into()), cx);
+      step.toggle_disabled(cx);
+    });
     assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 3]);
+
+    step.update(cx, |step, cx| step.undo_meta(cx));
+    assert!(!step.read_with(cx, |step, _| step.disabled()));
+    step.update(cx, |step, cx| step.undo_meta(cx));
+    assert_eq!(step.read_with(cx, |step, _| step.description()), None);
+    step.update(cx, |step, cx| step.undo_meta(cx));
+    assert_eq!(step.read_with(cx, |step, _| step.name()), "Step B1");
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 6]);
+
+    step.update(cx, |step, cx| step.redo_meta(cx));
+    step.read_with(cx, |step, _| {
+      assert_eq!(step.name(), "Renamed");
+      assert_eq!(step.description(), None);
+      assert!(!step.disabled());
+    });
+    // The path is untouched by metadata edits
+    assert_eq!(step.read_with(cx, |step, _| step.path()), p.step_b1);
   }
 }

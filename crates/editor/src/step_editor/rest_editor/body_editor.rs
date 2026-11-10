@@ -7,12 +7,15 @@ use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::{Icon, IndexPath, Sizable};
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window, div, rems};
+use gpui_kit::{
+  AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div, rems,
+};
 use ki_app_shared::SubbedEntity;
 use ki_app_shared::panel::PanelDescriptor;
 use ki_assets::icon::IconAsset;
 use ki_utils::http::ContentType;
 use ki_workspace::test::step_rest::{RestBody, RestData};
+use ki_workspace::test::test_step::StepDataEvent;
 
 enum EditorMode {
   None,
@@ -25,9 +28,31 @@ pub struct RestBodyEditor {
   body_type_select: SubbedEntity<SelectState<Vec<&'static str>>>,
   content_type_select: Option<SubbedEntity<SelectState<Vec<ContentType>>>>,
   editor_mode: EditorMode,
+  _rest_sub: Subscription,
 }
 
 impl RestBodyEditor {
+  /// Shows the body again after it was changed outside of this editor (undo/redo): its type, its content type, and
+  /// its content.
+  fn reload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    let body_type = self.rest_data.read(cx).body().type_as_str();
+    self
+      .body_type_select
+      .entity
+      .update(cx, |state, cx| state.set_selected_value(&body_type, window, cx));
+    self.set_content_type_select(window, cx);
+    self.set_editor_mode(window, cx);
+    // The raw editor is kept as long as the language is the same: its text must be put back
+    if let EditorMode::RawText(editor) = &self.editor_mode
+      && let RestBody::Raw { content, .. } = self.rest_data.read(cx).body()
+      && editor.entity.read(cx).value() != *content
+    {
+      let content = content.clone();
+      editor.entity.update(cx, |state, cx| state.set_value(content, window, cx));
+    }
+    cx.notify();
+  }
+
   fn set_editor_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
     match self.rest_data.read(cx).body() {
       RestBody::None => self.editor_mode = EditorMode::None,
@@ -146,12 +171,18 @@ impl PanelDescriptor<RestEditorPanel, RestData> for RestBodyEditor {
       });
       SubbedEntity { entity, _sub }
     };
+    let _rest_sub = cx.subscribe_in(&rest_data, window, |this, _, e: &StepDataEvent, window, cx| {
+      if matches!(e, StepDataEvent::DataChanged) {
+        this.reload(window, cx);
+      }
+    });
 
     let mut this = RestBodyEditor {
       rest_data,
       body_type_select,
       content_type_select: None,
       editor_mode: EditorMode::None,
+      _rest_sub,
     };
 
     this.set_content_type_select(window, cx);

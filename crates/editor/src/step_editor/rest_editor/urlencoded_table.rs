@@ -16,23 +16,31 @@ use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
 use ki_app_shared::table::{DataTableControlBar, EditedCell};
 use ki_assets::icon::IconAsset;
 use ki_workspace::test::step_rest::{FormField, RestBody, RestData};
+use ki_workspace::test::test_step::StepDataEvent;
 use log::error;
 
 pub(super) struct UrlEncodedTable {
   table_state: Entity<TableState<UrlEncodedTableDelegate>>,
-  _table_sub: Subscription,
+  _subs: Vec<Subscription>,
 }
 
 impl UrlEncodedTable {
   pub(super) fn new(rest_data: Entity<RestData>, window: &mut Window, cx: &mut Context<Self>) -> Self {
     let table_state = cx.new(|cx| {
-      TableState::new(UrlEncodedTableDelegate::new(rest_data, window, cx), window, cx)
+      TableState::new(UrlEncodedTableDelegate::new(rest_data.clone(), window, cx), window, cx)
         .cell_selectable(true)
         .row_selectable(true)
         .col_selectable(false)
     });
-    let _table_sub = cx.subscribe_in(&table_state, window, Self::on_table_event);
-    Self { table_state, _table_sub }
+    let _subs = vec![
+      cx.subscribe_in(&table_state, window, Self::on_table_event),
+      cx.subscribe(&rest_data, |this, _, e: &StepDataEvent, cx| {
+        if matches!(e, StepDataEvent::DataChanged) {
+          this.clear_selection(cx);
+        }
+      }),
+    ];
+    Self { table_state, _subs }
   }
 
   fn on_action_delete(&mut self, _: &Delete, window: &mut Window, cx: &mut Context<Self>) {
@@ -94,6 +102,13 @@ impl UrlEncodedTable {
       .or_else(|| self.table_state.read(cx).selected_cell().map(|(row, _)| row));
     self.table_state.update(cx, |this, cx| {
       this.delegate_mut().add_field(row_ix, cx);
+    });
+  }
+
+  fn clear_selection(&mut self, cx: &mut Context<Self>) {
+    self.table_state.update(cx, |table, cx| {
+      table.delegate_mut().clear_selection();
+      table.clear_selection(cx);
     });
   }
 

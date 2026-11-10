@@ -85,7 +85,7 @@ impl VariableEditor {
       table_state.delegate_mut().add_variable(row_ix, cx);
     });
   }
-  
+
   fn on_action_undo(&mut self, _action: &Undo, _window: &mut Window, cx: &mut Context<Self>) {
     self.table_state.update(cx, |table_state, cx| {
       table_state.delegate_mut().undo(cx);
@@ -314,7 +314,10 @@ impl VariableDataTableDelegate {
     let Some(profile_id) = self.viewing_profile else {
       return;
     };
-    if let Err(err) = self.project_vars.update(cx, |vars, cx| vars.revert_override(row_ix, profile_id, cx)) {
+    if let Err(err) = self
+      .project_vars
+      .update(cx, |vars, cx| vars.revert_override(row_ix, profile_id, cx))
+    {
       warn!("revert_override: {err}");
     }
   }
@@ -381,7 +384,7 @@ impl VariableDataTableDelegate {
       .find_override(&profile_id)
       .map_or_else(|| (false, var.value.clone()), |value| (true, value.clone()))
   }
-  
+
   fn undo(&mut self, cx: &mut Context<TableState<Self>>) {
     self.project_vars.update(cx, |vars, cx| vars.undo_reference(cx));
   }

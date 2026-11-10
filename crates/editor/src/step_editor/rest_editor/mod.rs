@@ -2,7 +2,7 @@ mod body_editor;
 mod param_editor;
 mod urlencoded_table;
 
-use crate::step_editor::StepDataEvent;
+use crate::step_editor::StepDataEditorEvent;
 use crate::step_editor::rest_editor::body_editor::RestBodyEditor;
 use crate::step_editor::rest_editor::param_editor::RestParamEditor;
 use gpui_kit::base::input::InputEvent;
@@ -18,6 +18,7 @@ use gpui_kit::{
 use ki_app_shared::panel::{Panel, PanelContainer};
 use ki_utils::http::HttpMethod;
 use ki_workspace::test::step_rest::RestData;
+use ki_workspace::test::test_step::StepDataEvent;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RestEditorPanel {
@@ -49,6 +50,11 @@ impl RestEditor {
       cx.subscribe(&method_select_state, |this, _, _: &SelectEvent<Vec<HttpMethod>>, cx| {
         this.handle_method_select_event(cx)
       }),
+      cx.subscribe_in(&rest_data, window, |this, _, e: &StepDataEvent, window, cx| {
+        if matches!(e, StepDataEvent::DataChanged) {
+          this.reload(window, cx);
+        }
+      }),
     ];
 
     let panel_container = PanelContainer::new(
@@ -71,7 +77,7 @@ impl RestEditor {
   fn handle_method_select_event(&mut self, cx: &mut Context<Self>) {
     let method = *self.method_select_state.read(cx).selected_value().unwrap();
     if self.rest_data.update(cx, move |rest, cx| rest.set_method(method, cx)) {
-      cx.emit(StepDataEvent::IconChanged);
+      cx.emit(StepDataEditorEvent::IconChanged);
     }
   }
 
@@ -79,9 +85,25 @@ impl RestEditor {
     let endpoint = self.endpoint_input_state.read(cx).selected_value().clone();
     self.rest_data.update(cx, move |rest, cx| rest.set_endpoint(endpoint, cx));
   }
+
+  /// Shows the method and the endpoint of the request again, after they were changed outside of this editor (undo/redo).
+  ///
+  /// # Events
+  /// [`StepDataEditorEvent::IconChanged`], as the method (hence the step icon) may have changed.
+  fn reload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    let (method, endpoint) = self.rest_data.read_with(cx, |rest, _| (rest.method(), rest.endpoint()));
+    self
+      .method_select_state
+      .update(cx, |state, cx| state.set_selected_value(&method, window, cx));
+    self
+      .endpoint_input_state
+      .update(cx, |state, cx| state.set_value(endpoint, window, cx));
+    cx.emit(StepDataEditorEvent::IconChanged);
+    cx.notify();
+  }
 }
 
-impl EventEmitter<StepDataEvent> for RestEditor {}
+impl EventEmitter<StepDataEditorEvent> for RestEditor {}
 
 impl Render for RestEditor {
   fn render(&mut self, _window: &mut Window, cx: &mut Context<RestEditor>) -> impl IntoElement {
