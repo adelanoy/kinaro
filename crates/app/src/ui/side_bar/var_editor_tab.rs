@@ -10,7 +10,7 @@ use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, T
 use gpui_kit::component::{ActiveTheme, FocusableExt, Icon, IconName, IndexPath, Sizable, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
+use ki_app_shared::actions::{Delete, Duplicate, Edit, New, Redo, Undo};
 use ki_app_shared::panel::PanelDescriptor;
 use ki_app_shared::table::{DataTableControlBar, EditedCell};
 use ki_app_shared::{ContextMenuBuilder, MovingLabel};
@@ -83,6 +83,18 @@ impl VariableEditor {
         .selected_row()
         .or_else(|| table_state.selected_cell().map(|(row, _)| row));
       table_state.delegate_mut().add_variable(row_ix, cx);
+    });
+  }
+  
+  fn on_action_undo(&mut self, _action: &Undo, _window: &mut Window, cx: &mut Context<Self>) {
+    self.table_state.update(cx, |table_state, cx| {
+      table_state.delegate_mut().undo(cx);
+    });
+  }
+
+  fn on_action_redo(&mut self, _action: &Redo, _window: &mut Window, cx: &mut Context<Self>) {
+    self.table_state.update(cx, |table_state, cx| {
+      table_state.delegate_mut().redo(cx);
     });
   }
 
@@ -302,13 +314,9 @@ impl VariableDataTableDelegate {
     let Some(profile_id) = self.viewing_profile else {
       return;
     };
-    self.project_vars.update(cx, |this, cx| {
-      let Some(var) = this.references.get_mut(row_ix) else {
-        warn!("revert_override: Unknown ix: {}", row_ix);
-        return;
-      };
-      var.revert_override(profile_id, cx);
-    });
+    if let Err(err) = self.project_vars.update(cx, |vars, cx| vars.revert_override(row_ix, profile_id, cx)) {
+      warn!("revert_override: {err}");
+    }
   }
 
   fn on_cell_input_event<F>(
@@ -372,6 +380,14 @@ impl VariableDataTableDelegate {
     var
       .find_override(&profile_id)
       .map_or_else(|| (false, var.value.clone()), |value| (true, value.clone()))
+  }
+  
+  fn undo(&mut self, cx: &mut Context<TableState<Self>>) {
+    self.project_vars.update(cx, |vars, cx| vars.undo_reference(cx));
+  }
+
+  fn redo(&mut self, cx: &mut Context<TableState<Self>>) {
+    self.project_vars.update(cx, |vars, cx| vars.redo_reference(cx));
   }
 }
 
@@ -534,6 +550,8 @@ impl Render for VariableEditor {
       .on_action(cx.listener(Self::on_action_duplicate))
       .on_action(cx.listener(Self::on_action_edit))
       .on_action(cx.listener(Self::on_action_new))
+      .on_action(cx.listener(Self::on_action_undo))
+      .on_action(cx.listener(Self::on_action_redo))
       .size_full()
       .gap_y_2()
       .child(

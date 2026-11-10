@@ -5,7 +5,7 @@ use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableEvent, T
 use gpui_kit::component::{FocusableExt, Icon, IconName, Sizable, WindowExt, h_flex, v_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
-use ki_app_shared::actions::{Delete, Duplicate, Edit, New};
+use ki_app_shared::actions::{Delete, Duplicate, Edit, New, Redo, Undo};
 use ki_app_shared::panel::PanelDescriptor;
 use ki_app_shared::table::{DataTableControlBar, EditedCell};
 use ki_app_shared::{ContextMenuBuilder, MovingLabel};
@@ -80,6 +80,18 @@ impl ProfileEditor {
       .or_else(|| self.table_state.read(cx).selected_cell().map(|(row, _)| row));
     self.table_state.update(cx, |this, cx| {
       this.delegate_mut().add_profile(row_ix, cx);
+    });
+  }
+
+  fn on_action_undo(&mut self, _action: &Undo, _window: &mut Window, cx: &mut Context<Self>) {
+    self.table_state.update(cx, |table_state, cx| {
+      table_state.delegate_mut().undo(cx);
+    });
+  }
+
+  fn on_action_redo(&mut self, _action: &Redo, _window: &mut Window, cx: &mut Context<Self>) {
+    self.table_state.update(cx, |table_state, cx| {
+      table_state.delegate_mut().redo(cx);
     });
   }
 
@@ -286,6 +298,14 @@ impl ProfileDataTableDelegate {
       window.push_notification(err, cx);
     }
   }
+
+  fn undo(&mut self, cx: &mut Context<TableState<Self>>) {
+    self.project_vars.update(cx, |vars, cx| vars.undo_profile(cx));
+  }
+
+  fn redo(&mut self, cx: &mut Context<TableState<Self>>) {
+    self.project_vars.update(cx, |vars, cx| vars.redo_profile(cx));
+  }
 }
 
 impl TableDelegate for ProfileDataTableDelegate {
@@ -404,6 +424,8 @@ impl Render for ProfileEditor {
       .on_action(cx.listener(Self::on_action_duplicate))
       .on_action(cx.listener(Self::on_action_edit))
       .on_action(cx.listener(Self::on_action_new))
+      .on_action(cx.listener(Self::on_action_undo))
+      .on_action(cx.listener(Self::on_action_redo))
       .size_full()
       .gap_y_2()
       .child(

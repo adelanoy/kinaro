@@ -4,6 +4,7 @@ use gpui_kit::component::select::SelectItem;
 use gpui_kit::{Context, EventEmitter, SharedString};
 use ki_project::{FileProfile, FileProjectVariables, FileVariable, FileVariableKind};
 use ki_utils::next_available_name;
+use ki_utils::undo::{Edit, History};
 use log::warn;
 use std::cmp::{Ordering, min};
 use std::collections::HashMap;
@@ -70,10 +71,12 @@ pub enum ProjectVariablesEvent {
   ActiveProfile(Option<Uuid>),
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Default)]
 pub struct ProjectVariables {
   pub references: Vec<VariableReference>,
   pub profiles: Vec<Profile>,
+  history_references: History<ProjectVariables>,
+  history_profiles: History<ProjectVariables>,
   active_profile: Option<Uuid>,
 }
 
@@ -98,7 +101,11 @@ impl ProjectVariables {
     let ix = row_ix
       .map(|ix| min(ix + 1, self.profiles.len()))
       .unwrap_or(self.profiles.len());
-    self.profiles.insert(ix, new_profile);
+    self.profiles.insert(ix, new_profile.clone());
+    self.history_profiles.push(Box::new(UndoAddProfile {
+      profile: new_profile,
+      index: ix,
+    }));
     cx.emit(ProjectVariablesEvent::ProfilesChanged);
   }
 
@@ -117,13 +124,19 @@ impl ProjectVariables {
       );
       return Err(ProjectError::ProfileNotFound);
     }
-    let removed_profile = self.profiles.remove(index);
+    let profile = self.profiles.remove(index);
     cx.emit(ProjectVariablesEvent::ProfilesChanged);
 
-    if Some(removed_profile.id) == self.active_profile {
+    let was_active = Some(profile.id) == self.active_profile;
+    if was_active {
       self.active_profile = None;
       cx.emit(ProjectVariablesEvent::ActiveProfile(None))
     }
+    self.history_profiles.push(Box::new(UndoDeleteProfile {
+      profile,
+      index,
+      was_active,
+    }));
     Ok(())
   }
 
@@ -140,7 +153,11 @@ impl ProjectVariables {
     duplicated_profile.id = Uuid::new_v4();
     duplicated_profile.name = next_available_name(&profile.name, self.profiles.iter().map(|p| p.name.clone()));
     let ix = min(index + 1, self.profiles.len());
-    self.profiles.insert(ix, duplicated_profile);
+    self.profiles.insert(ix, duplicated_profile.clone());
+    self.history_profiles.push(Box::new(UndoAddProfile {
+      profile: duplicated_profile,
+      index: ix,
+    }));
     cx.emit(ProjectVariablesEvent::ProfilesChanged);
   }
 
@@ -163,6 +180,7 @@ impl ProjectVariables {
     }
     let profile_to_move = self.profiles.remove(from_ix);
     self.profiles.insert(to_ix, profile_to_move);
+    self.history_profiles.push(Box::new(UndoMoveProfile { from_ix, to_ix }));
     cx.emit(ProjectVariablesEvent::ProfilesChanged);
     Ok(())
   }
@@ -180,7 +198,11 @@ impl ProjectVariables {
     };
 
     if updated_profile != *profile {
-      *profile = updated_profile;
+      let before = std::mem::replace(profile, updated_profile.clone());
+      self.history_profiles.push(Box::new(UndoUpdateProfile {
+        before,
+        after: updated_profile,
+      }));
       cx.emit(ProjectVariablesEvent::ProfilesChanged);
     }
     Ok(())
@@ -222,8 +244,12 @@ impl ProjectVariables {
     };
     let ix = index
       .map(|ix| min(ix + 1, self.references.len()))
-      .unwrap_or(self.profiles.len());
-    self.references.insert(ix, new_var);
+      .unwrap_or(self.references.len());
+    self.references.insert(ix, new_var.clone());
+    self.history_references.push(Box::new(UndoAddVariable {
+      variable: new_var,
+      index: ix,
+    }));
     cx.emit(ProjectVariablesEvent::VariablesChanged);
   }
 
@@ -235,13 +261,17 @@ impl ProjectVariables {
   pub fn delete_variable(&mut self, index: usize, cx: &mut Context<Self>) -> ProjectResult<()> {
     if index > self.references.len() - 1 {
       warn!(
-        "Failed to delete variable at row: {} (max: {})",
+        "Failed to delete variable at row: {} (len: {})",
         index,
         self.references.len() - 1
       );
       return Err(ProjectError::VariableNotFound);
     }
-    self.references.remove(index);
+    let reference = self.references.remove(index);
+    self.history_references.push(Box::new(UndoDeleteVariable {
+      variable: reference,
+      index,
+    }));
     cx.emit(ProjectVariablesEvent::VariablesChanged);
     Ok(())
   }
@@ -258,8 +288,12 @@ impl ProjectVariables {
     let mut duplicated_var = var.clone();
     duplicated_var.id = Uuid::new_v4();
     duplicated_var.name = next_available_name(&var.name, self.references.iter().map(|p| p.name.clone()));
-    let ix = min(index + 1, self.profiles.len());
-    self.references.insert(ix, duplicated_var);
+    let ix = min(index + 1, self.references.len());
+    self.references.insert(ix, duplicated_var.clone());
+    self.history_references.push(Box::new(UndoAddVariable {
+      variable: duplicated_var,
+      index: ix,
+    }));
     cx.emit(ProjectVariablesEvent::VariablesChanged);
   }
 
@@ -278,9 +312,36 @@ impl ProjectVariables {
     if updated_variable == *var {
       return Ok(());
     }
-    *var = updated_variable;
+    let before = std::mem::replace(var, updated_variable.clone());
+    self.history_references.push(Box::new(UndoUpdateVariable {
+      before,
+      after: updated_variable,
+    }));
 
     cx.emit(ProjectVariablesEvent::VariablesChanged);
+    Ok(())
+  }
+
+  /// Removes the override value of a variable for the given profile, the variable falling back to its reference value
+  /// for this profile. A no-op if the variable has no override for this profile
+  ///
+  /// # Result
+  /// Returns a [`ProjectError::VariableNotFound`] if the index is out of bound
+  /// # Events
+  /// Emits a [`ProjectVariablesEvent::VariablesChanged`] if an override was removed
+  pub fn revert_override(&mut self, index: usize, profile_id: Uuid, cx: &mut Context<Self>) -> ProjectResult<()> {
+    let Some(var) = self.references.get_mut(index) else {
+      warn!("Failed to revert override of variable at row: {}", index);
+      return Err(ProjectError::VariableNotFound);
+    };
+    let before = var.clone();
+    if var.overrides.remove(&profile_id).is_some() {
+      self.history_references.push(Box::new(UndoUpdateVariable {
+        before,
+        after: var.clone(),
+      }));
+      cx.emit(ProjectVariablesEvent::VariablesChanged);
+    }
     Ok(())
   }
 
@@ -297,6 +358,7 @@ impl ProjectVariables {
     }
     let var_to_move = self.references.remove(from_ix);
     self.references.insert(to_ix, var_to_move);
+    self.history_references.push(Box::new(UndoMoveVariable { from_ix, to_ix }));
     cx.emit(ProjectVariablesEvent::VariablesChanged);
     Ok(())
   }
@@ -315,6 +377,8 @@ impl ProjectVariables {
     ProjectVariables {
       references: variables,
       profiles,
+      history_references: Default::default(),
+      history_profiles: Default::default(),
       active_profile,
     }
   }
@@ -324,6 +388,46 @@ impl ProjectVariables {
     let profiles = self.profiles.iter().map(|p| p.to_file()).collect();
 
     FileProjectVariables { variables, profiles }
+  }
+
+  ///// UNDO
+  /// Reverts the last operation made on the profiles (add, duplicate, delete, move, update). A no-op if there is
+  /// nothing to undo
+  pub fn undo_profile(&mut self, cx: &mut Context<Self>) {
+    if let Some(undo) = self.history_profiles.pop_undo() {
+      undo.undo(self, cx);
+      self.history_profiles.push_redo(undo);
+    }
+  }
+
+  /// Reverts the last operation made on the variables (add, duplicate, delete, move, update, override revert). A no-op
+  /// if there is nothing to undo
+  pub fn undo_reference(&mut self, cx: &mut Context<Self>) {
+    if let Some(undo) = self.history_references.pop_undo() {
+      undo.undo(self, cx);
+      self.history_references.push_redo(undo);
+    }
+  }
+
+  ///// REDO
+  /// Re-applies the last profile operation reverted by [`ProjectVariables::undo_profile`]. A no-op if there is nothing
+  /// to redo, which is the case as soon as a new profile operation is performed after an undo
+  pub fn redo_profile(&mut self, cx: &mut Context<Self>) {
+    if let Some(redo) = self.history_profiles.pop_redo() {
+      redo.redo(self, cx);
+      self.history_profiles.push_undo(redo);
+    }
+  }
+
+  /// Re-applies the last variable operation reverted by [`ProjectVariables::undo_reference`]. A no-op if there is
+  /// nothing to redo, which is the case as soon as a new variable operation is performed after an undo
+  /// # Events
+  /// Emits a [`ProjectVariablesEvent::VariablesChanged`] if an operation was re-applied
+  pub fn redo_reference(&mut self, cx: &mut Context<Self>) {
+    if let Some(redo) = self.history_references.pop_redo() {
+      redo.redo(self, cx);
+      self.history_references.push_undo(redo);
+    }
   }
 }
 
@@ -378,12 +482,6 @@ impl VariableReference {
       .overrides
       .iter()
       .find_map(|(id, value)| if id == profile_id { Some(value.clone()) } else { None })
-  }
-
-  pub fn revert_override(&mut self, profile_id: Uuid, cx: &mut Context<ProjectVariables>) {
-    if self.overrides.remove(&profile_id).is_some() {
-      cx.emit(ProjectVariablesEvent::VariablesChanged);
-    }
   }
 
   /// Sets a new value depending on the profile.
@@ -448,3 +546,216 @@ pub struct DraggedVar(pub Uuid);
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct DraggedProfile(pub Uuid);
+
+///// UNDO / REDO
+fn insert_profile(target: &mut ProjectVariables, index: usize, profile: &Profile, cx: &mut Context<ProjectVariables>) {
+  let ix = min(index, target.profiles.len());
+  target.profiles.insert(ix, profile.clone());
+  cx.emit(ProjectVariablesEvent::ProfilesChanged);
+  cx.notify();
+}
+
+fn remove_profile(target: &mut ProjectVariables, id: Uuid, cx: &mut Context<ProjectVariables>) {
+  let Some(ix) = target.profiles.iter().position(|p| p.id == id) else {
+    warn!("Undo/redo: unknown profile id: {}", id);
+    return;
+  };
+  target.profiles.remove(ix);
+  cx.emit(ProjectVariablesEvent::ProfilesChanged);
+  if target.active_profile == Some(id) {
+    target.active_profile = None;
+    cx.emit(ProjectVariablesEvent::ActiveProfile(None));
+  }
+  cx.notify();
+}
+
+fn move_profile_to(target: &mut ProjectVariables, from_ix: usize, to_ix: usize, cx: &mut Context<ProjectVariables>) {
+  let profile = target.profiles.remove(from_ix);
+  let to_ix = min(to_ix, target.profiles.len());
+  target.profiles.insert(to_ix, profile);
+  cx.emit(ProjectVariablesEvent::ProfilesChanged);
+  cx.notify();
+}
+
+fn replace_profile(target: &mut ProjectVariables, profile: &Profile, cx: &mut Context<ProjectVariables>) {
+  let Some(existing) = target.profiles.iter_mut().find(|p| p.id == profile.id) else {
+    warn!("Undo/redo: unknown profile id: {}", profile.id);
+    return;
+  };
+  *existing = profile.clone();
+  cx.emit(ProjectVariablesEvent::ProfilesChanged);
+  cx.notify();
+}
+
+fn insert_variable(
+  target: &mut ProjectVariables,
+  index: usize,
+  variable: &VariableReference,
+  cx: &mut Context<ProjectVariables>,
+) {
+  let ix = min(index, target.references.len());
+  target.references.insert(ix, variable.clone());
+  cx.emit(ProjectVariablesEvent::VariablesChanged);
+  cx.notify();
+}
+
+fn remove_variable(target: &mut ProjectVariables, id: Uuid, cx: &mut Context<ProjectVariables>) {
+  let Some(ix) = target.references.iter().position(|v| v.id == id) else {
+    warn!("Undo/redo: unknown variable id: {}", id);
+    return;
+  };
+  target.references.remove(ix);
+  cx.emit(ProjectVariablesEvent::VariablesChanged);
+  cx.notify();
+}
+
+fn move_variable_to(target: &mut ProjectVariables, from_ix: usize, to_ix: usize, cx: &mut Context<ProjectVariables>) {
+  let variable = target.references.remove(from_ix);
+  let to_ix = min(to_ix, target.references.len());
+  target.references.insert(to_ix, variable);
+  cx.emit(ProjectVariablesEvent::VariablesChanged);
+  cx.notify();
+}
+
+fn replace_variable(target: &mut ProjectVariables, variable: &VariableReference, cx: &mut Context<ProjectVariables>) {
+  let Some(existing) = target.references.iter_mut().find(|v| v.id == variable.id) else {
+    warn!("Undo/redo: unknown variable id: {}", variable.id);
+    return;
+  };
+  *existing = variable.clone();
+  cx.emit(ProjectVariablesEvent::VariablesChanged);
+  cx.notify();
+}
+
+/// Insertion of a profile (added or duplicated)
+struct UndoAddProfile {
+  profile: Profile,
+  index: usize,
+}
+
+impl Edit<ProjectVariables> for UndoAddProfile {
+  fn undo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    remove_profile(target, self.profile.id, cx);
+  }
+
+  fn redo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    insert_profile(target, self.index, &self.profile, cx);
+  }
+}
+
+/// Deletion of a profile, remembering whether it was the active one
+struct UndoDeleteProfile {
+  profile: Profile,
+  index: usize,
+  was_active: bool,
+}
+
+impl Edit<ProjectVariables> for UndoDeleteProfile {
+  fn undo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    insert_profile(target, self.index, &self.profile, cx);
+    if self.was_active {
+      target.active_profile = Some(self.profile.id);
+      cx.emit(ProjectVariablesEvent::ActiveProfile(target.active_profile));
+    }
+  }
+
+  fn redo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    remove_profile(target, self.profile.id, cx);
+  }
+}
+
+/// Move of a profile from one position to another
+struct UndoMoveProfile {
+  from_ix: usize,
+  to_ix: usize,
+}
+
+impl Edit<ProjectVariables> for UndoMoveProfile {
+  fn undo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    move_profile_to(target, self.to_ix, self.from_ix, cx);
+  }
+
+  fn redo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    move_profile_to(target, self.from_ix, self.to_ix, cx);
+  }
+}
+
+/// Modification of a profile's attributes
+struct UndoUpdateProfile {
+  before: Profile,
+  after: Profile,
+}
+
+impl Edit<ProjectVariables> for UndoUpdateProfile {
+  fn undo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    replace_profile(target, &self.before, cx);
+  }
+
+  fn redo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    replace_profile(target, &self.after, cx);
+  }
+}
+
+/// Insertion of a variable (added or duplicated)
+struct UndoAddVariable {
+  variable: VariableReference,
+  index: usize,
+}
+
+impl Edit<ProjectVariables> for UndoAddVariable {
+  fn undo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    remove_variable(target, self.variable.id, cx);
+  }
+
+  fn redo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    insert_variable(target, self.index, &self.variable, cx);
+  }
+}
+
+/// Deletion of a variable
+struct UndoDeleteVariable {
+  variable: VariableReference,
+  index: usize,
+}
+
+impl Edit<ProjectVariables> for UndoDeleteVariable {
+  fn undo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    insert_variable(target, self.index, &self.variable, cx);
+  }
+
+  fn redo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    remove_variable(target, self.variable.id, cx);
+  }
+}
+
+/// Move of a variable from one position to another
+struct UndoMoveVariable {
+  from_ix: usize,
+  to_ix: usize,
+}
+
+impl Edit<ProjectVariables> for UndoMoveVariable {
+  fn undo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    move_variable_to(target, self.to_ix, self.from_ix, cx);
+  }
+
+  fn redo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    move_variable_to(target, self.from_ix, self.to_ix, cx);
+  }
+}
+
+/// Modification of a variable's attributes, including its reference value and its per-profile overrides
+struct UndoUpdateVariable {
+  before: VariableReference,
+  after: VariableReference,
+}
+
+impl Edit<ProjectVariables> for UndoUpdateVariable {
+  fn undo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    replace_variable(target, &self.before, cx);
+  }
+
+  fn redo(&self, target: &mut ProjectVariables, cx: &mut Context<ProjectVariables>) {
+    replace_variable(target, &self.after, cx);
+  }
+}

@@ -7,7 +7,7 @@ pub const TABLE_CONTEXT_KEY: &str = "Table";
 
 // SHARED
 actions!([
-  CopyId, CopyPath, Delete, Down, Duplicate, Enter, Left, MoveUp, MoveDown, MoveLeft, MoveRight, New, Edit, Right, Up
+  CopyId, CopyPath, Delete, Down, Duplicate, Edit, Enter, Left, MoveUp, MoveDown, MoveLeft, MoveRight, New, Redo, Right, Undo, Up
 ]);
 
 // WORKSPACE
@@ -26,22 +26,24 @@ pub struct AddRestStep {
 pub fn init(cx: &mut App) {
   cx.bind_keys([
     // SHARED
+    KeyBinding::new("escape", Cancel, None),
     KeyBinding::new("ctrl-alt-i", CopyId, None),
     KeyBinding::new("ctrl-alt-p", CopyPath, None),
     KeyBinding::new("delete", Delete, None),
     KeyBinding::new("ctrl-d", Duplicate, None),
-    KeyBinding::new("escape", Cancel, None),
+    KeyBinding::new("f2", Edit, None),
     KeyBinding::new("enter", Enter, None),
     KeyBinding::new("ctrl-up", MoveUp, None),
     KeyBinding::new("ctrl-down", MoveDown, None),
     KeyBinding::new("ctrl-left", MoveLeft, None),
     KeyBinding::new("ctrl-right", MoveRight, None),
     KeyBinding::new("ctrl-shift-n", New, None),
-    KeyBinding::new("up", Up, None),
     KeyBinding::new("down", Down, None),
     KeyBinding::new("left", Left, None),
+    KeyBinding::new("ctrl-shift-z", Redo, None),
     KeyBinding::new("right", Right, None),
-    KeyBinding::new("f2", Edit, None),
+    KeyBinding::new("up", Up, None),
+    KeyBinding::new("ctrl-z", Undo, None),
     // WORKSPACE
     KeyBinding::new("ctrl-n", CreateProject, None),
     KeyBinding::new("ctrl-o", OpenProject, None),
