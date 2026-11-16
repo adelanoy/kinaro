@@ -6,8 +6,11 @@ use gpui_kit::component::Icon;
 use gpui_kit::component::separator::Separator;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-  App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div,
+  App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled,
+  Subscription, Window, div,
 };
+use ki_app_shared::actions::{Redo, Undo};
+use ki_utils::undo::UndoEntity;
 use ki_workspace::TestStep;
 use ki_workspace::test::TestMetadataOwner;
 use ki_workspace::test::test_step::StepData;
@@ -15,7 +18,7 @@ use ki_workspace::test::test_step::StepData;
 mod delay_editor;
 mod rest_editor;
 
-enum StepDataEvent {
+enum StepDataEditorEvent {
   IconChanged,
 }
 
@@ -32,9 +35,18 @@ pub struct StepEditor {
   icon: Icon,
   data_editor: StepDataEditor,
   _data_editor_sub: Option<Subscription>,
+  focus_handle: FocusHandle,
 }
 
 impl StepEditor {
+  fn on_action_undo(&mut self, _: &Undo, _window: &mut Window, cx: &mut Context<Self>) {
+    self.step.update(cx, |step, cx| step.undo(cx));
+  }
+
+  fn on_action_redo(&mut self, _: &Redo, _window: &mut Window, cx: &mut Context<Self>) {
+    self.step.update(cx, |step, cx| step.redo(cx));
+  }
+
   /// Creates the editor of `step`.
   pub fn new(step: Entity<TestStep>, window: &mut Window, cx: &mut Context<Self>) -> Self {
     let header_editor = cx.new(|_| MetadataEditor::new(step.clone()));
@@ -45,6 +57,7 @@ impl StepEditor {
       icon: step.read_with(cx, |step, cx| step.icon(cx)),
       data_editor,
       _data_editor_sub,
+      focus_handle: cx.focus_handle(),
     }
   }
 
@@ -52,7 +65,7 @@ impl StepEditor {
     match step.read(cx).data().clone() {
       StepData::Rest(rest) => {
         let editor = cx.new(|cx| RestEditor::new(rest, window, cx));
-        let sub = cx.subscribe(&editor, |this, _, _: &StepDataEvent, cx| {
+        let sub = cx.subscribe(&editor, |this, _, _: &StepDataEditorEvent, cx| {
           this.icon = this.step.read_with(cx, |step, cx| step.icon(cx));
         });
         (StepDataEditor::Rest(editor), Some(sub))
@@ -76,8 +89,11 @@ impl StepEditor {
 }
 
 impl Render for StepEditor {
-  fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+  fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     v_flex()
+      .track_focus(&self.focus_handle)
+      .on_action(cx.listener(Self::on_action_undo))
+      .on_action(cx.listener(Self::on_action_redo))
       .size_full()
       .child(self.metadata_editor.clone())
       .child(Separator::horizontal())

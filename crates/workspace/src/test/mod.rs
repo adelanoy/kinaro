@@ -3,7 +3,9 @@ use crate::test::test_suite::TestSuiteChild;
 use crate::{FileProjectMetadata, TestCase, TestStep, TestSuite};
 use gpui_kit::component::Icon;
 use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, EventEmitter, SharedString};
+use history::{AddTest, MoveTest, RemoveTest, TestLocation, TestNode, UpdateMeta};
 use ki_project::{FileTestMetadata, FileTestSuite, FileTestsContainer};
+use ki_utils::undo::History;
 use ki_utils::{DropPosition, Offset, TestPath};
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
@@ -11,6 +13,7 @@ use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
+mod history;
 pub mod step_delay;
 pub mod step_rest;
 pub mod test_case;
@@ -118,6 +121,25 @@ impl TestMetadata {
     }
   }
 
+  /// Applies the change from `from` to `to`: each value (name, description, disabled flag) that differs between them is
+  /// set to the one of `to`, the others are left untouched, as is the path. Returns whether a value was changed.
+  ///
+  /// Only applying the differing values keeps the changes recorded in other histories (the container's or the node's)
+  /// when undoing.
+  fn apply_change(&mut self, from: &TestMetadata, to: &TestMetadata) -> bool {
+    let before = self.clone();
+    if from.name != to.name {
+      self.name = to.name.clone();
+    }
+    if from.description != to.description {
+      self.description = to.description.clone();
+    }
+    if from.disabled != to.disabled {
+      self.disabled = to.disabled;
+    }
+    *self != before
+  }
+
   /// Produces the on-disk representation of the metadata. The path is reduced to the node's id.
   pub(crate) fn to_file(&self) -> FileTestMetadata {
     FileTestMetadata {
@@ -144,31 +166,51 @@ pub trait TestMetadataOwner: Clone + 'static {
   fn icon(&self, cx: &App) -> Icon;
   /// Returns the display name of the node.
   fn name(&self) -> SharedString;
-  /// Renames the node. A no-op when `new_name` is its current name.
+  /// Sets the name of the node, without recording it in any history nor notifying the owning container (the project
+  /// isn't saved). A no-op when `new_name` is its current name. Use [`TestMetadataOwner::rename`] for a user edit.
+  fn set_name(&mut self, new_name: SharedString, cx: &mut Context<Self>);
+  /// Renames the node, recording the change in the node's own history so that it can be undone with
+  /// [`TestMetadataOwner::undo_meta`]. A no-op when `new_name` is its current name.
   ///
   /// # Events
   /// [`TestsContainerEvent::TestsModified`] on the owning container if the name changed.
-  fn set_name(&mut self, new_name: SharedString, cx: &mut Context<Self>)
-  where
-    Self: Sized;
+  fn rename(&mut self, new_name: SharedString, cx: &mut Context<Self>);
   /// Returns the Markdown description of the node, if any.
   fn description(&self) -> Option<SharedString>;
-  /// Sets (or removes, with `None`) the description of the node. A no-op when it is unchanged.
+  /// Sets (or removes, with `None`) the description of the node, without recording it in any history nor notifying
+  /// the owning container (the project isn't saved). A no-op when it is unchanged. Use
+  /// [`TestMetadataOwner::edit_description`] for a user edit.
+  fn set_description(&mut self, new_description: Option<SharedString>, cx: &mut Context<Self>);
+  /// Sets (or removes, with `None`) the description of the node, recording the change in the node's own history so that
+  /// it can be undone with [`TestMetadataOwner::undo_meta`]. A no-op when it is unchanged.
   ///
   /// # Events
   /// [`TestsContainerEvent::TestsModified`] on the owning container if the description changed.
-  fn set_description(&mut self, new_description: Option<SharedString>, cx: &mut Context<Self>)
-  where
-    Self: Sized;
+  fn edit_description(&mut self, new_description: Option<SharedString>, cx: &mut Context<Self>);
   /// Returns whether the node is excluded from runs.
   fn disabled(&self) -> bool;
-  /// Enables the node if it is disabled, disables it otherwise.
+  /// Enables the node if it is disabled, disables it otherwise, without recording it in any history nor notifying the
+  /// owning container (the project isn't saved). Use [`TestMetadataOwner::toggle_disabled`] for a user edit.
+  fn switch_disabled(&mut self, cx: &mut Context<Self>);
+  /// Enables the node if it is disabled, disables it otherwise, recording the change in the node's own history so that
+  /// it can be undone with [`TestMetadataOwner::undo_meta`].
   ///
   /// # Events
   /// [`TestsContainerEvent::TestsModified`] on the owning container.
-  fn switch_disabled(&mut self, cx: &mut Context<Self>)
-  where
-    Self: Sized;
+  fn toggle_disabled(&mut self, cx: &mut Context<Self>);
+  /// Reverts the last metadata change recorded in the node's own history (see [`TestMetadataOwner::rename`],
+  /// [`TestMetadataOwner::edit_description`] and [`TestMetadataOwner::toggle_disabled`]). A no-op if there is nothing
+  /// to undo.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestsModified`] on the owning container if a change was reverted.
+  fn undo_meta(&mut self, cx: &mut Context<Self>);
+  /// Re-applies the last metadata change reverted by [`TestMetadataOwner::undo_meta`]. A no-op if there is nothing to
+  /// redo.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestsModified`] on the owning container if a change was re-applied.
+  fn redo_meta(&mut self, cx: &mut Context<Self>);
 }
 
 /// The level of the tree a node is moved to.
@@ -234,11 +276,12 @@ pub enum TestsContainerEvent {
 
 /// The live test tree of a project, along with its UI configuration (expanded
 /// tree nodes, tabs opened in the editor and the active one).
-#[derive(Default, Debug, Eq, PartialEq)]
+#[derive(Default)]
 pub struct TestsContainer {
   /// The root test suites, in display order
   pub suites: Vec<Entity<TestSuite>>,
   opened_tree_nodes: HashSet<TestPath>,
+  history: History<TestsContainer>,
   editor_tabs: Vec<TestPath>,
   active_editor_tab_index: Option<usize>,
 }
@@ -274,7 +317,12 @@ impl TestsContainer {
     let name = ki_utils::next_available_name("New Suite", self.suites.iter().map(|suite| suite.read(cx).meta.name.clone()));
     let new_suite = TestSuite::new(name, cx.weak_entity());
     let path = new_suite.meta.path;
-    self.suites.insert(position, cx.new(|_| new_suite));
+    let suite = cx.new(|_| new_suite);
+    self.suites.insert(position, suite.clone());
+    self.history.push(Box::new(AddTest {
+      node: TestNode::Suite(suite),
+      location: TestLocation::new(&path, position),
+    }));
     cx.emit(TestsContainerEvent::TestAdded(path));
     path
   }
@@ -328,7 +376,13 @@ impl TestsContainer {
       );
       let new_suite = suite.update(cx, |suite, cx| suite.duplicate(new_name, cx));
       let new_path = new_suite.meta.path;
-      self.suites.insert(min(ix + 1, self.suites.len()), cx.new(|_| new_suite));
+      let position = min(ix + 1, self.suites.len());
+      let suite = cx.new(|_| new_suite);
+      self.suites.insert(position, suite.clone());
+      self.history.push(Box::new(AddTest {
+        node: TestNode::Suite(suite),
+        location: TestLocation::new(&new_path, position),
+      }));
       cx.emit(TestsContainerEvent::TestAdded(new_path));
       Ok(new_path)
     } else {
@@ -336,11 +390,25 @@ impl TestsContainer {
     }
   }
 
-  pub(crate) fn emit_new_test(&mut self, path: TestPath, cx: &mut Context<Self>) {
+  /// Notifies that `node`, at `path`, was just inserted at `index` among its siblings, recording the insertion in the
+  /// history and expanding its parent in the project tree.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestAdded`] with `path`.
+  pub(crate) fn emit_new_test(&mut self, path: TestPath, node: TestNode, index: usize, cx: &mut Context<Self>) {
     if let Some(parent) = path.parent() {
       self.opened_tree_nodes.insert(parent);
     }
+    self.history.push(Box::new(AddTest {
+      node,
+      location: TestLocation::new(&path, index),
+    }));
     cx.emit(TestsContainerEvent::TestAdded(path));
+  }
+
+  /// Records in the history that `node` was moved from one location to another, without changing anything else.
+  pub(crate) fn record_move(&mut self, node: TestNode, from: TestLocation, to: TestLocation) {
+    self.history.push(Box::new(MoveTest { node, from, to }));
   }
 
   /// Marks the node at `id` as expanded in the project tree.
@@ -365,6 +433,7 @@ impl TestsContainer {
         .map(|file| cx.new(|cx| TestSuite::from_file(file, this_weak.clone(), false, cx)))
         .collect(),
       opened_tree_nodes: HashSet::new(),
+      history: Default::default(),
       editor_tabs: vec![],
       active_editor_tab_index: None,
     };
@@ -426,6 +495,8 @@ impl TestsContainer {
       return Err(ProjectError::TestNotFound(to));
     }
     let level = MoveLevel::of(from, to, position).ok_or(ProjectError::NoOp)?;
+    let from_location = self.location_of(&from, cx).ok_or(ProjectError::TestNotFound(from))?;
+    let node = self.node_at(&from, cx).ok_or(ProjectError::TestNotFound(from))?;
 
     let updated_paths = match level {
       MoveLevel::Root => {
@@ -439,6 +510,22 @@ impl TestsContainer {
     .filter(|(old, new)| old != new)
     .collect::<HashMap<_, _>>();
 
+    if let Some(to_location) = self.location_of(&node.path(cx), cx) {
+      self.record_move(node, from_location, to_location);
+    }
+    self.follow_moved_paths(updated_paths, cx);
+    // Save project
+    cx.emit(TestsContainerEvent::TestsModified);
+    Ok(())
+  }
+
+  /// Makes the expanded tree nodes and the editor tabs follow the nodes whose path changed, given as
+  /// `old path -> new path` (unchanged paths excluded).
+  ///
+  /// # Events
+  /// - [`TestsContainerEvent::ConfigChanged`] if an expanded tree node or an editor tab was moved.
+  /// - [`TestsContainerEvent::TestMoved`] for each changed path.
+  fn follow_moved_paths(&mut self, updated_paths: HashMap<TestPath, TestPath>, cx: &mut Context<Self>) {
     // Update the opened editor tabs and tree nodes states
     if !updated_paths.is_empty() {
       let mut config_changed = false;
@@ -463,9 +550,6 @@ impl TestsContainer {
     for (old_path, new_path) in updated_paths {
       cx.emit(TestsContainerEvent::TestMoved(old_path, new_path));
     }
-    // Save project
-    cx.emit(TestsContainerEvent::TestsModified);
-    Ok(())
   }
 
   /// Moves the suite `from` right before or after the suite `to`. Expects both suites to exist.
@@ -568,6 +652,11 @@ impl TestsContainer {
       };
       if pos != new_pos {
         self.suites.swap(pos, new_pos);
+        self.record_move(
+          TestNode::Suite(self.suites[new_pos].clone()),
+          TestLocation::new(&path, pos),
+          TestLocation::new(&path, new_pos),
+        );
         cx.emit(TestsContainerEvent::TestsModified);
       }
       Ok(())
@@ -592,6 +681,16 @@ impl TestsContainer {
       self.active_editor_tab_index = selected_tab;
       cx.emit(TestsContainerEvent::EditorActiveTabIndex(selected_tab));
     }
+  }
+
+  /// Renames the node at `path`, recording the change in the container's history (not in the node's own one), so that
+  /// it is undone with [`TestsContainer::undo`]. A no-op when `new_name` is its current name, or when no node is at
+  /// `path`.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestsModified`] if the node was renamed.
+  pub fn rename_node(&mut self, path: TestPath, new_name: SharedString, cx: &mut Context<Self>) {
+    self.update_node_meta(path, |meta| meta.name = new_name, cx);
   }
 
   /// Sets all editors tab configuration at once, opened tabs and active one.
@@ -640,7 +739,11 @@ impl TestsContainer {
     let this_weak = cx.weak_entity();
     let suite = cx.new(|cx| TestSuite::from_file(suite, this_weak, true, cx));
     let new_path = suite.read(cx).meta.path;
-    self.suites.insert(ix, suite);
+    self.suites.insert(ix, suite.clone());
+    self.history.push(Box::new(AddTest {
+      node: TestNode::Suite(suite),
+      location: TestLocation::new(&new_path, ix),
+    }));
     cx.emit(TestsContainerEvent::TestAdded(new_path));
   }
 
@@ -661,20 +764,92 @@ impl TestsContainer {
   /// - [`TestsContainerEvent::TestRemoved`] for the removed node and each of its descendants.
   /// - [`TestsContainerEvent::ConfigChanged`] if an expanded tree node or an editor tab was dropped.
   pub fn remove_test(&mut self, path: &TestPath, cx: &mut Context<Self>) {
-    let removed_paths = match path {
-      TestPath::Suite(_) => self.remove_suite(path, cx).map(|suite| suite.read(cx).all_paths(cx)),
-      TestPath::Case(_, _) | TestPath::SuiteStep(_, _) => self
-        .suite_from_path(path, cx)
-        .and_then(|suite| suite.update(cx, |suite, cx| suite.remove_child(path, cx)))
-        .map(|child| child.all_paths(cx)),
-      TestPath::Step(_, _, _) => self
-        .case_from_path(path, cx)
-        .and_then(|case| case.update(cx, |case, cx| case.remove_step(path, cx)))
-        .map(|step| vec![step.read(cx).path()]),
+    if let Some((node, location)) = self.detach_node(path, cx) {
+      self.history.push(Box::new(RemoveTest { node, location }));
     }
-    .unwrap_or(vec![]);
+  }
+
+  /// Returns the node at `path`, or `None` when no such node exists.
+  fn node_at(&self, path: &TestPath, cx: &App) -> Option<TestNode> {
+    match path {
+      TestPath::Suite(_) => self.suite_from_path(path, cx).map(TestNode::Suite),
+      TestPath::Case(_, _) => self.case_from_path(path, cx).map(TestNode::Case),
+      TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => self.step_from_path(path, cx).map(TestNode::Step),
+    }
+  }
+
+  /// Returns where the node at `path` is placed, or `None` when no such node exists.
+  fn location_of(&self, path: &TestPath, cx: &App) -> Option<TestLocation> {
+    let index = match path {
+      TestPath::Suite(_) => self.suites.iter().position(|suite| suite.read(cx).path() == *path)?,
+      TestPath::Case(_, _) | TestPath::SuiteStep(_, _) => self.suite_from_path(path, cx)?.read(cx).child_index(path, cx)?,
+      TestPath::Step(_, _, _) => self.case_from_path(path, cx)?.read(cx).step_index(path, cx)?,
+    };
+    Some(TestLocation::new(path, index))
+  }
+
+  /// Removes the node at `path` from the tree and returns it along with where it was, or `None` when no such node
+  /// exists. Neither the configuration nor the history is updated, and no event is emitted.
+  fn take_node(&mut self, path: &TestPath, cx: &mut Context<Self>) -> Option<(TestNode, TestLocation)> {
+    let location = self.location_of(path, cx)?;
+    let node = match path {
+      TestPath::Suite(_) => TestNode::Suite(self.remove_suite(path, cx)?),
+      TestPath::Case(_, _) | TestPath::SuiteStep(_, _) => self
+        .suite_from_path(path, cx)?
+        .update(cx, |suite, cx| suite.remove_child(path, cx))?
+        .into(),
+      TestPath::Step(_, _, _) => TestNode::Step(
+        self
+          .case_from_path(path, cx)?
+          .update(cx, |case, cx| case.remove_step(path, cx))?,
+      ),
+    };
+    Some((node, location))
+  }
+
+  /// Inserts `node` at `location`, reparenting it and its descendants (ids are kept). Returns the paths that changed,
+  /// as `old path -> new path` (including unchanged paths, mapped to themselves). Neither the configuration nor the
+  /// history is updated, and no event is emitted.
+  ///
+  /// # Errors
+  /// - [`ProjectError::TestNotFound`] if the parent of `location` doesn't exist.
+  /// - [`ProjectError::NoOp`] if `node` can't be placed under the parent of `location`.
+  fn put_node(
+    &mut self,
+    node: TestNode,
+    location: TestLocation,
+    cx: &mut Context<Self>,
+  ) -> ProjectResult<HashMap<TestPath, TestPath>> {
+    let child = match (node, location.parent) {
+      (TestNode::Suite(suite), None) => {
+        self.suites.insert(min(location.index, self.suites.len()), suite);
+        return Ok(HashMap::new());
+      }
+      (TestNode::Case(case), Some(TestPath::Suite(_))) => TestSuiteChild::Case(case),
+      (TestNode::Step(step), Some(TestPath::Suite(_))) => TestSuiteChild::Step(step),
+      (TestNode::Step(step), Some(parent @ TestPath::Case(_, _))) => {
+        let case = self.case_from_path(&parent, cx).ok_or(ProjectError::TestNotFound(parent))?;
+        let (old, new) = case.update(cx, |case, cx| case.insert_step_at(step, location.index, cx));
+        return Ok(HashMap::from([(old, new)]));
+      }
+      _ => return Err(ProjectError::NoOp),
+    };
+    // A case or a step placed directly in a suite
+    let parent = location.parent.unwrap();
+    let suite = self.suite_from_path(&parent, cx).ok_or(ProjectError::TestNotFound(parent))?;
+    Ok(suite.update(cx, |suite, cx| suite.insert_child_at(child, location.index, cx)))
+  }
+
+  /// Removes the node at `path` along with its descendants, dropping them from the expanded tree nodes and the editor
+  /// tabs. Returns the removed node and where it was, or `None` when no such node exists. The history isn't updated.
+  ///
+  /// # Events
+  /// - [`TestsContainerEvent::TestRemoved`] for the removed node and each of its descendants.
+  /// - [`TestsContainerEvent::ConfigChanged`] if an expanded tree node or an editor tab was dropped.
+  fn detach_node(&mut self, path: &TestPath, cx: &mut Context<Self>) -> Option<(TestNode, TestLocation)> {
+    let (node, location) = self.take_node(path, cx)?;
     let mut config_changed = false;
-    for path in removed_paths {
+    for path in node.all_paths(cx) {
       config_changed |= self.opened_tree_nodes.remove(&path);
       if let Some(ix) = self.editor_tabs.iter().position(|tab_path| tab_path == &path) {
         self.editor_tabs.remove(ix);
@@ -684,6 +859,46 @@ impl TestsContainer {
     }
     if config_changed {
       cx.emit(TestsContainerEvent::ConfigChanged);
+    }
+    Some((node, location))
+  }
+
+  /// Inserts `node` at `location` and expands its parent in the project tree. Logs a warning, and drops the node,
+  /// if it can't be placed there. The history isn't updated.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestAdded`] with the path of the node, if it was inserted.
+  fn attach_node(&mut self, node: TestNode, location: TestLocation, cx: &mut Context<Self>) {
+    if let Err(err) = self.put_node(node.clone(), location, cx) {
+      warn!("Could not insert test at {location:?}: {err}");
+      return;
+    }
+    if let Some(parent) = location.parent {
+      self.opened_tree_nodes.insert(parent);
+    }
+    cx.emit(TestsContainerEvent::TestAdded(node.path(cx)));
+  }
+
+  /// Moves `node` to `location`, the expanded tree nodes and editor tabs following it. Logs a warning if the node
+  /// can't be found or placed there. The history isn't updated.
+  ///
+  /// # Events
+  /// - [`TestsContainerEvent::ConfigChanged`] if an expanded tree node or an editor tab was moved.
+  /// - [`TestsContainerEvent::TestMoved`] for each node whose path changed.
+  /// - [`TestsContainerEvent::TestsModified`] if the node was moved.
+  fn relocate_node(&mut self, node: &TestNode, location: TestLocation, cx: &mut Context<Self>) {
+    let path = node.path(cx);
+    let Some((taken, _)) = self.take_node(&path, cx) else {
+      warn!("Could not move unknown test: {path}");
+      return;
+    };
+    match self.put_node(taken, location, cx) {
+      Ok(updated_paths) => {
+        let updated_paths = updated_paths.into_iter().filter(|(old, new)| old != new).collect();
+        self.follow_moved_paths(updated_paths, cx);
+        cx.emit(TestsContainerEvent::TestsModified);
+      }
+      Err(err) => warn!("Could not move test {path} to {location:?}: {err}"),
     }
   }
 
@@ -732,11 +947,69 @@ impl TestsContainer {
       .cloned()
   }
 
+  /// Enables the node at `path` if it is disabled, disables it otherwise, recording the change in the container's
+  /// history (not in the node's own one), so that it is undone with [`TestsContainer::undo`]. A no-op when no node is
+  /// at `path`.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestsModified`] if the node exists.
+  pub fn switch_node_disabled(&mut self, path: TestPath, cx: &mut Context<Self>) {
+    self.update_node_meta(path, |meta| meta.disabled = !meta.disabled, cx);
+  }
+
   /// Produces the on-disk representation of the test tree. The UI
   /// configuration isn't part of it: it's saved in the workspace file.
   pub fn to_file(&self, cx: &App) -> FileTestsContainer {
     FileTestsContainer {
       suites: self.suites.iter().map(|suite| suite.read(cx).get_file(cx)).collect(),
+    }
+  }
+
+  /// Reverts the last operation made on the test tree: a node added (new, duplicated or pasted), removed, moved
+  /// (dragged or offset), renamed with [`TestsContainer::rename_node`], enabled or disabled with
+  /// [`TestsContainer::switch_node_disabled`]. Metadata changes made from the node itself are recorded in the node's
+  /// own history instead (see [`TestMetadataOwner::undo_meta`]). A no-op if there is nothing to undo
+  ///
+  /// # Events
+  /// The events of the reverse operation: [`TestsContainerEvent::TestRemoved`] for an addition,
+  /// [`TestsContainerEvent::TestAdded`] for a removal, [`TestsContainerEvent::TestMoved`] and
+  /// [`TestsContainerEvent::TestsModified`] for a move, [`TestsContainerEvent::TestsModified`] for a metadata change,
+  /// along with [`TestsContainerEvent::ConfigChanged`] when expanded tree nodes or editor tabs are affected
+  pub fn undo(&mut self, cx: &mut Context<Self>) {
+    if let Some(undo) = self.history.pop_undo() {
+      undo.undo(self, cx);
+      self.history.push_redo(undo);
+    }
+  }
+
+  /// Re-applies the last operation reverted by [`TestsContainer::undo`]. A no-op if there is nothing
+  /// to redo, which is the case as soon as a new operation is performed after an undo
+  ///
+  /// # Events
+  /// The events of the re-applied operation (see [`TestsContainer::undo`])
+  pub fn redo(&mut self, cx: &mut Context<Self>) {
+    if let Some(redo) = self.history.pop_redo() {
+      redo.redo(self, cx);
+      self.history.push_undo(redo);
+    }
+  }
+
+  /// Changes the metadata of the node at `path` with `f`, recording the change in the container's history. A no-op
+  /// when `f` changes nothing, or when no node is at `path`.
+  ///
+  /// # Events
+  /// [`TestsContainerEvent::TestsModified`] if the metadata changed.
+  fn update_node_meta(&mut self, path: TestPath, f: impl FnOnce(&mut TestMetadata), cx: &mut Context<Self>) {
+    let Some(node) = self.node_at(&path, cx) else {
+      warn!("Attempt to edit the metadata of an unknown test: {path}");
+      return;
+    };
+    let before = node.meta(cx);
+    let mut after = before.clone();
+    f(&mut after);
+    if node.apply_meta_change(&before, &after, cx) {
+      self.history.push(Box::new(UpdateMeta { node, before, after }));
+      cx.emit(TestsContainerEvent::TestsModified);
     }
   }
 }
@@ -1562,5 +1835,230 @@ mod tests {
       case_b.steps.iter().map(|step| step.info.id).collect::<Vec<_>>(),
       vec![p.step_b1.id(), p.suite_step_a.id()]
     );
+  }
+
+  // Undo / redo
+
+  fn undo(tests: &Entity<TestsContainer>, cx: &mut TestAppContext) {
+    tests.update(cx, |tests, cx| tests.undo(cx));
+  }
+
+  fn redo(tests: &Entity<TestsContainer>, cx: &mut TestAppContext) {
+    tests.update(cx, |tests, cx| tests.redo(cx));
+  }
+
+  #[gpui_kit::test]
+  fn undo_with_empty_history_is_a_no_op(cx: &mut TestAppContext) {
+    let (_, tests) = fixture(cx);
+    let before = all_paths(&tests, cx);
+    let events = record_events(&tests, cx);
+    undo(&tests, cx);
+    redo(&tests, cx);
+    assert_eq!(all_paths(&tests, cx), before);
+    assert!(events.borrow().is_empty());
+  }
+
+  #[gpui_kit::test]
+  fn undo_redo_add_test_suite(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let before = all_paths(&tests, cx);
+    let new_path = tests.update(cx, |tests, cx| tests.add_test_suite(Some(p.suite_a), cx));
+
+    let events = record_events(&tests, cx);
+    undo(&tests, cx);
+    assert_eq!(all_paths(&tests, cx), before);
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestRemoved(new_path)]);
+
+    redo(&tests, cx);
+    assert_eq!(suite_names(&tests, cx), vec!["Suite A", "New Suite", "Suite B"]);
+    assert_eq!(cx.read(|cx| tests.read(cx).suites[1].read(cx).path()), new_path);
+  }
+
+  #[gpui_kit::test]
+  fn undo_redo_remove_restores_the_same_nodes_in_place(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let before = all_paths(&tests, cx);
+    let case_a = case(&tests, p.case_a, cx);
+    let step_a1 = step(&tests, p.step_a1, cx);
+    tests.update(cx, |tests, cx| tests.remove_test(&p.case_a, cx));
+
+    let events = record_events(&tests, cx);
+    undo(&tests, cx);
+    assert_eq!(all_paths(&tests, cx), before);
+    assert_eq!(case(&tests, p.case_a, cx), case_a);
+    assert_eq!(step(&tests, p.step_a1, cx), step_a1);
+    assert_eq!(delay_of(&step_a1, cx), (100, TimeUnit::Millisecond));
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestAdded(p.case_a)]);
+
+    redo(&tests, cx);
+    assert_eq!(child_names(&tests, p.suite_a, cx), vec!["Suite step A"]);
+  }
+
+  #[gpui_kit::test]
+  fn undo_remove_of_a_suite_and_of_a_step(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let before = all_paths(&tests, cx);
+    tests.update(cx, |tests, cx| tests.remove_test(&p.suite_a, cx));
+    tests.update(cx, |tests, cx| tests.remove_test(&p.step_b1, cx));
+    undo(&tests, cx);
+    undo(&tests, cx);
+    assert_eq!(all_paths(&tests, cx), before);
+  }
+
+  #[gpui_kit::test]
+  fn undo_redo_suite_children_additions(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let before = all_paths(&tests, cx);
+    let suite_a = suite(&tests, p.suite_a, cx);
+    let case_a = case(&tests, p.case_a, cx);
+    suite_a.update(cx, |suite, cx| suite.add_new_test_case(p.case_a, cx));
+    suite_a.update(cx, |suite, cx| suite.add_delay_step(p.suite_a, cx));
+    suite_a
+      .update(cx, |suite, cx| suite.duplicate_child(&p.suite_step_a, cx))
+      .unwrap();
+    case_a.update(cx, |case, cx| case.add_delay_step(p.step_a1, cx));
+    case_a.update(cx, |case, cx| case.duplicate_step(&p.step_a2, cx)).unwrap();
+    let after = all_paths(&tests, cx);
+
+    for _ in 0..5 {
+      undo(&tests, cx);
+    }
+    assert_eq!(all_paths(&tests, cx), before);
+    for _ in 0..5 {
+      redo(&tests, cx);
+    }
+    assert_eq!(all_paths(&tests, cx), after);
+  }
+
+  #[gpui_kit::test]
+  fn undo_redo_move_between_suites(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let before = all_paths(&tests, cx);
+    let config = FileProjectMetadata {
+      editor_tabs: vec![p.step_a1],
+      ..Default::default()
+    };
+    let tests_with_tab = load(p.file(), config, cx);
+    move_test(&tests, p.case_a, p.suite_b, DropPosition::Into, cx).0.unwrap();
+    move_test(&tests_with_tab, p.case_a, p.suite_b, DropPosition::Into, cx)
+      .0
+      .unwrap();
+    let after = all_paths(&tests, cx);
+
+    undo(&tests, cx);
+    assert_eq!(all_paths(&tests, cx), before);
+    redo(&tests, cx);
+    assert_eq!(all_paths(&tests, cx), after);
+
+    // The editor tabs follow the undone move
+    undo(&tests_with_tab, cx);
+    tests_with_tab.read_with(cx, |tests, _| assert_eq!(tests.opened_editor_nodes(), [p.step_a1]));
+  }
+
+  #[gpui_kit::test]
+  fn undo_move_of_a_step_to_a_suite_step(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let before = all_paths(&tests, cx);
+    move_test(&tests, p.step_a1, p.suite_step_b, DropPosition::Before, cx)
+      .0
+      .unwrap();
+    move_test(&tests, p.suite_step_a, p.step_b1, DropPosition::After, cx)
+      .0
+      .unwrap();
+    move_test(&tests, p.suite_b, p.suite_a, DropPosition::Before, cx).0.unwrap();
+    undo(&tests, cx);
+    undo(&tests, cx);
+    undo(&tests, cx);
+    assert_eq!(all_paths(&tests, cx), before);
+  }
+
+  #[gpui_kit::test]
+  fn undo_redo_offsets(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let before = all_paths(&tests, cx);
+    tests
+      .update(cx, |tests, cx| tests.offset_suite(p.suite_a, Offset::Plus, cx))
+      .unwrap();
+    suite(&tests, p.suite_a, cx)
+      .update(cx, |suite, cx| suite.offset_child(p.case_a, Offset::Plus, cx))
+      .unwrap();
+    case(&tests, p.case_a, cx)
+      .update(cx, |case, cx| case.offset_step(p.step_a2, Offset::Minus, cx))
+      .unwrap();
+    let after = all_paths(&tests, cx);
+
+    let events = record_events(&tests, cx);
+    undo(&tests, cx);
+    assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Step A2"]);
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified]);
+    undo(&tests, cx);
+    undo(&tests, cx);
+    assert_eq!(all_paths(&tests, cx), before);
+    for _ in 0..3 {
+      redo(&tests, cx);
+    }
+    assert_eq!(all_paths(&tests, cx), after);
+  }
+
+  #[gpui_kit::test]
+  fn undo_redo_metadata_changes_made_through_the_container(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let events = record_events(&tests, cx);
+    tests.update(cx, |tests, cx| {
+      tests.rename_node(p.suite_a, "Renamed".into(), cx);
+      tests.rename_node(p.suite_step_a, "Renamed step".into(), cx);
+      tests.switch_node_disabled(p.step_a1, cx);
+      // No-ops: unchanged name, unknown path
+      tests.rename_node(p.case_a, "Case A".into(), cx);
+      tests.switch_node_disabled(TestPath::Suite(Uuid::new_v4()), cx);
+    });
+    assert_eq!(name_at(&tests, p.suite_step_a, cx), "Renamed step");
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 3]);
+
+    let step_a1 = step(&tests, p.step_a1, cx);
+    undo(&tests, cx);
+    assert!(!step_a1.read_with(cx, |step, _| step.disabled()));
+    undo(&tests, cx);
+    assert_eq!(name_at(&tests, p.suite_step_a, cx), "Suite step A");
+    undo(&tests, cx);
+    assert_eq!(name_at(&tests, p.suite_a, cx), "Suite A");
+    assert_eq!(events.borrow().len(), 6);
+
+    redo(&tests, cx);
+    assert_eq!(name_at(&tests, p.suite_a, cx), "Renamed");
+    // Paths are untouched by metadata changes
+    assert_eq!(step_a1.read_with(cx, |step, _| step.path()), p.step_a1);
+  }
+
+  #[gpui_kit::test]
+  fn container_and_node_histories_dont_revert_each_other(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    let case_a = case(&tests, p.case_a, cx);
+    // Renamed from the tree (container's history), then described from the editor (node's history)
+    tests.update(cx, |tests, cx| tests.rename_node(p.case_a, "Renamed".into(), cx));
+    case_a.update(cx, |case, cx| case.edit_description(Some("desc".into()), cx));
+
+    // Undoing the rename keeps the description, undoing the description keeps the name
+    undo(&tests, cx);
+    case_a.read_with(cx, |case, _| {
+      assert_eq!(case.name(), "Case A");
+      assert_eq!(case.description().as_deref(), Some("desc"));
+    });
+    redo(&tests, cx);
+    case_a.update(cx, |case, cx| case.undo_meta(cx));
+    case_a.read_with(cx, |case, _| {
+      assert_eq!(case.name(), "Renamed");
+      assert_eq!(case.description(), None);
+    });
+  }
+
+  #[gpui_kit::test]
+  fn new_operation_clears_redo(cx: &mut TestAppContext) {
+    let (p, tests) = fixture(cx);
+    tests.update(cx, |tests, cx| tests.remove_test(&p.suite_a, cx));
+    undo(&tests, cx);
+    tests.update(cx, |tests, cx| tests.remove_test(&p.suite_b, cx));
+    redo(&tests, cx);
+    assert_eq!(suite_names(&tests, cx), vec!["Suite A"]);
   }
 }

@@ -21,10 +21,11 @@ use ki_app_shared::{ContextMenuBuilder, SubbedEntity};
 use ki_assets::icon::IconAsset;
 use ki_utils::http::RestParamType;
 use ki_workspace::test::step_rest::{RestData, RestParam};
+use ki_workspace::test::test_step::StepDataEvent;
 
 pub struct RestParamEditor {
   table_state: Entity<TableState<RestParamDataTableDelegate>>,
-  _table_sub: Subscription,
+  _subs: Vec<Subscription>,
 }
 
 impl RestParamEditor {
@@ -90,6 +91,13 @@ impl RestParamEditor {
     });
   }
 
+  fn clear_selection(&mut self, cx: &mut Context<Self>) {
+    self.table_state.update(cx, |table, cx| {
+      table.delegate_mut().clear_selection();
+      table.clear_selection(cx);
+    });
+  }
+
   fn on_table_event(
     &mut self,
     table: &Entity<TableState<RestParamDataTableDelegate>>,
@@ -121,13 +129,20 @@ impl PanelDescriptor<RestEditorPanel, RestData> for RestParamEditor {
 
   fn new(entity: Entity<RestData>, window: &mut Window, cx: &mut Context<Self>) -> Self {
     let table_state = cx.new(|cx| {
-      TableState::new(RestParamDataTableDelegate::new(entity, window, cx), window, cx)
+      TableState::new(RestParamDataTableDelegate::new(entity.clone(), window, cx), window, cx)
         .cell_selectable(true)
         .row_selectable(true)
         .col_selectable(false)
     });
-    let _table_sub = cx.subscribe_in(&table_state, window, Self::on_table_event);
-    Self { table_state, _table_sub }
+    let _subs = vec![
+      cx.subscribe_in(&table_state, window, Self::on_table_event),
+      cx.subscribe(&entity, |this, _, e: &StepDataEvent, cx| {
+        if matches!(e, StepDataEvent::DataChanged) {
+          this.clear_selection(cx);
+        }
+      }),
+    ];
+    Self { table_state, _subs }
   }
 }
 

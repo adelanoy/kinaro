@@ -1,11 +1,14 @@
+use crate::TestStep;
+use crate::test::test_step::{StepData, StepDataEvent};
 use crate::test::{TestsContainer, TestsContainerEvent};
 use gpui_kit::component::Icon;
-use gpui_kit::{Context, SharedString, WeakEntity};
+use gpui_kit::{Context, EventEmitter, SharedString, WeakEntity};
 use ki_project::{FileFormField, FileMultipartPart, FileRestBody, FileRestData, FileRestParam};
 use ki_utils::EMPTY_SHARED_STRING;
 use ki_utils::http::{
   CONTENT_TYPE_FORM_DATA, CONTENT_TYPE_FORM_URL_ENCODED, ContentType, HTTP_HEADER_CONTENT_TYPE, HttpMethod, RestParamType,
 };
+use ki_utils::undo::Edit;
 use log::error;
 use std::cmp::min;
 use std::path::PathBuf;
@@ -263,10 +266,15 @@ impl From<&str> for RestBody {
   }
 }
 
-#[derive(Eq, PartialEq, Clone, Debug)]
+/// A step sending a REST request.
+///
+/// Not `Clone`: a copy must be attached to its own step, see [`RestData::duplicate`].
+#[derive(Eq, PartialEq, Debug)]
 pub struct RestData {
   /// The container holding this step, notified of the changes made to the step
   pub(crate) container: WeakEntity<TestsContainer>,
+  /// The parent step, to allow pushing undo/redo edits
+  pub parent: WeakEntity<TestStep>,
   pub(crate) method: HttpMethod,
   pub(crate) endpoint: SharedString,
   pub(crate) params: Vec<RestParam>,
@@ -284,9 +292,7 @@ impl RestData {
       disabled: false,
       generated: false,
     };
-    self.params.insert(ix, param);
-    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-    cx.notify();
+    self.record(cx, |this| this.params.insert(ix, param));
   }
 
   /// Inserts a new, empty and enabled field in a URL-encoded body, right after the field at `row_ix`, or at the end
@@ -298,18 +304,18 @@ impl RestData {
   /// # Events
   /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the field was added.
   pub fn add_urlencoded_field(&mut self, row_ix: Option<usize>, cx: &mut Context<Self>) {
-    if let RestBody::FormUrlEncoded { fields } = &mut self.body {
-      let ix = row_ix.map(|ix| min(ix + 1, fields.len())).unwrap_or(fields.len());
-      let name = ki_utils::next_available_name("Param", fields.iter().map(|field| field.name.clone()));
-      let field = FormField {
-        name,
-        value: Default::default(),
-        disabled: false,
-      };
-      fields.insert(ix, field);
-      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-      cx.notify();
-    }
+    self.record(cx, |this| {
+      if let RestBody::FormUrlEncoded { fields } = &mut this.body {
+        let ix = row_ix.map(|ix| min(ix + 1, fields.len())).unwrap_or(fields.len());
+        let name = ki_utils::next_available_name("Param", fields.iter().map(|field| field.name.clone()));
+        let field = FormField {
+          name,
+          value: Default::default(),
+          disabled: false,
+        };
+        fields.insert(ix, field);
+      }
+    });
   }
 
   /// The request body.
@@ -323,9 +329,9 @@ impl RestData {
       error!("RestData::delete_param: Attempt to delete a non existing index: {row_ix}");
       return;
     }
-    self.params.remove(row_ix);
-    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-    cx.notify();
+    self.record(cx, |this| {
+      this.params.remove(row_ix);
+    });
   }
 
   /// Removes the field at `row_ix` from a URL-encoded body.
@@ -335,15 +341,15 @@ impl RestData {
   /// # Events
   /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the field was removed.
   pub fn delete_urlencoded_field(&mut self, row_ix: usize, cx: &mut Context<Self>) {
-    if let RestBody::FormUrlEncoded { fields } = &mut self.body {
-      if row_ix >= fields.len() {
-        error!("RestData::delete_urlencoded_field: Attempt to delete a non existing index: {row_ix}");
-        return;
+    self.record(cx, |this| {
+      if let RestBody::FormUrlEncoded { fields } = &mut this.body {
+        if row_ix >= fields.len() {
+          error!("RestData::delete_urlencoded_field: Attempt to delete a non existing index: {row_ix}");
+          return;
+        }
+        fields.remove(row_ix);
       }
-      fields.remove(row_ix);
-      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-      cx.notify();
-    }
+    });
   }
 
   pub fn duplicate_param(&mut self, row_ix: usize, cx: &mut Context<Self>) {
@@ -354,9 +360,7 @@ impl RestData {
     let name = ki_utils::next_available_name(&param.name, self.params.iter().map(|param| param.name.clone()));
     param.name = name;
     let ix = min(row_ix + 1, self.params.len());
-    self.params.insert(ix, param);
-    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-    cx.notify();
+    self.record(cx, |this| this.params.insert(ix, param));
   }
 
   /// Inserts a copy of the field at `row_ix` of a URL-encoded body right after it.
@@ -368,17 +372,29 @@ impl RestData {
   /// # Events
   /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the field was duplicated.
   pub fn duplicate_urlencoded_field(&mut self, row_ix: usize, cx: &mut Context<Self>) {
-    if let RestBody::FormUrlEncoded { fields } = &mut self.body {
-      let Some(mut field) = fields.get(row_ix).cloned() else {
-        error!("RestData::duplicate_urlencoded_field: Attempt to duplicate a non existing index: {row_ix}");
-        return;
-      };
-      let name = ki_utils::next_available_name(&field.name, fields.iter().map(|field| field.name.clone()));
-      field.name = name;
-      let ix = min(row_ix + 1, fields.len());
-      fields.insert(ix, field);
-      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-      cx.notify();
+    self.record(cx, |this| {
+      if let RestBody::FormUrlEncoded { fields } = &mut this.body {
+        let Some(mut field) = fields.get(row_ix).cloned() else {
+          error!("RestData::duplicate_urlencoded_field: Attempt to duplicate a non existing index: {row_ix}");
+          return;
+        };
+        let name = ki_utils::next_available_name(&field.name, fields.iter().map(|field| field.name.clone()));
+        field.name = name;
+        let ix = min(row_ix + 1, fields.len());
+        fields.insert(ix, field);
+      }
+    });
+  }
+
+  /// Returns a copy of this request, owned by the step `parent`.
+  pub(crate) fn duplicate(&self, parent: WeakEntity<TestStep>) -> Self {
+    Self {
+      container: self.container.clone(),
+      parent,
+      method: self.method,
+      endpoint: self.endpoint.clone(),
+      params: self.params.clone(),
+      body: self.body.clone(),
     }
   }
 
@@ -391,7 +407,7 @@ impl RestData {
     self.method.icon()
   }
 
-  pub fn from_file(step: FileRestData, container: WeakEntity<TestsContainer>) -> Self {
+  pub fn from_file(step: FileRestData, parent: WeakEntity<TestStep>, container: WeakEntity<TestsContainer>) -> Self {
     let FileRestData {
       method,
       endpoint,
@@ -403,6 +419,7 @@ impl RestData {
 
     let mut this = RestData {
       container,
+      parent,
       method,
       endpoint: endpoint.into(),
       params,
@@ -432,6 +449,48 @@ impl RestData {
     &self.params
   }
 
+  /// Applies `f` to this request, and records the change it made (if any) in the history of the parent step, so
+  /// that it can be undone.
+  ///
+  /// Must not be called while the parent step is being updated: the change would not be recorded.
+  ///
+  /// # Events
+  /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when `f` changed the request.
+  fn record(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut Self)) -> bool {
+    let before = self.state();
+    f(self);
+    let after = self.state();
+    if before == after {
+      return false;
+    }
+    _ = self
+      .parent
+      .update(cx, |parent, _| parent.push_edit(Box::new(EditRest { before, after })));
+    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    cx.notify();
+    true
+  }
+
+  /// Puts back a state of the request, without recording it.
+  ///
+  /// # Events
+  /// Emits [`TestsContainerEvent::TestsModified`] on the owning container, and [`RestDataEvent::DataChanged`].
+  fn restore(&mut self, state: RestState, cx: &mut Context<Self>) {
+    let RestState {
+      method,
+      endpoint,
+      params,
+      body,
+    } = state;
+    self.method = method;
+    self.endpoint = endpoint;
+    self.params = params;
+    self.body = body;
+    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+    cx.emit(StepDataEvent::DataChanged);
+    cx.notify();
+  }
+
   /// Replaces the body with `body` when it is of a different type than the current one.
   ///
   /// A body of the same type (e.g. a raw body replacing another raw body) is ignored, whatever its content:
@@ -447,11 +506,10 @@ impl RestData {
     if discriminant(&body) == discriminant(&self.body) {
       return;
     }
-    self.body = body;
-
-    self.update_generated_content_type_header();
-    _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-    cx.notify();
+    self.record(cx, |this| {
+      this.body = body;
+      this.update_generated_content_type_header();
+    });
   }
 
   /// Makes the generated `Content-Type` header match the body: updated in place if it exists, appended after
@@ -494,13 +552,11 @@ impl RestData {
   /// # Events
   /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the text changed.
   pub fn set_body_raw_content(&mut self, updated_content: SharedString, cx: &mut Context<Self>) {
-    if let RestBody::Raw { content, .. } = &mut self.body
-      && *content != updated_content
-    {
-      *content = updated_content;
-      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-      cx.notify();
-    }
+    self.record(cx, |this| {
+      if let RestBody::Raw { content, .. } = &mut this.body {
+        *content = updated_content;
+      }
+    });
   }
 
   /// Sets the content type of a raw body, and updates the generated `Content-Type` header accordingly.
@@ -509,32 +565,31 @@ impl RestData {
   /// # Events
   /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the content type changed.
   pub fn set_body_raw_content_type(&mut self, updated_content_type: ContentType, cx: &mut Context<Self>) {
-    if let RestBody::Raw { content_type, .. } = &mut self.body
-      && *content_type != updated_content_type
-    {
-      *content_type = updated_content_type;
-      self.update_generated_content_type_header();
-      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-      cx.notify();
-    }
+    self.record(cx, |this| {
+      if let RestBody::Raw { content_type, .. } = &mut this.body
+        && *content_type != updated_content_type
+      {
+        *content_type = updated_content_type;
+        this.update_generated_content_type_header();
+      }
+    });
   }
 
   pub fn set_endpoint(&mut self, endpoint: SharedString, cx: &mut Context<Self>) {
-    if self.endpoint != endpoint {
-      self.endpoint = endpoint;
-      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-      cx.notify();
-    }
+    self.record(cx, |this| this.endpoint = endpoint);
   }
 
   pub fn set_method(&mut self, method: HttpMethod, cx: &mut Context<Self>) -> bool {
-    if self.method != method {
-      self.method = method;
-      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-      cx.notify();
-      true
-    } else {
-      false
+    self.record(cx, |this| this.method = method)
+  }
+
+  /// Returns a copy of the editable state of the request.
+  fn state(&self) -> RestState {
+    RestState {
+      method: self.method,
+      endpoint: self.endpoint.clone(),
+      params: self.params.clone(),
+      body: self.body.clone(),
     }
   }
 
@@ -546,11 +601,7 @@ impl RestData {
       );
       return;
     }
-    if self.params[row_ix] != param {
-      self.params[row_ix] = param;
-      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-      cx.notify();
-    }
+    self.record(cx, |this| this.params[row_ix] = param);
   }
 
   /// Replaces the field at `row_ix` of a URL-encoded body with `field`.
@@ -561,20 +612,56 @@ impl RestData {
   /// # Events
   /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the field changed.
   pub fn update_urlencoded_field(&mut self, row_ix: usize, field: FormField, cx: &mut Context<Self>) {
-    if let RestBody::FormUrlEncoded { fields } = &mut self.body {
-      if row_ix >= fields.len() {
-        error!(
-          "RestData::update_urlencoded_field: Attempted to update a non-existent index: {}",
-          row_ix
-        );
-        return;
-      }
-      if fields[row_ix] != field {
+    self.record(cx, |this| {
+      if let RestBody::FormUrlEncoded { fields } = &mut this.body {
+        if row_ix >= fields.len() {
+          error!(
+            "RestData::update_urlencoded_field: Attempted to update a non-existent index: {}",
+            row_ix
+          );
+          return;
+        }
         fields[row_ix] = field;
-        _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
-        cx.notify();
       }
+    });
+  }
+}
+
+impl EventEmitter<StepDataEvent> for RestData {}
+
+/// The editable state of a [`RestData`], as saved by its undo edits.
+#[derive(PartialEq, Clone, Debug)]
+struct RestState {
+  method: HttpMethod,
+  endpoint: SharedString,
+  params: Vec<RestParam>,
+  body: RestBody,
+}
+
+/// A change of a [`RestData`], from the `before` state to the `after` one.
+///
+/// Whole states are saved rather than the operation that was made, since a single operation may change several parts
+/// of the request (e.g. a new body changes the generated `Content-Type` header).
+struct EditRest {
+  before: RestState,
+  after: RestState,
+}
+
+impl EditRest {
+  fn apply(target: &TestStep, state: &RestState, cx: &mut Context<TestStep>) {
+    if let StepData::Rest(rest) = &target.data {
+      rest.update(cx, |rest, cx| rest.restore(state.clone(), cx));
     }
+  }
+}
+
+impl Edit<TestStep> for EditRest {
+  fn undo(&self, target: &mut TestStep, cx: &mut Context<TestStep>) {
+    Self::apply(target, &self.before, cx);
+  }
+
+  fn redo(&self, target: &mut TestStep, cx: &mut Context<TestStep>) {
+    Self::apply(target, &self.after, cx);
   }
 }
 
@@ -583,9 +670,12 @@ mod tests {
   use super::*;
   use crate::test::test_fixtures::{load, record_events};
   use gpui_kit::{AppContext, Entity, TestAppContext};
+  use ki_utils::TestPath;
   use ki_utils::http::{
     CONTENT_TYPE_FORM_DATA, CONTENT_TYPE_FORM_URL_ENCODED, CONTENT_TYPE_JSON, CONTENT_TYPE_PLAIN_TEXT, CONTENT_TYPE_XML,
   };
+  use ki_utils::undo::UndoEntity;
+  use uuid::Uuid;
 
   fn file_param(param_type: RestParamType, name: &str, value: &str) -> FileRestParam {
     FileRestParam {
@@ -621,7 +711,7 @@ mod tests {
       (ContentType::Text, CONTENT_TYPE_PLAIN_TEXT),
     ] {
       let file = file_rest(vec![file_param(RestParamType::Query, "page", "1")], raw_body(content_type));
-      let rest = RestData::from_file(file, tests.downgrade());
+      let rest = RestData::from_file(file, WeakEntity::new_invalid(), tests.downgrade());
 
       let [user, generated] = rest.params() else {
         panic!(
@@ -641,7 +731,11 @@ mod tests {
   #[gpui_kit::test]
   fn no_body_generates_no_params(cx: &mut TestAppContext) {
     let tests = load(Default::default(), Default::default(), cx);
-    let rest = RestData::from_file(file_rest(vec![], FileRestBody::None), tests.downgrade());
+    let rest = RestData::from_file(
+      file_rest(vec![], FileRestBody::None),
+      WeakEntity::new_invalid(),
+      tests.downgrade(),
+    );
     assert!(rest.params().is_empty(), "unexpected params {:?}", rest.params());
   }
 
@@ -652,7 +746,7 @@ mod tests {
       (FileRestBody::FormUrlEncoded { fields: vec![] }, CONTENT_TYPE_FORM_URL_ENCODED),
       (FileRestBody::Multipart { parts: vec![] }, CONTENT_TYPE_FORM_DATA),
     ] {
-      let rest = RestData::from_file(file_rest(vec![], body), tests.downgrade());
+      let rest = RestData::from_file(file_rest(vec![], body), WeakEntity::new_invalid(), tests.downgrade());
       let [generated] = rest.params() else {
         panic!("expected only the generated Content-Type header, got {:?}", rest.params());
       };
@@ -673,7 +767,7 @@ mod tests {
       file_param(RestParamType::Header, "Content-Type", "application/xml"),
     ];
     let file = file_rest(user_params, raw_body(ContentType::Json));
-    let rest = RestData::from_file(file.clone(), tests.downgrade());
+    let rest = RestData::from_file(file.clone(), WeakEntity::new_invalid(), tests.downgrade());
 
     assert_eq!(rest.params().iter().filter(|param| param.generated()).count(), 1);
     assert_eq!(rest.get_file(), file);
@@ -682,7 +776,7 @@ mod tests {
   /// Loads `file` as a live REST step owned by `tests`.
   fn rest_entity(file: FileRestData, tests: &Entity<TestsContainer>, cx: &mut TestAppContext) -> Entity<RestData> {
     let container = tests.downgrade();
-    cx.new(|_| RestData::from_file(file, container))
+    cx.new(|_| RestData::from_file(file, WeakEntity::new_invalid(), container))
   }
 
   /// Values of the generated headers of `rest`.
@@ -1054,5 +1148,128 @@ mod tests {
         fields: expected.iter().map(FileFormField::from).collect()
       }
     );
+  }
+
+  /// Creates a new GET Rest step owned by `tests`, and returns it along with its request.
+  fn rest_step(tests: &Entity<TestsContainer>, cx: &mut TestAppContext) -> (Entity<TestStep>, Entity<RestData>) {
+    let parent = TestPath::Case(Uuid::new_v4(), Uuid::new_v4());
+    let step = cx.new(|cx| TestStep::new_rest(&parent, "Rest".into(), HttpMethod::Get, tests.downgrade(), cx));
+    let StepData::Rest(rest) = step.read_with(cx, |step, _| step.data().clone()) else {
+      panic!("should be a rest step");
+    };
+    (step, rest)
+  }
+
+  fn can_undo(step: &Entity<TestStep>, cx: &mut TestAppContext) -> bool {
+    step.update(cx, |step, _| step.history().can_undo())
+  }
+
+  #[gpui_kit::test]
+  fn edits_are_undone_and_redone_in_order(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let (step, rest) = rest_step(&tests, cx);
+    let mut states = vec![rest.read_with(cx, |rest, _| rest.state())];
+    type RestEdit = Box<dyn Fn(&mut RestData, &mut Context<RestData>)>;
+    let edits: Vec<RestEdit> = vec![
+      Box::new(|rest, cx| _ = rest.set_method(HttpMethod::Post, cx)),
+      Box::new(|rest, cx| rest.set_endpoint("/items".into(), cx)),
+      Box::new(|rest, cx| rest.add_param(None, cx)),
+      Box::new(|rest, cx| rest.set_body(RestBody::from(REST_BODY_RAW), cx)),
+      Box::new(|rest, cx| rest.set_body_raw_content("{}".into(), cx)),
+      Box::new(|rest, cx| rest.set_body_raw_content_type(ContentType::Json, cx)),
+      Box::new(|rest, cx| rest.duplicate_param(0, cx)),
+      Box::new(|rest, cx| rest.delete_param(0, cx)),
+    ];
+    for edit in &edits {
+      rest.update(cx, |rest, cx| edit(rest, cx));
+      let state = rest.read_with(cx, |rest, _| rest.state());
+      assert_ne!(states.last(), Some(&state), "every edit should change the request");
+      states.push(state);
+    }
+
+    for expected in states.iter().rev().skip(1) {
+      step.update(cx, |step, cx| step.undo(cx));
+      assert_eq!(&rest.read_with(cx, |rest, _| rest.state()), expected);
+    }
+    assert!(!can_undo(&step, cx));
+    for expected in states.iter().skip(1) {
+      step.update(cx, |step, cx| step.redo(cx));
+      assert_eq!(&rest.read_with(cx, |rest, _| rest.state()), expected);
+    }
+  }
+
+  #[gpui_kit::test]
+  fn urlencoded_field_edits_are_undone(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let (step, rest) = rest_step(&tests, cx);
+    rest.update(cx, |rest, cx| rest.set_body(RestBody::from(REST_BODY_FORM_URL_ENCODED), cx));
+    let empty_form = rest.read_with(cx, |rest, _| rest.state());
+    rest.update(cx, |rest, cx| {
+      rest.add_urlencoded_field(None, cx);
+      rest.duplicate_urlencoded_field(0, cx);
+      rest.update_urlencoded_field(
+        1,
+        FormField {
+          name: "name".into(),
+          value: "value".into(),
+          disabled: true,
+        },
+        cx,
+      );
+      rest.delete_urlencoded_field(0, cx);
+    });
+    for _ in 0..4 {
+      step.update(cx, |step, cx| step.undo(cx));
+    }
+    assert_eq!(rest.read_with(cx, |rest, _| rest.state()), empty_form);
+  }
+
+  #[gpui_kit::test]
+  fn undoing_a_body_change_restores_the_generated_header(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let (step, rest) = rest_step(&tests, cx);
+    rest.update(cx, |rest, cx| rest.set_body(RestBody::from(REST_BODY_FORM_URL_ENCODED), cx));
+    assert_eq!(
+      generated_headers(&rest, cx),
+      vec![SharedString::from(CONTENT_TYPE_FORM_URL_ENCODED)]
+    );
+    step.update(cx, |step, cx| step.undo(cx));
+    assert!(generated_headers(&rest, cx).is_empty());
+    assert_eq!(rest.read_with(cx, |rest, _| rest.body().clone()), RestBody::None);
+  }
+
+  #[gpui_kit::test]
+  fn unchanged_edits_are_not_recorded(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let events = record_events(&tests, cx);
+    let (step, rest) = rest_step(&tests, cx);
+    rest.update(cx, |rest, cx| {
+      assert!(!rest.set_method(HttpMethod::Get, cx));
+      rest.set_endpoint(rest.endpoint(), cx);
+      rest.set_body(RestBody::None, cx);
+      rest.set_body_raw_content("ignored, the body is not raw".into(), cx);
+      rest.add_urlencoded_field(None, cx);
+      rest.delete_param(3, cx);
+      rest.duplicate_param(3, cx);
+    });
+    assert!(!can_undo(&step, cx));
+    assert!(events.borrow().is_empty());
+  }
+
+  #[gpui_kit::test]
+  fn undo_and_redo_notify_the_editors_and_the_container(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let (step, rest) = rest_step(&tests, cx);
+    rest.update(cx, |rest, cx| rest.set_endpoint("/items".into(), cx));
+    let events = record_events(&tests, cx);
+    let changes = std::rc::Rc::new(std::cell::Cell::new(0));
+    let _sub = cx.update(|cx| {
+      let changes = changes.clone();
+      cx.subscribe(&rest, move |_, _: &StepDataEvent, _| changes.set(changes.get() + 1))
+    });
+    step.update(cx, |step, cx| step.undo(cx));
+    step.update(cx, |step, cx| step.redo(cx));
+    assert_eq!(changes.get(), 2);
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 2]);
   }
 }

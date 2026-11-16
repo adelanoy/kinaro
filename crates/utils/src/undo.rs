@@ -1,5 +1,6 @@
 use gpui_kit::Context;
 use std::collections::VecDeque;
+use std::fmt::{Debug, Formatter};
 
 /// A reversible operation applied to a `T`
 pub trait Edit<T>: 'static {
@@ -7,6 +8,28 @@ pub trait Edit<T>: 'static {
   fn undo(&self, target: &mut T, cx: &mut Context<T>);
   /// Re-applies the operation on `target`, after it was reverted
   fn redo(&self, target: &mut T, cx: &mut Context<T>);
+}
+
+/// Trait for entities supporting Undo/Redo operations
+///
+/// `undo` and `redo` functions are pre-implemented to correctly manage each stacks, the only required implementation is `history`
+/// which must return a mutable reference to the [`History`] field owned by the entity.
+pub trait UndoEntity: Sized + 'static {
+  fn history(&mut self) -> &mut History<Self>;
+
+  fn undo(&mut self, cx: &mut Context<Self>) {
+    if let Some(undo) = self.history().pop_undo() {
+      undo.undo(self, cx);
+      self.history().push_redo(undo);
+    }
+  }
+
+  fn redo(&mut self, cx: &mut Context<Self>) {
+    if let Some(redo) = self.history().pop_redo() {
+      redo.redo(self, cx);
+      self.history().push_undo(redo);
+    }
+  }
 }
 
 /// Undo/redo stacks of [`Edit`]s.
@@ -74,6 +97,31 @@ impl<T> Default for History<T> {
       redo: vec![],
       limit: 20,
     }
+  }
+}
+
+impl<T> Debug for History<T> {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("History")
+      .field("undo_size", &self.undo.len())
+      .field("limit", &self.limit)
+      .finish()
+  }
+}
+
+impl<T> PartialEq for History<T> {
+  fn eq(&self, _other: &Self) -> bool {
+    // Exists only to avoid manually implementing PartialEq on every entity
+    true
+  }
+}
+
+impl<T> Eq for History<T> {}
+
+impl<T> Clone for History<T> {
+  fn clone(&self) -> Self {
+    // Exists only to avoid manually implementing Clone on every entity. Clone on history actually creates a new history stack
+    Self::default()
   }
 }
 

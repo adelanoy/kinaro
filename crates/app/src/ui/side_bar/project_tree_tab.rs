@@ -14,7 +14,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_app_shared::actions::{
   AddDelayStep, AddRestStep, AddTestCase, AddTestSuite, CopyId, CopyPath, Delete, Duplicate, Edit, MoveDown, MoveUp,
-  PROJECT_TREE_CONTEXT_KEY, SwitchNodeActiveStatus,
+  PROJECT_TREE_CONTEXT_KEY, Redo, SwitchNodeActiveStatus, Undo,
 };
 use ki_app_shared::dialog::EditFieldDialog;
 use ki_app_shared::panel::PanelDescriptor;
@@ -204,6 +204,20 @@ impl ProjectTree {
         return;
       };
       tree.delegate_mut().switch_node_enable_status(path, cx);
+    })
+  }
+
+  /// Undo the last action.
+  fn on_action_undo(&mut self, _action: &Undo, _window: &mut Window, cx: &mut Context<Self>) {
+    self.tree_state.update(cx, |tree, cx| {
+      tree.delegate_mut().undo(cx);
+    })
+  }
+
+  /// Undo the last action.
+  fn on_action_redo(&mut self, _action: &Redo, _window: &mut Window, cx: &mut Context<Self>) {
+    self.tree_state.update(cx, |tree, cx| {
+      tree.delegate_mut().redo(cx);
     })
   }
 
@@ -482,11 +496,11 @@ impl ProjectTreeDelegate {
 
   /// Opens the rename dialog of the node at `path`, if it is in the tree.
   fn show_rename_dialog(&mut self, path: TestPath, window: &mut Window, cx: &mut Context<TreeState<Self>>) {
-    fn show_dialog<M: TestMetadataOwner>(meta: Entity<M>, window: &mut Window, cx: &mut App) {
-      let (name, kind) = meta.read_with(cx, |meta, _| (meta.name(), meta.path().label()));
+    fn show_dialog<M: TestMetadataOwner>(meta: Entity<M>, tests: Entity<TestsContainer>, window: &mut Window, cx: &mut App) {
+      let (name, kind, path) = meta.read_with(cx, |meta, _| (meta.name(), meta.path().label(), meta.path()));
       EditFieldDialog::new(name, {
-        let meta = meta.clone();
-        move |new_value, cx| meta.update(cx, |meta, cx| meta.set_name(new_value, cx))
+        let tests = tests.clone();
+        move |new_value, cx| tests.update(cx, |tests, cx| tests.rename_node(path, new_value, cx))
       })
       .title(format!("Rename {}", kind))
       .description("Enter the new name:")
@@ -496,17 +510,17 @@ impl ProjectTreeDelegate {
     match path {
       TestPath::Suite(_) => {
         if let Some(suite) = self.tests.read(cx).suite_from_path(&path, cx) {
-          show_dialog(suite, window, cx);
+          show_dialog(suite, self.tests.clone(), window, cx);
         }
       }
       TestPath::Case(_, _) => {
         if let Some(case) = self.tests.read(cx).case_from_path(&path, cx) {
-          show_dialog(case, window, cx);
+          show_dialog(case, self.tests.clone(), window, cx);
         }
       }
       TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => {
         if let Some(step) = self.tests.read(cx).step_from_path(&path, cx) {
-          show_dialog(step, window, cx);
+          show_dialog(step, self.tests.clone(), window, cx);
         }
       }
     };
@@ -545,23 +559,7 @@ impl ProjectTreeDelegate {
 
   /// Enables the node at `path` if it is disabled, disables it otherwise.
   fn switch_node_enable_status(&mut self, path: TestPath, cx: &mut Context<TreeState<Self>>) {
-    match path {
-      TestPath::Suite(_) => {
-        if let Some(suite) = self.tests.read(cx).suite_from_path(&path, cx) {
-          suite.update(cx, |suite, cx| suite.switch_disabled(cx));
-        }
-      }
-      TestPath::Case(_, _) => {
-        if let Some(case) = self.tests.read(cx).case_from_path(&path, cx) {
-          case.update(cx, |case, cx| case.switch_disabled(cx));
-        }
-      }
-      TestPath::SuiteStep(_, _) | TestPath::Step(_, _, _) => {
-        if let Some(step) = self.tests.read(cx).step_from_path(&path, cx) {
-          step.update(cx, |step, cx| step.switch_disabled(cx));
-        }
-      }
-    };
+    self.tests.update(cx, |tests, cx| tests.switch_node_disabled(path, cx));
   }
 
   /// Rebuilds the rows from the tests.
@@ -591,6 +589,14 @@ impl ProjectTreeDelegate {
       get_ts_entries(&tests.suites, opened_nodes, cx)
     });
     cx.notify();
+  }
+
+  fn undo(&mut self, cx: &mut Context<TreeState<Self>>) {
+    self.tests.update(cx, |tests, cx| tests.undo(cx));
+  }
+
+  fn redo(&mut self, cx: &mut Context<TreeState<Self>>) {
+    self.tests.update(cx, |tests, cx| tests.redo(cx));
   }
 }
 
@@ -881,6 +887,8 @@ impl Render for ProjectTree {
       .on_action(cx.listener(Self::on_action_paste))
       .on_action(cx.listener(Self::on_action_rename))
       .on_action(cx.listener(Self::on_action_switch_node_active_status))
+      .on_action(cx.listener(Self::on_action_undo))
+      .on_action(cx.listener(Self::on_action_redo))
       .size_full()
       .gap_y_2()
       .child(
