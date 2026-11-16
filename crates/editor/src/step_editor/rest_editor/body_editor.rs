@@ -81,6 +81,7 @@ impl RestBodyEditor {
     {
       return;
     }
+
     let editor_state = cx.new(|cx| {
       let mut editor = EditorState::new(window, cx)
         .language(language)
@@ -89,13 +90,16 @@ impl RestBodyEditor {
       editor.set_value(content.clone(), window, cx);
       editor
     });
-    let _sub = cx.subscribe(&editor_state, |this, state, e: &InputEvent, cx| {
-      if let InputEvent::Change = e {
-        this
-          .rest_data
-          .update(cx, |rest, cx| rest.set_body_raw_content(state.read(cx).value(), cx))
+    let _sub = cx.subscribe(&editor_state, |this, state, e: &InputEvent, cx| match e {
+      InputEvent::Focus => this.rest_data.update(cx, |rest, cx| rest.begin_raw_content_edit(cx)),
+      InputEvent::Change => {
+        let content = state.read(cx).value();
+        this.rest_data.update(cx, |rest, cx| rest.set_body_raw_content(content, cx))
       }
+      InputEvent::Blur => this.rest_data.update(cx, |rest, cx| rest.end_raw_content_edit(cx)),
+      _ => {}
     });
+
     self.editor_mode = EditorMode::RawText(SubbedEntity {
       entity: editor_state,
       _sub,

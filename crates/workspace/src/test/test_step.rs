@@ -192,6 +192,7 @@ impl TestStep {
         endpoint: LOCALHOST_ENDPOINT.clone(),
         params: vec![],
         body: Default::default(),
+        raw_edit_start: None,
       })),
       history: Default::default(),
     }

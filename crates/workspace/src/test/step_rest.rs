@@ -279,6 +279,9 @@ pub struct RestData {
   pub(crate) endpoint: SharedString,
   pub(crate) params: Vec<RestParam>,
   pub(crate) body: RestBody,
+  /// State of the request when the raw-content edit in progress started, if any (see
+  /// [`RestData::begin_raw_content_edit`])
+  pub(crate) raw_edit_start: Option<RestState>,
 }
 
 impl RestData {
@@ -316,6 +319,18 @@ impl RestData {
         fields.insert(ix, field);
       }
     });
+  }
+
+  /// Starts a raw-content edit (e.g. when the raw body editor gets the focus): the changes made by
+  /// [`RestData::set_body_raw_content`] until [`RestData::end_raw_content_edit`] are recorded as a single change in the
+  /// history of the parent step, rather than one change per call.
+  ///
+  /// A raw-content edit still in progress is ended first.
+  ///
+  /// Must not be called while the parent step is being updated.
+  pub fn begin_raw_content_edit(&mut self, cx: &mut Context<Self>) {
+    self.end_raw_content_edit(cx);
+    self.raw_edit_start = Some(self.state());
   }
 
   /// The request body.
@@ -395,6 +410,17 @@ impl RestData {
       endpoint: self.endpoint.clone(),
       params: self.params.clone(),
       body: self.body.clone(),
+      raw_edit_start: None,
+    }
+  }
+
+  /// Ends the raw-content edit in progress, if any, recording the change made since
+  /// [`RestData::begin_raw_content_edit`] in the history of the parent step.
+  ///
+  /// Must not be called while the parent step is being updated.
+  pub fn end_raw_content_edit(&mut self, cx: &mut Context<Self>) {
+    if let Some(before) = self.raw_edit_start.take() {
+      self.push_change(before, cx);
     }
   }
 
@@ -424,6 +450,7 @@ impl RestData {
       endpoint: endpoint.into(),
       params,
       body,
+      raw_edit_start: None,
     };
 
     Self::update_generated_content_type_header(&mut this);
@@ -449,16 +476,9 @@ impl RestData {
     &self.params
   }
 
-  /// Applies `f` to this request, and records the change it made (if any) in the history of the parent step, so
-  /// that it can be undone.
-  ///
-  /// Must not be called while the parent step is being updated: the change would not be recorded.
-  ///
-  /// # Events
-  /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when `f` changed the request.
-  fn record(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut Self)) -> bool {
-    let before = self.state();
-    f(self);
+  /// Records the change from `before` to the current state (if any) in the history of the parent step. Returns whether
+  /// there was a change.
+  fn push_change(&mut self, before: RestState, cx: &mut Context<Self>) -> bool {
     let after = self.state();
     if before == after {
       return false;
@@ -466,6 +486,23 @@ impl RestData {
     _ = self
       .parent
       .update(cx, |parent, _| parent.push_edit(Box::new(EditRest { before, after })));
+    true
+  }
+
+  /// Applies `f` to this request, and records the change it made (if any) in the history of the parent step, so
+  /// that it can be undone. A raw-content edit in progress is ended first, so that it is recorded before this change.
+  ///
+  /// Must not be called while the parent step is being updated: the change would not be recorded.
+  ///
+  /// # Events
+  /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when `f` changed the request.
+  fn record(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut Self)) -> bool {
+    self.end_raw_content_edit(cx);
+    let before = self.state();
+    f(self);
+    if !self.push_change(before, cx) {
+      return false;
+    }
     _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
     cx.notify();
     true
@@ -486,6 +523,10 @@ impl RestData {
     self.endpoint = endpoint;
     self.params = params;
     self.body = body;
+    // A raw-content edit in progress now starts from the restored state
+    if self.raw_edit_start.is_some() {
+      self.raw_edit_start = Some(self.state());
+    }
     _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
     cx.emit(StepDataEvent::DataChanged);
     cx.notify();
@@ -549,14 +590,25 @@ impl RestData {
 
   /// Sets the text of a raw body. Does nothing if the body is not raw, or if the text is unchanged.
   ///
+  /// The change is recorded right away, unless a raw-content edit is in progress (see
+  /// [`RestData::begin_raw_content_edit`]): it is then recorded along with the others when the edit ends.
+  ///
   /// # Events
   /// Emits [`TestsContainerEvent::TestsModified`] on the owning container when the text changed.
   pub fn set_body_raw_content(&mut self, updated_content: SharedString, cx: &mut Context<Self>) {
-    self.record(cx, |this| {
-      if let RestBody::Raw { content, .. } = &mut this.body {
-        *content = updated_content;
-      }
-    });
+    if self.raw_edit_start.is_none() {
+      self.record(cx, |this| {
+        if let RestBody::Raw { content, .. } = &mut this.body {
+          *content = updated_content;
+        }
+      });
+    } else if let RestBody::Raw { content, .. } = &mut self.body
+      && *content != updated_content
+    {
+      *content = updated_content;
+      _ = self.container.update(cx, |_, cx| cx.emit(TestsContainerEvent::TestsModified));
+      cx.notify();
+    }
   }
 
   /// Sets the content type of a raw body, and updates the generated `Content-Type` header accordingly.
@@ -630,8 +682,8 @@ impl RestData {
 impl EventEmitter<StepDataEvent> for RestData {}
 
 /// The editable state of a [`RestData`], as saved by its undo edits.
-#[derive(PartialEq, Clone, Debug)]
-struct RestState {
+#[derive(Eq, PartialEq, Clone, Debug)]
+pub(crate) struct RestState {
   method: HttpMethod,
   endpoint: SharedString,
   params: Vec<RestParam>,
@@ -1271,5 +1323,127 @@ mod tests {
     step.update(cx, |step, cx| step.redo(cx));
     assert_eq!(changes.get(), 2);
     assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 2]);
+  }
+
+  /// Creates a Rest step with an empty raw body, with no change to undo.
+  fn raw_rest_step(tests: &Entity<TestsContainer>, cx: &mut TestAppContext) -> (Entity<TestStep>, Entity<RestData>) {
+    let (step, rest) = rest_step(tests, cx);
+    rest.update(cx, |rest, cx| rest.set_body(RestBody::from(REST_BODY_RAW), cx));
+    // Drop the body type change, so that only the raw-content edits are in the history
+    step.update(cx, |step, _| *step.history() = Default::default());
+    (step, rest)
+  }
+
+  fn raw_content(rest: &Entity<RestData>, cx: &mut TestAppContext) -> SharedString {
+    rest.read_with(cx, |rest, _| match rest.body() {
+      RestBody::Raw { content, .. } => content.clone(),
+      body => panic!("expected a raw body, got {body:?}"),
+    })
+  }
+
+  #[gpui_kit::test]
+  fn raw_content_edit_is_recorded_as_one_change(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let (step, rest) = raw_rest_step(&tests, cx);
+    let events = record_events(&tests, cx);
+    rest.update(cx, |rest, cx| {
+      rest.begin_raw_content_edit(cx);
+      for content in ["{", "{}", "{ }"] {
+        rest.set_body_raw_content(content.into(), cx);
+      }
+    });
+    // Each change is saved right away, but not recorded until the edit ends
+    assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 3]);
+    assert!(!can_undo(&step, cx));
+    rest.update(cx, |rest, cx| rest.end_raw_content_edit(cx));
+    assert_eq!(events.borrow().len(), 3);
+
+    step.update(cx, |step, cx| step.undo(cx));
+    assert_eq!(raw_content(&rest, cx), "");
+    assert!(!can_undo(&step, cx));
+    step.update(cx, |step, cx| step.redo(cx));
+    assert_eq!(raw_content(&rest, cx), "{ }");
+  }
+
+  #[gpui_kit::test]
+  fn unchanged_raw_content_edit_is_not_recorded(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let (step, rest) = raw_rest_step(&tests, cx);
+    rest.update(cx, |rest, cx| {
+      rest.begin_raw_content_edit(cx);
+      rest.set_body_raw_content("x".into(), cx);
+      rest.set_body_raw_content("".into(), cx);
+      rest.end_raw_content_edit(cx);
+      // Ending again does nothing
+      rest.end_raw_content_edit(cx);
+    });
+    assert!(!can_undo(&step, cx));
+  }
+
+  #[gpui_kit::test]
+  fn other_edits_end_the_raw_content_edit_first(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let (step, rest) = raw_rest_step(&tests, cx);
+    rest.update(cx, |rest, cx| {
+      rest.begin_raw_content_edit(cx);
+      rest.set_body_raw_content("{}".into(), cx);
+      rest.set_endpoint("/items".into(), cx);
+      // The edit is over: this change is recorded on its own
+      rest.set_body_raw_content("{ }".into(), cx);
+    });
+
+    step.update(cx, |step, cx| step.undo(cx));
+    assert_eq!(raw_content(&rest, cx), "{}");
+    step.update(cx, |step, cx| step.undo(cx));
+    assert_eq!(
+      rest.read_with(cx, |rest, _| rest.endpoint()),
+      ki_utils::http::LOCALHOST_ENDPOINT.clone()
+    );
+    assert_eq!(raw_content(&rest, cx), "{}");
+    step.update(cx, |step, cx| step.undo(cx));
+    assert_eq!(raw_content(&rest, cx), "");
+    assert!(!can_undo(&step, cx));
+  }
+
+  #[gpui_kit::test]
+  fn a_new_raw_content_edit_ends_the_previous_one(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let (step, rest) = raw_rest_step(&tests, cx);
+    rest.update(cx, |rest, cx| {
+      rest.begin_raw_content_edit(cx);
+      rest.set_body_raw_content("a".into(), cx);
+      rest.begin_raw_content_edit(cx);
+      rest.set_body_raw_content("ab".into(), cx);
+      rest.end_raw_content_edit(cx);
+    });
+    step.update(cx, |step, cx| step.undo(cx));
+    assert_eq!(raw_content(&rest, cx), "a");
+    step.update(cx, |step, cx| step.undo(cx));
+    assert_eq!(raw_content(&rest, cx), "");
+  }
+
+  #[gpui_kit::test]
+  fn undo_during_a_raw_content_edit_restarts_it(cx: &mut TestAppContext) {
+    let tests = load(Default::default(), Default::default(), cx);
+    let (step, rest) = raw_rest_step(&tests, cx);
+    rest.update(cx, |rest, cx| rest.set_endpoint("/items".into(), cx));
+    rest.update(cx, |rest, cx| {
+      rest.begin_raw_content_edit(cx);
+      rest.set_body_raw_content("{}".into(), cx);
+    });
+    // The pending typing is not in the history yet: undo reverts the endpoint, from the current state
+    step.update(cx, |step, cx| step.undo(cx));
+    assert_eq!(
+      rest.read_with(cx, |rest, _| rest.endpoint()),
+      ki_utils::http::LOCALHOST_ENDPOINT.clone()
+    );
+    rest.update(cx, |rest, cx| {
+      rest.set_body_raw_content("{ }".into(), cx);
+      rest.end_raw_content_edit(cx);
+    });
+    // Only the typing made after the undo is recorded, from the restored state
+    step.update(cx, |step, cx| step.undo(cx));
+    assert_eq!(raw_content(&rest, cx), "");
+    assert!(!can_undo(&step, cx));
   }
 }
