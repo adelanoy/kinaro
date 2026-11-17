@@ -102,7 +102,7 @@
                   "- **`GET /users`** Retrieving user information"
                 ],
                 "data": {
-                  "RestStep": {
+                  "Rest": {
                     "method": "POST",
                     "endpoint": "http://localhost:8080",
                     "params": [
@@ -144,7 +144,7 @@
                 "id": "e8069d5b-c52a-4f9d-a0c3-e144042042f4",
                 "name": "PUT Request",
                 "data": {
-                  "RestStep": {
+                  "Rest": {
                     "method": "PUT",
                     "endpoint": "http://localhost:8080"
                   }
@@ -161,7 +161,7 @@
                 "id": "81bca7f4-b16d-4e02-a2c0-8eb14bb753e3",
                 "name": "Send GET request",
                 "data": {
-                  "RestStep": {
+                  "Rest": {
                     "method": "GET",
                     "endpoint": "/users/{id}",
                     "params": [
@@ -201,7 +201,7 @@
             "id": "e71aa081-8a9e-497a-9ac5-459e34c95a07",
             "name": "Health check",
             "data": {
-              "RestStep": {
+              "Rest": {
                 "method": "HEAD",
                 "endpoint": "/health"
               }
@@ -222,7 +222,7 @@
                 "id": "c29a91a4-434a-43b8-9504-db1b2635c19d",
                 "name": "Send login request",
                 "data": {
-                  "RestStep": {
+                  "Rest": {
                     "method": "POST",
                     "endpoint": "/auth/login",
                     "params": [
@@ -280,7 +280,7 @@
             "id": "d44a8936-39e8-438b-acf9-c24b1f3d2ced",
             "name": "Token refresh",
             "data": {
-              "RestStep": {
+              "Rest": {
                 "method": "DELETE",
                 "endpoint": "/auth/refresh",
                 "params": [
@@ -307,7 +307,7 @@
                 "id": "dec98db3-ebaa-4a8e-9f4d-cfe2bcfedceb",
                 "name": "Send logout request",
                 "data": {
-                  "RestStep": {
+                  "Rest": {
                     "method": "PUT",
                     "endpoint": "/auth/logout",
                     "params": [
@@ -355,7 +355,7 @@
                 "id": "64a4d27a-8999-491c-ac32-525172077647",
                 "name": "Send GET request",
                 "data": {
-                  "RestStep": {
+                  "Rest": {
                     "method": "HEAD",
                     "endpoint": "/products",
                     "params": [
@@ -405,7 +405,7 @@
                 "id": "91793438-bda9-46a3-8478-41eeb3477fe4",
                 "name": "Send GET request with query param",
                 "data": {
-                  "RestStep": {
+                  "Rest": {
                     "method": "GET",
                     "endpoint": "/products",
                     "params": [
@@ -461,7 +461,7 @@
             "id": "3a22d34a-6c9e-4595-8e88-ff1029c85b32",
             "name": "Submit product review",
             "data": {
-              "RestStep": {
+              "Rest": {
                 "method": "POST",
                 "endpoint": "/products/{id}/reviews",
                 "params": [
