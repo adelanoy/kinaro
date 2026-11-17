@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -26,27 +25,9 @@ pub enum FileVariableKind {
   PasswordEncrypt,
 }
 
-#[derive(Serialize, Deserialize, Eq, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Debug)]
 pub struct FileProfile {
   pub id: Uuid,
   pub name: String,
   pub description: String,
-}
-
-impl PartialEq for FileProfile {
-  fn eq(&self, other: &Self) -> bool {
-    self.id == other.id
-  }
-}
-
-impl PartialOrd for FileProfile {
-  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-    Some(self.cmp(other))
-  }
-}
-
-impl Ord for FileProfile {
-  fn cmp(&self, other: &Self) -> Ordering {
-    self.name.cmp(&other.name)
-  }
 }

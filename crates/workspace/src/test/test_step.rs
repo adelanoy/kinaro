@@ -45,14 +45,14 @@ impl StepData {
 
   fn from_file(file: FileStepData, parent: WeakEntity<TestStep>, container: WeakEntity<TestsContainer>, cx: &mut App) -> Self {
     match file {
-      FileStepData::RestStep(rest_step) => StepData::Rest(cx.new(|_| RestData::from_file(rest_step, parent, container))),
+      FileStepData::Rest(rest_step) => StepData::Rest(cx.new(|_| RestData::from_file(rest_step, parent, container))),
       FileStepData::Delay(delay_step) => StepData::Delay(cx.new(|_| DelayData::from_file(delay_step, parent, container))),
     }
   }
 
   fn get_file(&self, cx: &App) -> FileStepData {
     match self {
-      StepData::Rest(rest_step) => FileStepData::RestStep(rest_step.read(cx).get_file()),
+      StepData::Rest(rest_step) => FileStepData::Rest(rest_step.read(cx).get_file()),
       StepData::Delay(delay_step) => FileStepData::Delay(delay_step.read(cx).get_file()),
     }
   }
@@ -367,7 +367,7 @@ mod tests {
     let tests = load(Default::default(), Default::default(), cx);
     let file = FileTestStep {
       info: file_meta(Uuid::new_v4(), "Rest"),
-      data: FileStepData::RestStep(FileRestData {
+      data: FileStepData::Rest(FileRestData {
         method: HttpMethod::Post,
         endpoint: "/items".to_string(),
         params: vec![],
