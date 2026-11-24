@@ -8,7 +8,7 @@ use gpui_kit::*;
 use ki_app_shared::actions::{Down, Enter, Left, Right, Up};
 use ki_utils::TestPath;
 use std::ops::Range;
-use uuid::Uuid;
+use ki_utils::id::KId;
 
 pub const TREE_CONTEXT: &str = "Tree";
 
@@ -26,7 +26,7 @@ pub struct ProjectTreeNode {
 }
 
 impl ProjectTreeNode {
-  pub fn id(&self) -> Uuid {
+  pub fn id(&self) -> KId {
     self.path.id()
   }
 

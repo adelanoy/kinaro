@@ -1,14 +1,18 @@
 pub mod conversion;
 pub mod date_time;
 pub mod http;
+pub mod id;
+pub mod project;
 pub mod shared;
 pub mod undo;
 
+use gpui_kit::SharedString;
+use std::sync::LazyLock;
+
 pub use conversion::{from_multiline, to_multiline};
 pub use date_time::*;
-use gpui_kit::SharedString;
 pub use shared::*;
-use std::sync::LazyLock;
+pub use project::*;
 
 pub static EMPTY_SHARED_STRING: LazyLock<SharedString> = LazyLock::new(|| SharedString::new(""));
 
@@ -41,7 +45,7 @@ pub fn moved_index(ix: usize, from: usize, to: usize) -> usize {
 /// X is incremented at each attempt
 ///
 /// If the name is available without any suffix in the collection, returns *name*
-pub fn next_available_name(name: &str, mut collection_it: impl Iterator<Item = SharedString> + Clone) -> SharedString {
+pub fn next_available_name(name: &str, collection_it: impl Iterator<Item = SharedString> + Clone) -> SharedString {
   // clone the iterator so it can be used a second time after
   if collection_it.clone().find(|p| p == name).is_none() {
     return SharedString::new(name);
@@ -51,7 +55,7 @@ pub fn next_available_name(name: &str, mut collection_it: impl Iterator<Item = S
   {
     let mut i = 1;
     loop {
-      if collection_it.any(|p| *p == final_name) {
+      if collection_it.clone().any(|p| *p == final_name) {
         final_name = format!("{name}_{i}");
         i += 1;
       } else {
@@ -83,6 +87,18 @@ mod test {
     reference_collection.push(SharedString::new(new_item));
     let new_item = next_available_name("item", reference_collection.into_iter());
     assert_eq!(new_item, "item_2");
+  }
+
+  #[test]
+  fn next_available_name_append_unordered() {
+    // Suffixed names listed before the original one must still be seen as taken
+    let reference_collection = [
+      SharedString::new("item_2"),
+      SharedString::new("item_1"),
+      SharedString::new("item"),
+    ];
+    let new_item = next_available_name("item", reference_collection.into_iter());
+    assert_eq!(new_item, "item_3");
   }
 
   #[test]

@@ -909,17 +909,17 @@ mod tests {
   // Not a glob import of the parent module, whose `gpui_kit::*` import shadows `#[test]`
   use super::drop_position;
   use ki_utils::{DropPosition, TestPath};
-  use uuid::Uuid;
+  use ki_utils::id::KId;
 
   #[test]
   fn drop_position_on_a_suite() {
-    let (suite, other_suite) = (TestPath::Suite(Uuid::new_v4()), TestPath::Suite(Uuid::new_v4()));
+    let (suite, other_suite) = (TestPath::Suite(KId::new()), TestPath::Suite(KId::new()));
     // A suite goes before or after a suite
     assert_eq!(drop_position(other_suite, suite, 0.4), Some(DropPosition::Before));
     assert_eq!(drop_position(other_suite, suite, 0.6), Some(DropPosition::After));
     // Anything else goes into it, wherever the cursor is
-    let case = TestPath::Case(Uuid::new_v4(), Uuid::new_v4());
-    let step = TestPath::Step(Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let case = TestPath::Case(KId::new(), KId::new());
+    let step = TestPath::Step(KId::new(), KId::new(), KId::new());
     for fraction in [0.1, 0.5, 0.9] {
       assert_eq!(drop_position(case, suite, fraction), Some(DropPosition::Into));
       assert_eq!(drop_position(step, suite, fraction), Some(DropPosition::Into));
@@ -928,15 +928,15 @@ mod tests {
 
   #[test]
   fn drop_position_on_a_case() {
-    let suite_id = Uuid::new_v4();
-    let case = TestPath::Case(suite_id, Uuid::new_v4());
+    let suite_id = KId::new();
+    let case = TestPath::Case(suite_id, KId::new());
     // A step goes before, into or after a case
-    let step = TestPath::SuiteStep(suite_id, Uuid::new_v4());
+    let step = TestPath::SuiteStep(suite_id, KId::new());
     assert_eq!(drop_position(step, case, 0.2), Some(DropPosition::Before));
     assert_eq!(drop_position(step, case, 0.5), Some(DropPosition::Into));
     assert_eq!(drop_position(step, case, 0.8), Some(DropPosition::After));
     // A case only goes before or after it
-    let other_case = TestPath::Case(suite_id, Uuid::new_v4());
+    let other_case = TestPath::Case(suite_id, KId::new());
     assert_eq!(drop_position(other_case, case, 0.4), Some(DropPosition::Before));
     assert_eq!(drop_position(other_case, case, 0.6), Some(DropPosition::After));
     // A suite can't be dropped on it
@@ -945,13 +945,13 @@ mod tests {
 
   #[test]
   fn drop_position_on_a_step() {
-    let (suite_id, case_id) = (Uuid::new_v4(), Uuid::new_v4());
-    let step = TestPath::Step(suite_id, case_id, Uuid::new_v4());
-    let other_step = TestPath::Step(suite_id, case_id, Uuid::new_v4());
+    let (suite_id, case_id) = (KId::new(), KId::new());
+    let step = TestPath::Step(suite_id, case_id, KId::new());
+    let other_step = TestPath::Step(suite_id, case_id, KId::new());
     assert_eq!(drop_position(other_step, step, 0.4), Some(DropPosition::Before));
     assert_eq!(drop_position(other_step, step, 0.6), Some(DropPosition::After));
     // A case can't be nested in a case
-    assert_eq!(drop_position(TestPath::Case(suite_id, Uuid::new_v4()), step, 0.5), None);
+    assert_eq!(drop_position(TestPath::Case(suite_id, KId::new()), step, 0.5), None);
     // Nor can a node be dropped on itself
     assert_eq!(drop_position(step, step, 0.5), None);
   }

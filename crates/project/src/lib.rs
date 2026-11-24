@@ -17,7 +17,7 @@ pub use {
 };
 
 mod ki_project {
-  use crate::error::{ProjectFileError, Result};
+  use crate::error::{ProjectFileError, ProjectValidationError, Result};
   use crate::test::FileTestsContainer;
   use crate::variable::FileProjectVariables;
   use chrono::{DateTime, Local};
@@ -40,7 +40,22 @@ mod ki_project {
   }
 
   impl ProjectFile {
-    pub fn create(path: &Path, name: &str) -> Result<ProjectFile> {
+    /// Checks the consistency of the project, returning it unchanged when valid
+    ///
+    /// # Errors
+    /// Returns a [`ProjectFileError::ValidationFailed`] listing every problem found
+    pub fn check(self) -> Result<Self> {
+      let mut errors: Vec<ProjectValidationError> = vec![];
+      errors.extend(self.variables.check());
+
+      if errors.is_empty() {
+        Ok(self)
+      } else {
+        Err(ProjectFileError::ValidationFailed(errors))
+      }
+    }
+
+    pub fn create(path: &Path, name: &str) -> Result<Self> {
       check_project_path(path, false)
         .and_then(|()| check_project_name(name))
         .map(|()| ProjectFile {
@@ -53,10 +68,11 @@ mod ki_project {
         })
     }
 
-    pub fn load(path: &Path) -> Result<ProjectFile> {
+    pub fn load(path: &Path) -> Result<Self> {
       check_project_path(path, true)
         .and_then(|()| fs::read(path).map_err(ProjectFileError::Io))
         .and_then(|file| serde_json::from_slice::<ProjectFile>(&file).map_err(|err| ProjectFileError::Read(err.to_string())))
+        .and_then(Self::check)
     }
 
     pub fn save(&self, path: &PathBuf) -> Result<DateTime<Local>> {
@@ -91,7 +107,7 @@ mod ki_project {
 
   fn check_project_name(name: &str) -> Result<()> {
     if name.is_empty() {
-      Err(ProjectFileError::InvalidName(name.into()))
+      Err(ProjectFileError::InvalidProjectName(name.into()))
     } else {
       Ok(())
     }

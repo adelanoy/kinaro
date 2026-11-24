@@ -8,12 +8,12 @@ use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, SharedString, 
 use ki_assets::icon::IconAsset;
 use ki_project::{FileTestCase, FileTestStep};
 use ki_utils::http::HttpMethod;
+use ki_utils::id::KId;
 use ki_utils::undo::{History, UndoEntity};
 use ki_utils::{Offset, STEP};
 use log::{debug, warn};
 use std::cmp::min;
 use std::collections::HashMap;
-use uuid::Uuid;
 
 /// A test case: a named list of steps, located in a suite.
 ///
@@ -84,8 +84,8 @@ impl TestCase {
 
   /// Returns a deep copy of this case named `name`, placed in the suite `parent_id`. The copy and
   /// its steps get fresh ids, while the steps keep their names.
-  pub(crate) fn duplicate(&self, name: SharedString, parent_id: Uuid, cx: &mut Context<Self>) -> Self {
-    let path = TestPath::Case(parent_id, Uuid::new_v4());
+  pub(crate) fn duplicate(&self, name: SharedString, parent_id: KId, cx: &mut Context<Self>) -> Self {
+    let path = TestPath::Case(parent_id, KId::new());
     let steps = self
       .steps
       .iter()
@@ -143,7 +143,7 @@ impl TestCase {
   /// the file.
   pub fn from_file(
     file_test_case: FileTestCase,
-    suite_id: Uuid,
+    suite_id: KId,
     new_id: bool,
     container: WeakEntity<TestsContainer>,
     cx: &mut Context<Self>,
@@ -205,11 +205,11 @@ impl TestCase {
   }
 
   /// Creates a new, empty case of the suite `suite_id`, with a freshly generated id.
-  pub fn new(suite_id: Uuid, name: SharedString, container: WeakEntity<TestsContainer>) -> Self {
+  pub fn new(suite_id: KId, name: SharedString, container: WeakEntity<TestsContainer>) -> Self {
     Self {
       container,
       meta: TestMetadata {
-        path: TestPath::Case(suite_id, Uuid::new_v4()),
+        path: TestPath::Case(suite_id, KId::new()),
         name,
         description: None,
         disabled: false,
@@ -296,7 +296,7 @@ impl TestCase {
   /// are kept, otherwise fresh ones are generated. Returns the paths that changed, as
   /// `old path -> new path` (including unchanged paths, mapped to themselves).
   pub(crate) fn reparent(&mut self, parent: &TestPath, keep_id: bool, cx: &mut App) -> HashMap<TestPath, TestPath> {
-    let id = if keep_id { self.meta.id() } else { Uuid::new_v4() };
+    let id = if keep_id { self.meta.id() } else { KId::new() };
     let new_path = TestPath::Case(parent.suite_id(), id);
     let mut path_updates = HashMap::new();
     path_updates.insert(self.path(), new_path);
@@ -351,7 +351,7 @@ impl MetaHistoryOwner for TestCase {
 
 impl TestMetadataOwner for TestCase {
   #[inline]
-  fn id(&self) -> Uuid {
+  fn id(&self) -> KId {
     self.meta.id()
   }
 
@@ -447,7 +447,7 @@ mod tests {
   #[gpui_kit::test]
   fn new_cases_are_empty_with_fresh_ids(cx: &mut TestAppContext) {
     let tests = load(Default::default(), Default::default(), cx);
-    let suite_id = Uuid::new_v4();
+    let suite_id = KId::new();
     let case = TestCase::new(suite_id, "Case".into(), tests.downgrade());
     assert!(matches!(case.path(), TestPath::Case(suite, _) if suite == suite_id));
     assert!(case.steps().is_empty());
@@ -463,7 +463,7 @@ mod tests {
   #[gpui_kit::test]
   fn from_file_with_new_id_regenerates_every_id(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let suite_id = Uuid::new_v4();
+    let suite_id = KId::new();
     let file = file_case_at(&p, 0, 0);
     let weak = tests.downgrade();
     let kept = cx.new(|cx| TestCase::from_file(file.clone(), suite_id, false, weak.clone(), cx));
@@ -543,7 +543,7 @@ mod tests {
   #[gpui_kit::test]
   fn duplicate_step_unknown_is_not_found(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let unknown = TestPath::Step(p.suite_a.id(), p.case_a.id(), Uuid::new_v4());
+    let unknown = TestPath::Step(p.suite_a.id(), p.case_a.id(), KId::new());
     let result = case(&tests, p.case_a, cx).update(cx, |case, cx| case.duplicate_step(&unknown, cx));
     assert!(matches!(result, Err(ProjectError::TestNotFound(path)) if path == unknown));
   }
@@ -551,7 +551,7 @@ mod tests {
   #[gpui_kit::test]
   fn duplicate_keeps_the_steps_names_with_fresh_ids(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let suite_id = Uuid::new_v4();
+    let suite_id = KId::new();
     let copy = case(&tests, p.case_a, cx).update(cx, |case, cx| case.duplicate("Copy".into(), suite_id, cx));
     assert_eq!(copy.name(), "Copy");
     assert_eq!(copy.path().suite_id(), suite_id);
@@ -703,7 +703,7 @@ mod tests {
   fn paste_invalid_content_is_ignored(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
     let events = record_events(&tests, cx);
-    let step = serde_json::to_string(&file_delay_step(Uuid::new_v4(), "Step", 1)).unwrap();
+    let step = serde_json::to_string(&file_delay_step(KId::new(), "Step", 1)).unwrap();
     let case_json = serde_json::to_string(&file_case_at(&p, 0, 0)).unwrap();
     let case_a = case(&tests, p.case_a, cx);
     for (cb, target) in [

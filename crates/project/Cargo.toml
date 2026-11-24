@@ -11,6 +11,5 @@ ki_utils.workspace = true
 # Externals
 serde.workspace = true
 serde_json.workspace = true
-uuid.workspace = true
 chrono.workspace = true
 thiserror.workspace = true

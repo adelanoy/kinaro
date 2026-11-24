@@ -13,7 +13,6 @@ use ki_assets::icon::IconAsset;
 use ki_utils::SidebarPanel;
 use ki_workspace::Project;
 use ki_workspace::variable::{DraggedProfile, Profile, ProjectVariables};
-use uuid::Uuid;
 
 pub(in crate::ui::side_bar) struct ProfileEditor {
   table_state: Entity<TableState<ProfileDataTableDelegate>>,
@@ -282,7 +281,10 @@ impl ProfileDataTableDelegate {
 
   fn save_cell(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
     if let Some(edited) = self.edited_cell.take() {
-      if let Err(err) = self.project_vars.update(cx, |vars, cx| vars.update_profile(edited.data, cx)) {
+      if let Err(err) = self
+        .project_vars
+        .update(cx, |vars, cx| vars.update_profile(edited.data, edited.row, cx))
+      {
         window.push_notification(err, cx);
       }
       self._cell_input_sub = None;
@@ -293,7 +295,7 @@ impl ProfileDataTableDelegate {
     }
   }
 
-  fn move_profile(&mut self, from: Uuid, to: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+  fn move_profile(&mut self, from: usize, to: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
     if let Err(err) = self.project_vars.update(cx, |this, cx| this.move_profile(from, to, cx)) {
       window.push_notification(err, cx);
     }
@@ -323,13 +325,12 @@ impl TableDelegate for ProfileDataTableDelegate {
 
   fn render_tr(&mut self, row_ix: usize, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> Stateful<Div> {
     let is_editing = self.edited_cell.is_some();
-    let id = self.project_vars.read(cx).profiles.get(row_ix).unwrap().id;
     div().id(("row", row_ix)).when(!is_editing, |this| {
       this
         .on_drag(
           MovingLabel {
             label: self.project_vars.read(cx).profiles.get(row_ix).unwrap().name.clone(),
-            data: DraggedProfile(id),
+            data: DraggedProfile(row_ix),
           },
           |drag, _, _, cx| {
             cx.stop_propagation();

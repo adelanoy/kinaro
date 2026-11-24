@@ -15,7 +15,7 @@ use log::{debug, warn};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use uuid::Uuid;
+use ki_utils::id::KId;
 
 /// A direct child of a [`TestSuite`]: a test case, or a test step located directly in the suite.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,7 +54,7 @@ impl TestSuiteChild {
   /// child and its descendants get freshly generated ids; otherwise ids are read from the file.
   fn from_file(
     file_child: FileSuiteChild,
-    suite_id: Uuid,
+    suite_id: KId,
     new_id: bool,
     container: WeakEntity<TestsContainer>,
     cx: &mut App,
@@ -204,7 +204,7 @@ impl TestSuite {
   /// Returns a deep copy of this suite named `name`. The copy and all of its descendants get fresh
   /// ids, while the descendants keep their names.
   pub(crate) fn duplicate(&self, name: SharedString, cx: &mut Context<Self>) -> Self {
-    let path = TestPath::Suite(Uuid::new_v4());
+    let path = TestPath::Suite(KId::new());
     let children = self
       .children
       .iter()
@@ -321,7 +321,7 @@ impl TestSuite {
     Self {
       container,
       meta: TestMetadata {
-        path: TestPath::Suite(Uuid::new_v4()),
+        path: TestPath::Suite(KId::new()),
         name,
         description: None,
         disabled: false,
@@ -473,7 +473,7 @@ impl MetaHistoryOwner for TestSuite {
 
 impl TestMetadataOwner for TestSuite {
   #[inline]
-  fn id(&self) -> Uuid {
+  fn id(&self) -> KId {
     self.meta.id()
   }
 
@@ -672,7 +672,7 @@ mod tests {
   fn duplicate_child_requires_a_child_path(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
     let suite = suite(&tests, p.suite_a, cx);
-    for path in [p.step_a1, p.suite_a, TestPath::Case(p.suite_a.id(), Uuid::new_v4())] {
+    for path in [p.step_a1, p.suite_a, TestPath::Case(p.suite_a.id(), KId::new())] {
       let result = suite.update(cx, |suite, cx| suite.duplicate_child(&path, cx));
       assert!(matches!(result, Err(ProjectError::TestNotFound(not_found)) if not_found == path));
     }
