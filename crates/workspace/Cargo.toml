@@ -15,7 +15,6 @@ ki_settings.workspace = true
 ki_project.workspace = true
 ki_utils.workspace = true
 ki_assets.workspace = true
-uuid.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

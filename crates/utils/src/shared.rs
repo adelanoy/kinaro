@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
-use uuid::Uuid;
+use crate::id::KId;
 
 /// Where a node moved onto another one (the target) is placed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,19 +27,19 @@ pub enum SidebarPanel {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum TestPath {
   /// A test suite: `Suite(suite_id)`.
-  Suite(Uuid),
+  Suite(KId),
   /// A test case located in a suite: `Case(suite_id, case_id)`.
-  Case(Uuid, Uuid),
+  Case(KId, KId),
   /// A test step located directly in a suite: `SuiteStep(suite_id, step_id)`.
-  SuiteStep(Uuid, Uuid),
+  SuiteStep(KId, KId),
   /// A test step located in a case: `Step(suite_id, case_id, step_id)`.
-  Step(Uuid, Uuid, Uuid),
+  Step(KId, KId, KId),
 }
 
 impl TestPath {
   /// Returns the path of the step `step_id` placed where `parent` points: in the case `parent`
   /// points to or goes through, or directly in the suite when `parent` is a suite or a suite step.
-  pub fn new_step(parent: &TestPath, step_id: Uuid) -> TestPath {
+  pub fn new_step(parent: &TestPath, step_id: KId) -> TestPath {
     match *parent {
       TestPath::Suite(suite_id) | TestPath::SuiteStep(suite_id, _) => TestPath::SuiteStep(suite_id, step_id),
       TestPath::Case(suite_id, case_id) | TestPath::Step(suite_id, case_id, _) => TestPath::Step(suite_id, case_id, step_id),
@@ -47,7 +47,7 @@ impl TestPath {
   }
 
   /// Returns the id of the node this path points to (the last segment of the path).
-  pub fn id(&self) -> Uuid {
+  pub fn id(&self) -> KId {
     match *self {
       TestPath::Suite(id) => id,
       TestPath::Case(_, id) => id,
@@ -64,7 +64,7 @@ impl TestPath {
 
   /// Returns the id of the case this path points to or goes through,
   /// or `None` for a suite or a suite step path.
-  pub fn case_id(&self) -> Option<Uuid> {
+  pub fn case_id(&self) -> Option<KId> {
     match *self {
       TestPath::Suite(_) | TestPath::SuiteStep(_, _) => None,
       TestPath::Case(_, id) => Some(id),
@@ -93,7 +93,7 @@ impl TestPath {
   }
 
   /// Returns the id of the step this path points to, or `None` for a suite or case path.
-  pub fn step_id(&self) -> Option<Uuid> {
+  pub fn step_id(&self) -> Option<KId> {
     match *self {
       TestPath::Suite(_) | TestPath::Case(_, _) => None,
       TestPath::SuiteStep(_, id) | TestPath::Step(_, _, id) => Some(id),
@@ -108,7 +108,7 @@ impl TestPath {
 
   /// Returns the id of the suite this path points to or goes through.
   /// Every path has a suite, so this never fails.
-  pub fn suite_id(&self) -> Uuid {
+  pub fn suite_id(&self) -> KId {
     match *self {
       TestPath::Suite(id) => id,
       TestPath::Case(id, _) => id,
@@ -161,10 +161,10 @@ impl Display for TestPath {
 mod tests {
   use super::*;
 
-  const SUITE: Uuid = Uuid::from_u128(1);
-  const CASE: Uuid = Uuid::from_u128(2);
-  const STEP: Uuid = Uuid::from_u128(3);
-  const OTHER: Uuid = Uuid::from_u128(4);
+  const SUITE: KId = KId::from_u8(1);
+  const CASE: KId = KId::from_u8(2);
+  const STEP: KId = KId::from_u8(3);
+  const OTHER: KId = KId::from_u8(4);
 
   const SUITE_PATH: TestPath = TestPath::Suite(SUITE);
   const CASE_PATH: TestPath = TestPath::Case(SUITE, CASE);

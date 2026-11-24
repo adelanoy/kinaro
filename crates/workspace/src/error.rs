@@ -1,3 +1,4 @@
+use gpui_kit::SharedString;
 use gpui_kit::component::notification::Notification;
 use ki_project::ProjectFileError;
 use ki_utils::TestPath;
@@ -58,8 +59,14 @@ pub enum ProjectError {
   #[error("ProjectError::UnknownProject (id: {:?})", .0)]
   UnknownProject(PathBuf),
   /// The project has invalid name
-  #[error("ProjectError::InvalidName (name: {})", .0)]
-  InvalidName(String),
+  #[error("ProjectError::InvalidProjectName (name: {})", .0)]
+  InvalidProjectName(SharedString),
+  /// The project has invalid name
+  #[error("ProjectError::InvalidVariableName (name: {})", .0)]
+  InvalidVariableName(SharedString),
+  /// The project has invalid name
+  #[error("ProjectError::InvalidProfileName (name: {})", .0)]
+  InvalidProfileName(SharedString),
   /// An operation was attempted on a missing test
   #[error("ProjectError::OperationNotAllowed")]
   OperationNotAllowed,
@@ -75,16 +82,22 @@ pub enum ProjectError {
   /// The requested operation had no effect, nothing was changed
   #[error("ProjectError::NoOp")]
   NoOp,
+  /// The project failed to load due to data inconsistencies
+  #[error("ProjectError::ValidationFailed (errors: {:?})", .0)]
+  ValidationFailed(Vec<String>),
 }
 
 impl From<ProjectFileError> for ProjectError {
   fn from(value: ProjectFileError) -> Self {
     match value {
       ProjectFileError::Io(err) => ProjectError::Io(err.to_string()),
-      ProjectFileError::InvalidName(name) => ProjectError::InvalidName(name),
+      ProjectFileError::InvalidProjectName(name) => ProjectError::InvalidProjectName(name.into()),
       ProjectFileError::Write(err) => ProjectError::Write(err),
       ProjectFileError::Read(err) => ProjectError::Read(err),
       ProjectFileError::BadLocation(path) => ProjectError::BadLocation(path),
+      ProjectFileError::ValidationFailed(errors) => {
+        ProjectError::ValidationFailed(errors.into_iter().map(|err| err.to_string()).collect())
+      }
     }
   }
 }
@@ -99,12 +112,24 @@ impl From<ProjectError> for Notification {
         Notification::error(format!("Invalid location for project file: {}", path.to_string_lossy()))
       }
       ProjectError::UnknownProject(path) => Notification::error(format!("The project with id: {:?} is unknown", path)),
-      ProjectError::InvalidName(name) => Notification::error(format!("Invalid name for project: {}", name)),
+      ProjectError::InvalidProjectName(name) => Notification::error(format!("Invalid project name: {}", name)),
+      ProjectError::InvalidVariableName(name) => Notification::error(format!(
+        r#"Invalid variable name: {}. Variables mut be:
+- Non-Empty
+- Be composed of alphabetical or numerical or space or '_' characters"#,
+        name
+      ))
+      .autohide(false),
+      ProjectError::InvalidProfileName(name) => Notification::error(format!("Invalid profile name: {}", name)),
       ProjectError::OperationNotAllowed => Notification::error("A non-allowed operation was invoked, see logs for details"),
       ProjectError::ProfileNotFound => Notification::warning("Unknown profile"),
       ProjectError::VariableNotFound => Notification::warning("Unknown variable"),
       ProjectError::TestNotFound(_) => Notification::warning("The test could not be found"),
       ProjectError::NoOp => Notification::warning("Nothing was done"),
+      ProjectError::ValidationFailed(errors) => {
+        let errors = errors.join("\n");
+        Notification::error(format!("The project failed validation: {errors}"))
+      }
     }
   }
 }

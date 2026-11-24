@@ -9,13 +9,13 @@ use ki_project::{
   FileDelayData, FileStepData, FileSuiteChild, FileTestCase, FileTestMetadata, FileTestStep, FileTestSuite, FileTestsContainer,
 };
 use ki_utils::TestPath;
+use ki_utils::id::KId;
 use ki_utils::time::TimeUnit;
 use std::cell::RefCell;
 use std::rc::Rc;
-use uuid::Uuid;
 
 /// Builds the on-disk metadata of a node, with no description and enabled.
-pub(crate) fn file_meta(id: Uuid, name: &str) -> FileTestMetadata {
+pub(crate) fn file_meta(id: KId, name: &str) -> FileTestMetadata {
   FileTestMetadata {
     id,
     name: name.to_string(),
@@ -25,7 +25,7 @@ pub(crate) fn file_meta(id: Uuid, name: &str) -> FileTestMetadata {
 }
 
 /// Builds the on-disk representation of a delay step of `ms` milliseconds.
-pub(crate) fn file_delay_step(id: Uuid, name: &str, ms: u32) -> FileTestStep {
+pub(crate) fn file_delay_step(id: KId, name: &str, ms: u32) -> FileTestStep {
   FileTestStep {
     info: file_meta(id, name),
     data: FileStepData::Delay(FileDelayData {
@@ -36,7 +36,7 @@ pub(crate) fn file_delay_step(id: Uuid, name: &str, ms: u32) -> FileTestStep {
 }
 
 /// Builds the on-disk representation of a case, as a child of a suite.
-pub(crate) fn file_case(id: Uuid, name: &str, steps: Vec<FileTestStep>) -> FileSuiteChild {
+pub(crate) fn file_case(id: KId, name: &str, steps: Vec<FileTestStep>) -> FileSuiteChild {
   FileSuiteChild::Case(FileTestCase {
     info: file_meta(id, name),
     steps,
@@ -44,12 +44,12 @@ pub(crate) fn file_case(id: Uuid, name: &str, steps: Vec<FileTestStep>) -> FileS
 }
 
 /// Builds the on-disk representation of a delay step of `ms` milliseconds, as a child of a suite.
-pub(crate) fn file_suite_step(id: Uuid, name: &str, ms: u32) -> FileSuiteChild {
+pub(crate) fn file_suite_step(id: KId, name: &str, ms: u32) -> FileSuiteChild {
   FileSuiteChild::Step(file_delay_step(id, name, ms))
 }
 
 /// Builds the on-disk representation of a suite.
-pub(crate) fn file_suite(id: Uuid, name: &str, children: Vec<FileSuiteChild>) -> FileTestSuite {
+pub(crate) fn file_suite(id: KId, name: &str, children: Vec<FileSuiteChild>) -> FileTestSuite {
   FileTestSuite {
     info: file_meta(id, name),
     children,
@@ -92,17 +92,17 @@ pub(crate) struct Paths {
 impl Paths {
   /// Generates the paths of a new reference tree.
   pub(crate) fn new() -> Self {
-    let (sa, ca, ssa) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
-    let (sb, cb, ssb) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let (sa, ca, ssa) = (KId::new(), KId::new(), KId::new());
+    let (sb, cb, ssb) = (KId::new(), KId::new(), KId::new());
     Self {
       suite_a: TestPath::Suite(sa),
       case_a: TestPath::Case(sa, ca),
-      step_a1: TestPath::Step(sa, ca, Uuid::new_v4()),
-      step_a2: TestPath::Step(sa, ca, Uuid::new_v4()),
+      step_a1: TestPath::Step(sa, ca, KId::new()),
+      step_a2: TestPath::Step(sa, ca, KId::new()),
       suite_step_a: TestPath::SuiteStep(sa, ssa),
       suite_b: TestPath::Suite(sb),
       case_b: TestPath::Case(sb, cb),
-      step_b1: TestPath::Step(sb, cb, Uuid::new_v4()),
+      step_b1: TestPath::Step(sb, cb, KId::new()),
       suite_step_b: TestPath::SuiteStep(sb, ssb),
     }
   }

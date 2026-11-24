@@ -11,7 +11,7 @@ use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
-use uuid::Uuid;
+use ki_utils::id::KId;
 
 mod history;
 pub mod step_delay;
@@ -38,7 +38,7 @@ pub struct TestMetadata {
 impl TestMetadata {
   /// Returns the id of the node, i.e. the last segment of its [`path`](Self::path).
   #[inline]
-  pub fn id(&self) -> Uuid {
+  pub fn id(&self) -> KId {
     self.path.id()
   }
 
@@ -60,7 +60,7 @@ impl TestMetadata {
   /// Builds the metadata of a suite from its on-disk representation, with a freshly generated id.
   pub(crate) fn new_suite_from_file(file_test_info: FileTestMetadata) -> Self {
     Self {
-      path: TestPath::Suite(Uuid::new_v4()),
+      path: TestPath::Suite(KId::new()),
       name: file_test_info.name.into(),
       description: ki_utils::from_multiline(&file_test_info.description).map(|s| s.into()),
       disabled: file_test_info.disabled,
@@ -69,7 +69,7 @@ impl TestMetadata {
 
   /// Builds the metadata of a case of the suite `suite_id` from its on-disk representation,
   /// keeping its id.
-  pub(crate) fn case_from_file(file_test_info: FileTestMetadata, suite_id: Uuid) -> Self {
+  pub(crate) fn case_from_file(file_test_info: FileTestMetadata, suite_id: KId) -> Self {
     Self {
       path: TestPath::Case(suite_id, file_test_info.id),
       name: file_test_info.name.into(),
@@ -80,9 +80,9 @@ impl TestMetadata {
 
   /// Builds the metadata of a case of the suite `suite_id` from its on-disk representation, with
   /// a freshly generated id.
-  pub(crate) fn new_case_from_file(file_test_info: FileTestMetadata, suite_id: Uuid) -> Self {
+  pub(crate) fn new_case_from_file(file_test_info: FileTestMetadata, suite_id: KId) -> Self {
     Self {
-      path: TestPath::Case(suite_id, Uuid::new_v4()),
+      path: TestPath::Case(suite_id, KId::new()),
       name: file_test_info.name.into(),
       description: ki_utils::from_multiline(&file_test_info.description).map(|s| s.into()),
       disabled: file_test_info.disabled,
@@ -103,7 +103,7 @@ impl TestMetadata {
   /// Builds a new metadata for a step placed where `parent` points (see [`TestPath::new_step`]).
   pub(crate) fn new_step(name: SharedString, parent: &TestPath) -> Self {
     Self {
-      path: TestPath::new_step(parent, Uuid::new_v4()),
+      path: TestPath::new_step(parent, KId::new()),
       name,
       description: None,
       disabled: false,
@@ -114,7 +114,7 @@ impl TestMetadata {
   /// its on-disk representation, with a freshly generated id.
   pub(crate) fn new_step_from_file(file_test_info: FileTestMetadata, parent: &TestPath) -> Self {
     Self {
-      path: TestPath::new_step(parent, Uuid::new_v4()),
+      path: TestPath::new_step(parent, KId::new()),
       name: file_test_info.name.into(),
       description: ki_utils::from_multiline(&file_test_info.description).map(|s| s.into()),
       disabled: file_test_info.disabled,
@@ -159,7 +159,7 @@ impl TestMetadata {
 /// suites, cases and steps, so they can be renamed, described and enabled the same way.
 pub trait TestMetadataOwner: Clone + 'static {
   /// Returns the id of the node, i.e. the last segment of its path.
-  fn id(&self) -> Uuid;
+  fn id(&self) -> KId;
   /// Returns the path addressing the node in the test tree.
   fn path(&self) -> TestPath;
   /// Returns the path addressing the node in the test tree.
@@ -1028,7 +1028,7 @@ mod tests {
 
   #[test]
   fn metadata_from_file_keeps_ids() {
-    let (suite_id, case_id, step_id) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let (suite_id, case_id, step_id) = (KId::new(), KId::new(), KId::new());
     assert_eq!(
       TestMetadata::suite_from_file(file_meta(suite_id, "s")).path(),
       TestPath::Suite(suite_id)
@@ -1045,7 +1045,7 @@ mod tests {
 
   #[test]
   fn metadata_new_from_file_generates_ids() {
-    let (suite_id, case_id, step_id) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let (suite_id, case_id, step_id) = (KId::new(), KId::new(), KId::new());
     let suite = TestMetadata::new_suite_from_file(file_meta(suite_id, "s"));
     assert!(suite.path().is_suite());
     assert_ne!(suite.id(), suite_id);
@@ -1057,7 +1057,7 @@ mod tests {
 
   #[test]
   fn metadata_file_round_trip() {
-    let id = Uuid::new_v4();
+    let id = KId::new();
     let file = FileTestMetadata {
       id,
       name: "name".to_string(),
@@ -1077,7 +1077,7 @@ mod tests {
 
   #[test]
   fn metadata_without_description() {
-    let meta = TestMetadata::suite_from_file(file_meta(Uuid::new_v4(), "s"));
+    let meta = TestMetadata::suite_from_file(file_meta(KId::new(), "s"));
     assert_eq!(meta.description, None);
     assert!(meta.to_file().description.is_empty());
   }
@@ -1133,10 +1133,10 @@ mod tests {
   #[gpui_kit::test]
   fn from_file_drops_unknown_config_paths_and_clamps_active_tab(cx: &mut TestAppContext) {
     let p = Paths::new();
-    let unknown_case = TestPath::Case(p.suite_a.id(), Uuid::new_v4());
-    let unknown_step = TestPath::Step(p.suite_a.id(), p.case_a.id(), Uuid::new_v4());
+    let unknown_case = TestPath::Case(p.suite_a.id(), KId::new());
+    let unknown_step = TestPath::Step(p.suite_a.id(), p.case_a.id(), KId::new());
     let config = FileProjectMetadata {
-      opened_tree_nodes: [p.suite_a, unknown_case, TestPath::Suite(Uuid::new_v4())]
+      opened_tree_nodes: [p.suite_a, unknown_case, TestPath::Suite(KId::new())]
         .into_iter()
         .collect(),
       editor_tabs: vec![unknown_step, p.case_a, unknown_case],
@@ -1155,7 +1155,7 @@ mod tests {
   fn from_file_without_tabs_has_no_active_tab(cx: &mut TestAppContext) {
     let p = Paths::new();
     let config = FileProjectMetadata {
-      editor_tabs: vec![TestPath::Suite(Uuid::new_v4())],
+      editor_tabs: vec![TestPath::Suite(KId::new())],
       active_editor_tab_index: Some(0),
       ..Default::default()
     };
@@ -1197,9 +1197,9 @@ mod tests {
   #[gpui_kit::test]
   fn lookups_of_unknown_paths(cx: &mut TestAppContext) {
     let (p, tests) = fixture(cx);
-    let unknown_suite = TestPath::Suite(Uuid::new_v4());
-    let unknown_case = TestPath::Case(p.suite_a.id(), Uuid::new_v4());
-    let unknown_step = TestPath::Step(p.suite_a.id(), p.case_a.id(), Uuid::new_v4());
+    let unknown_suite = TestPath::Suite(KId::new());
+    let unknown_case = TestPath::Case(p.suite_a.id(), KId::new());
+    let unknown_step = TestPath::Step(p.suite_a.id(), p.case_a.id(), KId::new());
     // A step addressed through the wrong case
     let misplaced_step = TestPath::Step(p.suite_a.id(), p.case_b.id(), p.step_b1.id());
     // A suite step addressed through a case, and a step of a case addressed as a suite step
@@ -1251,7 +1251,7 @@ mod tests {
   fn add_test_suite_with_unknown_path_appends(cx: &mut TestAppContext) {
     let (_, tests) = fixture(cx);
     tests.update(cx, |tests, cx| {
-      tests.add_test_suite(Some(TestPath::Suite(Uuid::new_v4())), cx)
+      tests.add_test_suite(Some(TestPath::Suite(KId::new())), cx)
     });
     assert_eq!(suite_names(&tests, cx), vec!["Suite A", "Suite B", "New Suite"]);
   }
@@ -1350,9 +1350,9 @@ mod tests {
     let before = all_paths(&tests, cx);
     let events = record_events(&tests, cx);
     for path in [
-      TestPath::Suite(Uuid::new_v4()),
-      TestPath::Case(p.suite_a.id(), Uuid::new_v4()),
-      TestPath::Step(p.suite_a.id(), p.case_a.id(), Uuid::new_v4()),
+      TestPath::Suite(KId::new()),
+      TestPath::Case(p.suite_a.id(), KId::new()),
+      TestPath::Step(p.suite_a.id(), p.case_a.id(), KId::new()),
     ] {
       tests.update(cx, |tests, cx| tests.remove_test(&path, cx));
     }
@@ -1386,7 +1386,7 @@ mod tests {
   #[gpui_kit::test]
   fn duplicate_suite_unknown_is_not_found(cx: &mut TestAppContext) {
     let (_, tests) = fixture(cx);
-    let unknown = TestPath::Suite(Uuid::new_v4());
+    let unknown = TestPath::Suite(KId::new());
     let result = tests.update(cx, |tests, cx| tests.duplicate_suite(&unknown, cx));
     assert!(matches!(result, Err(ProjectError::TestNotFound(path)) if path == unknown));
   }
@@ -1578,7 +1578,7 @@ mod tests {
     use DropPosition::{After, Before, Into};
     let (p, tests) = fixture(cx);
     let before = all_paths(&tests, cx);
-    let unknown = TestPath::Case(p.suite_a.id(), Uuid::new_v4());
+    let unknown = TestPath::Case(p.suite_a.id(), KId::new());
     for (from, to, position) in [
       (p.case_a, p.case_a, Before),
       (p.suite_a, p.suite_b, Into),
@@ -2010,7 +2010,7 @@ mod tests {
       tests.switch_node_disabled(p.step_a1, cx);
       // No-ops: unchanged name, unknown path
       tests.rename_node(p.case_a, "Case A".into(), cx);
-      tests.switch_node_disabled(TestPath::Suite(Uuid::new_v4()), cx);
+      tests.switch_node_disabled(TestPath::Suite(KId::new()), cx);
     });
     assert_eq!(name_at(&tests, p.suite_step_a, cx), "Renamed step");
     assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified; 3]);

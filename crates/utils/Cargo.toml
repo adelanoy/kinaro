@@ -5,9 +5,16 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+# Internals
 ki_assets.workspace = true
 
-uuid.workspace = true
+# Externals
+getrandom.workspace = true
 chrono.workspace = true
 serde.workspace = true
 gpui-kit.workspace = true
+regex.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

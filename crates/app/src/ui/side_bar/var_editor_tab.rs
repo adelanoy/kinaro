@@ -19,7 +19,7 @@ use ki_utils::SidebarPanel;
 use ki_workspace::Project;
 use ki_workspace::variable::{DraggedVar, Profile, ProjectVariables, VariableKind, VariableReference};
 use log::warn;
-use uuid::Uuid;
+use ki_utils::id::KId;
 
 pub struct VariableEditor {
   table_state: Entity<TableState<VariableDataTableDelegate>>,
@@ -149,7 +149,7 @@ pub struct VariableDataTableDelegate {
   _cell_input_sub: Option<Subscription>,
   var_kind_select_state: Entity<SelectState<Vec<VariableKind>>>,
   _var_kind_sub: Subscription,
-  viewing_profile: Option<Uuid>,
+  viewing_profile: Option<KId>,
 }
 
 impl VariableDataTableDelegate {
@@ -353,7 +353,7 @@ impl VariableDataTableDelegate {
 
   fn save_cell(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
     if let Some(edited) = self.edited_cell.take() {
-      if let Err(err) = self.project_vars.update(cx, |vars, cx| vars.update_variable(edited.data, cx)) {
+      if let Err(err) = self.project_vars.update(cx, |vars, cx| vars.update_variable(edited.data, edited.row, cx)) {
         window.push_notification(err, cx);
       }
       self._cell_input_sub = None;
@@ -370,7 +370,7 @@ impl VariableDataTableDelegate {
     }
   }
 
-  fn move_variable(&mut self, from: Uuid, to: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+  fn move_variable(&mut self, from: usize, to: usize, window: &mut Window, cx: &mut Context<TableState<Self>>) {
     if let Err(err) = self.project_vars.update(cx, |this, cx| this.move_variable(from, to, cx)) {
       window.push_notification(err, cx);
     }
@@ -409,13 +409,12 @@ impl TableDelegate for VariableDataTableDelegate {
 
   fn render_tr(&mut self, row_ix: usize, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> Stateful<Div> {
     let is_editing = self.edited_cell.is_some();
-    let id = self.project_vars.read(cx).references.get(row_ix).unwrap().id;
     div().id(("row", row_ix)).when(!is_editing, |this| {
       this
         .on_drag(
           MovingLabel {
             label: self.project_vars.read(cx).references.get(row_ix).unwrap().name.clone(),
-            data: DraggedVar(id),
+            data: DraggedVar(row_ix),
           },
           |drag, _, _, cx| {
             cx.stop_propagation();

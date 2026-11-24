@@ -2,70 +2,66 @@
   "name": "example_project",
   "version": 1,
   "created": "2026-09-13T07:43:12",
-  "modified": "2026-11-16T15:05:42",
+  "modified": "2026-11-17T15:36:43",
   "variables": {
     "variables": [
       {
-        "id": "9737139f-3a7d-4285-b047-3da1bcdb7447",
         "name": "host",
         "description": "Hostname of the API server",
         "kind": "Text",
         "value": "localhost",
         "overrides": {
-          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "api.example.com",
-          "b929fd98-c721-44bf-9e0a-0860c732a2db": "test.example.com",
-          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "localhost"
+          "b422va50": "api.example.com",
+          "0q37r4fe": "test.example.com",
+          "wrpgdwe0": "localhost"
         }
       },
       {
-        "id": "0507f899-d607-4c6b-8858-1187ce4ed1eb",
         "name": "port",
         "description": "Port the API server listens on",
         "kind": "Text",
         "value": "8080",
         "overrides": {
-          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "443",
-          "b929fd98-c721-44bf-9e0a-0860c732a2db": "8443"
+          "b422va50": "443",
+          "0q37r4fe": "8443"
         }
       },
       {
-        "id": "eec3c70b-e3b8-436b-9417-6e132e4c81f8",
         "name": "username",
         "description": "Username used to authenticate against the API",
         "kind": "Text",
         "value": "admin",
         "overrides": {
-          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "svc-prod",
-          "b929fd98-c721-44bf-9e0a-0860c732a2db": "svc-test",
-          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "admin"
+          "b422va50": "svc-prod",
+          "0q37r4fe": "svc-test",
+          "wrpgdwe0": "admin"
         }
       },
       {
-        "id": "c371b6ef-86c4-4bff-8441-79f697975360",
         "name": "password",
         "description": "Password used to authenticate against the API",
         "kind": "PasswordClear",
         "value": "",
         "overrides": {
-          "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2": "prod-secret",
-          "b929fd98-c721-44bf-9e0a-0860c732a2db": "test-secret",
-          "c4aa980a-39fe-449f-bf0d-6e0807375f09": "dev-secret"
+          "b422va50": "prod-secret",
+          "0q37r4fe": "test-secret",
+          "wrpgdwe0": "dev-secret"
         }
       }
     ],
     "profiles": [
       {
-        "id": "c4aa980a-39fe-449f-bf0d-6e0807375f09",
+        "id": "wrpgdwe0",
         "name": "dev",
         "description": "Variables for the local development environment"
       },
       {
-        "id": "b929fd98-c721-44bf-9e0a-0860c732a2db",
+        "id": "0q37r4fe",
         "name": "test",
         "description": "Variables for the shared test/staging environment"
       },
       {
-        "id": "b2bb6e1c-ba83-41cd-bfb2-40a77508f5f2",
+        "id": "b422va50",
         "name": "prod",
         "description": "Variables for the live production environment"
       }
@@ -74,7 +70,7 @@
   "tests": {
     "suites": [
       {
-        "id": "44add332-f444-4a5b-a031-d61871f83f91",
+        "id": "w9ax9ndt",
         "name": "User API",
         "description": [
           "## User Api",
@@ -85,7 +81,7 @@
         "children": [
           {
             "type": "Case",
-            "id": "7d73b612-c8d6-489b-8402-787079ca5b5d",
+            "id": "m1c3t1h2",
             "name": "Create user",
             "description": [
               "## Create user",
@@ -93,7 +89,7 @@
             ],
             "steps": [
               {
-                "id": "500f6b3f-2bf5-4e34-ae1f-c75d4276cd28",
+                "id": "8fg5v9s7",
                 "name": "Send POST request",
                 "description": [
                   "## User Api",
@@ -131,7 +127,7 @@
                 }
               },
               {
-                "id": "4b4b57bf-bf53-4265-887b-d5b6f8004000",
+                "id": "gn52f6s1",
                 "name": "Assert 201 Created",
                 "data": {
                   "Delay": {
@@ -141,7 +137,7 @@
                 }
               },
               {
-                "id": "e8069d5b-c52a-4f9d-a0c3-e144042042f4",
+                "id": "s7d2b8t4",
                 "name": "PUT Request",
                 "data": {
                   "Rest": {
@@ -154,11 +150,11 @@
           },
           {
             "type": "Case",
-            "id": "8ac1bc38-e62b-4325-8e20-8000803af746",
+            "id": "rmwf1e8b",
             "name": "Get user by id",
             "steps": [
               {
-                "id": "81bca7f4-b16d-4e02-a2c0-8eb14bb753e3",
+                "id": "5sm48hcz",
                 "name": "Send GET request",
                 "data": {
                   "Rest": {
@@ -185,7 +181,7 @@
                 }
               },
               {
-                "id": "57eb013a-d352-4c2f-bb40-58c52313eec1",
+                "id": "nz8sp5jj",
                 "name": "Assert response body",
                 "data": {
                   "Delay": {
@@ -198,7 +194,7 @@
           },
           {
             "type": "Step",
-            "id": "e71aa081-8a9e-497a-9ac5-459e34c95a07",
+            "id": "9wc4mqh4",
             "name": "Health check",
             "data": {
               "Rest": {
@@ -210,16 +206,16 @@
         ]
       },
       {
-        "id": "304c4ab9-5a8b-4d6a-a849-cbd1b7a90d67",
+        "id": "cqns4e03",
         "name": "Authentication",
         "children": [
           {
             "type": "Case",
-            "id": "4a57cc66-a41e-4a50-a5df-3791da3c5fe3",
+            "id": "tsrsq9q0",
             "name": "Login",
             "steps": [
               {
-                "id": "c29a91a4-434a-43b8-9504-db1b2635c19d",
+                "id": "2519qrj6",
                 "name": "Send login request",
                 "data": {
                   "Rest": {
@@ -254,7 +250,7 @@
                 }
               },
               {
-                "id": "0fae84ea-e4bb-4f2b-9bae-9048336b8858",
+                "id": "hcf8adwh",
                 "name": "Assert 200 OK",
                 "data": {
                   "Delay": {
@@ -264,7 +260,7 @@
                 }
               },
               {
-                "id": "93cb61d7-b26a-4ae9-b38d-4b3513a82fbc",
+                "id": "8azcs6h5",
                 "name": "Extract auth token",
                 "data": {
                   "Delay": {
@@ -277,7 +273,7 @@
           },
           {
             "type": "Step",
-            "id": "d44a8936-39e8-438b-acf9-c24b1f3d2ced",
+            "id": "tggqhymf",
             "name": "Token refresh",
             "data": {
               "Rest": {
@@ -300,11 +296,11 @@
           },
           {
             "type": "Case",
-            "id": "4562fd21-29a4-4528-9bac-ed7380d3ccf4",
+            "id": "wrf0qn2r",
             "name": "Logout",
             "steps": [
               {
-                "id": "dec98db3-ebaa-4a8e-9f4d-cfe2bcfedceb",
+                "id": "tkn95hgb",
                 "name": "Send logout request",
                 "data": {
                   "Rest": {
@@ -326,7 +322,7 @@
                 }
               },
               {
-                "id": "8da247f6-b29f-47a2-b79f-e47c1e6730bf",
+                "id": "5wbmxgm8",
                 "name": "Assert session invalidated",
                 "data": {
                   "Delay": {
@@ -340,7 +336,7 @@
         ]
       },
       {
-        "id": "200be186-6624-46a9-80d3-fb5fc4117c11",
+        "id": "d27vkmb0",
         "name": "Product Catalog",
         "description": [
           "Covers listing, searching, and retrieving products."
@@ -348,11 +344,11 @@
         "children": [
           {
             "type": "Case",
-            "id": "463ec0e0-2257-4325-b84b-99985040ab1e",
+            "id": "vde68gkg",
             "name": "List products",
             "steps": [
               {
-                "id": "64a4d27a-8999-491c-ac32-525172077647",
+                "id": "yv6c62jz",
                 "name": "Send GET request",
                 "data": {
                   "Rest": {
@@ -385,7 +381,7 @@
                 }
               },
               {
-                "id": "1181cb80-284c-41aa-a11d-58fc5d90adfe",
+                "id": "kgmv92ns",
                 "name": "Assert paginated response",
                 "data": {
                   "Delay": {
@@ -398,11 +394,11 @@
           },
           {
             "type": "Case",
-            "id": "ef79ddfe-37fa-41da-bd0e-e4186fcf98e5",
+            "id": "dh3xdxcg",
             "name": "Search products by name",
             "steps": [
               {
-                "id": "91793438-bda9-46a3-8478-41eeb3477fe4",
+                "id": "250xbpvd",
                 "name": "Send GET request with query param",
                 "data": {
                   "Rest": {
@@ -434,7 +430,7 @@
                 }
               },
               {
-                "id": "2db94f60-f850-4fc0-8520-1c7269d3f621",
+                "id": "n7tvsv0c",
                 "name": "Assert matching results",
                 "data": {
                   "Delay": {
@@ -447,7 +443,7 @@
           },
           {
             "type": "Step",
-            "id": "547e58bd-1b2b-4ffb-b91b-5e8290c1d715",
+            "id": "2m3zekmb",
             "name": "Product count check",
             "data": {
               "Delay": {
@@ -458,7 +454,7 @@
           },
           {
             "type": "Step",
-            "id": "3a22d34a-6c9e-4595-8e88-ff1029c85b32",
+            "id": "refzy5r1",
             "name": "Submit product review",
             "data": {
               "Rest": {

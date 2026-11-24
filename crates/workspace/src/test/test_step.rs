@@ -7,9 +7,9 @@ use gpui_kit::{App, AppContext, Context, Entity, Rgba, SharedString, Styled, Wea
 use ki_assets::icon::IconAsset;
 use ki_project::{FileStepData, FileTestStep};
 use ki_utils::http::{HttpMethod, LOCALHOST_ENDPOINT};
+use ki_utils::id::KId;
 use ki_utils::time::TimeUnit;
 use ki_utils::undo::{Edit, History, UndoEntity};
-use uuid::Uuid;
 
 /// Events emitted by any type of [`StepData`].
 pub enum StepDataEvent {
@@ -104,7 +104,7 @@ impl TestStep {
       (
         source.container.clone(),
         TestMetadata {
-          path: TestPath::new_step(parent_path, Uuid::new_v4()),
+          path: TestPath::new_step(parent_path, KId::new()),
           name,
           description: source.meta.description.clone(),
           disabled: source.meta.disabled,
@@ -205,7 +205,7 @@ impl TestStep {
   /// Moves this step where `parent` points. With `keep_id` the id is kept, otherwise a fresh one is
   /// generated. Returns the path change, as `(old path, new path)`.
   pub(crate) fn reparent(&mut self, parent: &TestPath, keep_id: bool) -> (TestPath, TestPath) {
-    let id = if keep_id { self.meta.id() } else { Uuid::new_v4() };
+    let id = if keep_id { self.meta.id() } else { KId::new() };
     let new_path = TestPath::new_step(parent, id);
     let path_update = (self.path(), new_path);
     self.meta.path = new_path;
@@ -239,7 +239,7 @@ impl MetaHistoryOwner for TestStep {
 
 impl TestMetadataOwner for TestStep {
   #[inline]
-  fn id(&self) -> Uuid {
+  fn id(&self) -> KId {
     self.meta.id()
   }
 
@@ -327,7 +327,7 @@ mod tests {
   #[gpui_kit::test]
   fn new_delay_has_a_fresh_id(cx: &mut TestAppContext) {
     let tests = load(Default::default(), Default::default(), cx);
-    let (suite_id, case_id) = (Uuid::new_v4(), Uuid::new_v4());
+    let (suite_id, case_id) = (KId::new(), KId::new());
     let step = cx.new(|cx| TestStep::new_delay(&TestPath::Case(suite_id, case_id), "Delay".into(), tests.downgrade(), cx));
     step.read_with(cx, |step, _| {
       assert!(matches!(step.path(), TestPath::Step(suite, case, _) if suite == suite_id && case == case_id));
@@ -343,11 +343,11 @@ mod tests {
   #[gpui_kit::test]
   fn from_file_keeps_or_renews_the_id(cx: &mut TestAppContext) {
     let tests = load(Default::default(), Default::default(), cx);
-    let step_id = Uuid::new_v4();
+    let step_id = KId::new();
     let file = file_delay_step(step_id, "Step", 10);
     for parent in [
-      TestPath::Case(Uuid::new_v4(), Uuid::new_v4()),
-      TestPath::Suite(Uuid::new_v4()),
+      TestPath::Case(KId::new(), KId::new()),
+      TestPath::Suite(KId::new()),
     ] {
       let kept = cx.new(|cx| TestStep::from_file(file.clone(), &parent, tests.downgrade(), false, cx));
       assert_eq!(
@@ -366,7 +366,7 @@ mod tests {
   fn get_file_round_trips_a_rest_step(cx: &mut TestAppContext) {
     let tests = load(Default::default(), Default::default(), cx);
     let file = FileTestStep {
-      info: file_meta(Uuid::new_v4(), "Rest"),
+      info: file_meta(KId::new(), "Rest"),
       data: FileStepData::Rest(FileRestData {
         method: HttpMethod::Post,
         endpoint: "/items".to_string(),
@@ -377,7 +377,7 @@ mod tests {
         },
       }),
     };
-    let parent = TestPath::Case(Uuid::new_v4(), Uuid::new_v4());
+    let parent = TestPath::Case(KId::new(), KId::new());
     let step = cx.new(|cx| TestStep::from_file(file.clone(), &parent, tests.downgrade(), false, cx));
     cx.read(|cx| {
       let step = step.read(cx);
@@ -398,13 +398,13 @@ mod tests {
   fn get_file_round_trips_a_delay_step(cx: &mut TestAppContext) {
     let tests = load(Default::default(), Default::default(), cx);
     let file = FileTestStep {
-      info: file_meta(Uuid::new_v4(), "Delay"),
+      info: file_meta(KId::new(), "Delay"),
       data: FileStepData::Delay(FileDelayData {
         duration: 3,
         unit: TimeUnit::Second,
       }),
     };
-    let step = cx.new(|cx| TestStep::from_file(file.clone(), &TestPath::Suite(Uuid::new_v4()), tests.downgrade(), false, cx));
+    let step = cx.new(|cx| TestStep::from_file(file.clone(), &TestPath::Suite(KId::new()), tests.downgrade(), false, cx));
     assert_eq!(delay_of(&step, cx), (3, TimeUnit::Second));
     assert_eq!(
       serde_json::to_value(step.read_with(cx, |step, cx| step.get_file(cx))).unwrap(),

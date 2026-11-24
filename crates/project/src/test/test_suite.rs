@@ -27,9 +27,9 @@ mod tests {
   use crate::test::test_step::FileStepData;
   use ki_utils::time::TimeUnit;
   use serde_json::json;
-  use uuid::Uuid;
+  use ki_utils::id::KId;
 
-  fn meta(id: Uuid, name: &str) -> FileTestMetadata {
+  fn meta(id: KId, name: &str) -> FileTestMetadata {
     FileTestMetadata {
       id,
       name: name.into(),
@@ -40,7 +40,7 @@ mod tests {
 
   #[test]
   fn children_are_tagged_by_kind() {
-    let (suite_id, case_id, step_id) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let (suite_id, case_id, step_id) = (KId::new(), KId::new(), KId::new());
     let step = |id| FileTestStep {
       info: meta(id, "Step"),
       data: FileStepData::Delay(FileDelayData {

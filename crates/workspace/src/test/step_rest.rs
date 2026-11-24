@@ -726,8 +726,8 @@ mod tests {
   use ki_utils::http::{
     CONTENT_TYPE_FORM_DATA, CONTENT_TYPE_FORM_URL_ENCODED, CONTENT_TYPE_JSON, CONTENT_TYPE_PLAIN_TEXT, CONTENT_TYPE_XML,
   };
+  use ki_utils::id::KId;
   use ki_utils::undo::UndoEntity;
-  use uuid::Uuid;
 
   fn file_param(param_type: RestParamType, name: &str, value: &str) -> FileRestParam {
     FileRestParam {
@@ -1204,7 +1204,7 @@ mod tests {
 
   /// Creates a new GET Rest step owned by `tests`, and returns it along with its request.
   fn rest_step(tests: &Entity<TestsContainer>, cx: &mut TestAppContext) -> (Entity<TestStep>, Entity<RestData>) {
-    let parent = TestPath::Case(Uuid::new_v4(), Uuid::new_v4());
+    let parent = TestPath::Case(KId::new(), KId::new());
     let step = cx.new(|cx| TestStep::new_rest(&parent, "Rest".into(), HttpMethod::Get, tests.downgrade(), cx));
     let StepData::Rest(rest) = step.read_with(cx, |step, _| step.data().clone()) else {
       panic!("should be a rest step");

@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use uuid::Uuid;
+use ki_utils::id::KId;
 
 pub mod error;
 pub mod project;
@@ -37,7 +37,7 @@ struct FileProjectMetadata {
   /// The path where the project file is located. Also serves as a key
   path: PathBuf,
   /// The currently active profile id, if any
-  active_profile: Option<Uuid>,
+  active_profile: Option<KId>,
   /// The list of open nodes in the project tree
   opened_tree_nodes: HashSet<TestPath>,
   /// The list of open nodes in the editor
@@ -357,7 +357,7 @@ impl Workspace {
 
     let config_dir = cx.read_global(|settings: &GlobalSettings, _| settings.config_dir.clone());
     self.save_task_queued = Some(cx.spawn(async move |this, cx| {
-      cx.background_executor().timer(Duration::from_millis(200)).await;
+      cx.background_executor().timer(Duration::from_secs(2)).await;
 
       let bytes = this
         .read_with(cx, |this, cx| this.serialize(cx))
