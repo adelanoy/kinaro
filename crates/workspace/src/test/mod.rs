@@ -5,13 +5,13 @@ use gpui_kit::component::Icon;
 use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, EventEmitter, SharedString};
 use history::{AddTest, MoveTest, RemoveTest, TestLocation, TestNode, UpdateMeta};
 use ki_project::{FileTestMetadata, FileTestSuite, FileTestsContainer};
+use ki_utils::id::KId;
 use ki_utils::undo::History;
 use ki_utils::{DropPosition, Offset, TestPath};
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
-use ki_utils::id::KId;
 
 mod history;
 pub mod step_delay;
@@ -1136,9 +1136,7 @@ mod tests {
     let unknown_case = TestPath::Case(p.suite_a.id(), KId::new());
     let unknown_step = TestPath::Step(p.suite_a.id(), p.case_a.id(), KId::new());
     let config = FileProjectMetadata {
-      opened_tree_nodes: [p.suite_a, unknown_case, TestPath::Suite(KId::new())]
-        .into_iter()
-        .collect(),
+      opened_tree_nodes: [p.suite_a, unknown_case, TestPath::Suite(KId::new())].into_iter().collect(),
       editor_tabs: vec![unknown_step, p.case_a, unknown_case],
       active_editor_tab_index: Some(2),
       ..Default::default()
@@ -1250,9 +1248,7 @@ mod tests {
   #[gpui_kit::test]
   fn add_test_suite_with_unknown_path_appends(cx: &mut TestAppContext) {
     let (_, tests) = fixture(cx);
-    tests.update(cx, |tests, cx| {
-      tests.add_test_suite(Some(TestPath::Suite(KId::new())), cx)
-    });
+    tests.update(cx, |tests, cx| tests.add_test_suite(Some(TestPath::Suite(KId::new())), cx));
     assert_eq!(suite_names(&tests, cx), vec!["Suite A", "Suite B", "New Suite"]);
   }
 

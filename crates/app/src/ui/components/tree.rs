@@ -7,8 +7,8 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use ki_app_shared::actions::{Down, Enter, Left, Right, Up};
 use ki_utils::TestPath;
-use std::ops::Range;
 use ki_utils::id::KId;
+use std::ops::Range;
 
 pub const TREE_CONTEXT: &str = "Tree";
 

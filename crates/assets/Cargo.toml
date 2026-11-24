@@ -10,5 +10,5 @@ log.workspace = true
 
 # Externals
 gpui-kit.workspace = true
-rust-embed = "8"
-anyhow = "1.0.102"
+rust-embed.workspace = true
+anyhow.workspace = true

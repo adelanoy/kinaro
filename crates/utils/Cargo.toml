@@ -10,7 +10,7 @@ ki_assets.workspace = true
 
 # Externals
 getrandom.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 serde.workspace = true
 gpui-kit.workspace = true
 regex.workspace = true

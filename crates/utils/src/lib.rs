@@ -11,8 +11,8 @@ use std::sync::LazyLock;
 
 pub use conversion::{from_multiline, to_multiline};
 pub use date_time::*;
-pub use shared::*;
 pub use project::*;
+pub use shared::*;
 
 pub static EMPTY_SHARED_STRING: LazyLock<SharedString> = LazyLock::new(|| SharedString::new(""));
 

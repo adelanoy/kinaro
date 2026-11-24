@@ -2,8 +2,8 @@ use crate::error::{ProjectError, ProjectResult};
 use crate::test::{TestsContainer, TestsContainerEvent};
 use crate::variable::{ProjectVariables, ProjectVariablesEvent};
 use crate::{FileProjectMetadata, Workspace};
-use chrono::{DateTime, Local};
 use gpui_kit::{App, AppContext, Context, Entity, EventEmitter, SharedString, Subscription, Task};
+use jiff::ZonedDateTime;
 use ki_project::ProjectFile;
 use log::{debug, error};
 use std::path::PathBuf;
@@ -24,8 +24,8 @@ pub enum ProjectEvent {
 #[derive(Debug)]
 pub struct Project {
   pub name: SharedString,
-  created: DateTime<Local>,
-  modified: DateTime<Local>,
+  created: ZonedDateTime,
+  modified: ZonedDateTime,
   pub variables: Entity<ProjectVariables>,
   pub tests: Entity<TestsContainer>,
   // unserialized data
@@ -177,12 +177,12 @@ impl Project {
   fn to_file(&self, cx: &App) -> ProjectFile {
     let variables = self.variables.read(cx).to_file();
     let tests = self.tests.read_with(cx, |tests, cx| tests.to_file(cx));
-    let modified = Local::now();
+    let modified = ZonedDateTime::now();
 
     ProjectFile {
       name: self.name.to_string(),
       version: 1,
-      created: self.created,
+      created: self.created.clone(),
       modified,
       variables,
       tests,

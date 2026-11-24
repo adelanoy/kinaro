@@ -28,18 +28,19 @@ ki_workspace = {path = "crates/workspace"}
 ki_editor = {path = "crates/editor" }
 ki_app_shared = {path = "crates/shared" }
 
-gpui-kit = { version = "0.10", default-features = false, features = ["component", "syntect"] }
+gpui-kit = { version = "0.11", default-features = false, features = ["component", "syntect"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["serde"] }
 getrandom = "0.4"
-chrono = { version = "*", features = ["serde"] }
+jiff = { version = "1", features = ["serde"] }
 thiserror = "2"
 anyhow = "1"
 log = "0.4"
 dirs = "6.0"
 regex = "1.13"
 log4rs = { version = "1", default-features = false, features = ["console_appender", "pattern_encoder", "file_appender"] }
+rust-embed = "8"
 
 [profile.dev.package]
 gpui-pre = { opt-level = 3 }

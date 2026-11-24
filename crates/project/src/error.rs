@@ -1,6 +1,6 @@
+use ki_utils::id::KId;
 use std::io;
 use std::path::PathBuf;
-use ki_utils::id::KId;
 
 /// Standard result for Project plugin
 pub type Result<T> = std::result::Result<T, ProjectFileError>;
@@ -36,7 +36,7 @@ pub enum ProjectFileError {
   BadLocation(PathBuf),
   /// Validation errors
   #[error("{}::{} (errors: {:?})", PROJECT_FILE_ERROR, VALIDATION_ERROR, .0)]
-  ValidationFailed(Vec<ProjectValidationError>)
+  ValidationFailed(Vec<ProjectValidationError>),
 }
 
 #[derive(Debug, thiserror::Error)]

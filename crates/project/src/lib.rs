@@ -20,7 +20,7 @@ mod ki_project {
   use crate::error::{ProjectFileError, ProjectValidationError, Result};
   use crate::test::FileTestsContainer;
   use crate::variable::FileProjectVariables;
-  use chrono::{DateTime, Local};
+  use jiff::ZonedDateTime;
   use ki_utils::serial_date_format;
   use serde::{Deserialize, Serialize};
   use std::fs;
@@ -32,9 +32,9 @@ mod ki_project {
     pub name: String,
     pub version: u16,
     #[serde(with = "serial_date_format")]
-    pub created: DateTime<Local>,
+    pub created: ZonedDateTime,
     #[serde(with = "serial_date_format")]
-    pub modified: DateTime<Local>,
+    pub modified: ZonedDateTime,
     pub variables: FileProjectVariables,
     pub tests: FileTestsContainer,
   }
@@ -61,8 +61,8 @@ mod ki_project {
         .map(|()| ProjectFile {
           name: name.into(),
           version: 1,
-          created: Local::now(),
-          modified: Local::now(),
+          created: ZonedDateTime::now(),
+          modified: ZonedDateTime::now(),
           variables: FileProjectVariables::default(),
           tests: FileTestsContainer::default(),
         })
@@ -75,9 +75,9 @@ mod ki_project {
         .and_then(Self::check)
     }
 
-    pub fn save(&self, path: &PathBuf) -> Result<DateTime<Local>> {
+    pub fn save(&self, path: &PathBuf) -> Result<ZonedDateTime> {
       fs::File::create(path).map_err(ProjectFileError::from).and_then(|file| {
-        let date_time = self.modified;
+        let date_time = self.modified.clone();
         serde_json::to_writer_pretty(file, &self)
           .map_err(|err| ProjectFileError::Write(err.to_string()))
           .map(|()| date_time)

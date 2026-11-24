@@ -9,13 +9,13 @@ use gpui_kit::{App, AppContext, ClipboardString, Context, Entity, SharedString, 
 use ki_assets::icon::IconAsset;
 use ki_project::{FileSuiteChild, FileTestCase, FileTestStep, FileTestSuite};
 use ki_utils::http::HttpMethod;
+use ki_utils::id::KId;
 use ki_utils::undo::{History, UndoEntity};
 use ki_utils::{CASE, Offset, STEP};
 use log::{debug, warn};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use ki_utils::id::KId;
 
 /// A direct child of a [`TestSuite`]: a test case, or a test step located directly in the suite.
 #[derive(Clone, Debug, PartialEq, Eq)]

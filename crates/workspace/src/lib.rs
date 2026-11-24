@@ -3,13 +3,13 @@ use gpui_kit::{App, Entity, EventEmitter, SharedString, Subscription, Task};
 use gpui_kit::{AppContext, Context};
 use ki_settings::GlobalSettings;
 use ki_utils::TestPath;
+use ki_utils::id::KId;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use ki_utils::id::KId;
 
 pub mod error;
 pub mod project;

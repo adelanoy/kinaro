@@ -908,8 +908,8 @@ impl Render for ProjectTree {
 mod tests {
   // Not a glob import of the parent module, whose `gpui_kit::*` import shadows `#[test]`
   use super::drop_position;
-  use ki_utils::{DropPosition, TestPath};
   use ki_utils::id::KId;
+  use ki_utils::{DropPosition, TestPath};
 
   #[test]
   fn drop_position_on_a_suite() {

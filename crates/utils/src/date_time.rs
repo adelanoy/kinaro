@@ -1,39 +1,39 @@
 #[allow(dead_code)]
 pub mod serial_date_format {
-  use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
+  use jiff::ZonedDateTime;
+  use jiff::civil::DateTime;
+  use jiff::tz::TimeZone;
   use serde::{self, Deserialize, Deserializer, Serializer};
 
   const FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
 
-  ///Serialize a `chrono::DateTime`
+  ///Serialize a `jiff::ZonedDateTime` as its civil (local) date time, without offset nor time zone
   ///
   /// # Errors
   /// If the serialization fails
-  pub fn serialize<S>(date: &DateTime<Local>, serializer: S) -> Result<S::Ok, S::Error>
+  pub fn serialize<S>(date: &ZonedDateTime, serializer: S) -> Result<S::Ok, S::Error>
   where
     S: Serializer,
   {
-    let s = format!("{}", date.format(FORMAT));
+    let s = date.datetime().strftime(FORMAT).to_string();
     serializer.serialize_str(&s)
   }
 
-  ///Deserialize a `chrono::DateTime`, reading the string as a local date time
+  ///Deserialize a `jiff::ZonedDateTime`, reading the string as a date time in the system time zone
   ///
-  /// A date time that falls in a DST gap (which [`serialize`] never writes) is read as UTC
+  /// A date time that falls in a DST gap (which [`serialize`] never writes) is shifted forward by the length of the gap,
+  /// an ambiguous one (DST fold) is read with the earlier offset
   ///
   /// # Errors
   /// If the deserialization fails
-  pub fn deserialize<'de, D>(deserializer: D) -> Result<DateTime<Local>, D::Error>
+  pub fn deserialize<'de, D>(deserializer: D) -> Result<ZonedDateTime, D::Error>
   where
     D: Deserializer<'de>,
   {
     let s = String::deserialize(deserializer)?;
-    let dt = NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)?;
-    Ok(
-      dt.and_local_timezone(Local)
-        .earliest()
-        .unwrap_or_else(|| Local.from_utc_datetime(&dt)),
-    )
+    DateTime::strptime(FORMAT, &s)
+      .and_then(|dt| dt.to_zoned_datetime(TimeZone::system()))
+      .map_err(serde::de::Error::custom)
   }
 }
 

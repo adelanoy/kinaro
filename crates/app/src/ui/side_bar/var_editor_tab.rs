@@ -16,10 +16,10 @@ use ki_app_shared::table::{DataTableControlBar, EditedCell};
 use ki_app_shared::{ContextMenuBuilder, MovingLabel};
 use ki_assets::icon::IconAsset;
 use ki_utils::SidebarPanel;
+use ki_utils::id::KId;
 use ki_workspace::Project;
 use ki_workspace::variable::{DraggedVar, Profile, ProjectVariables, VariableKind, VariableReference};
 use log::warn;
-use ki_utils::id::KId;
 
 pub struct VariableEditor {
   table_state: Entity<TableState<VariableDataTableDelegate>>,
@@ -353,7 +353,10 @@ impl VariableDataTableDelegate {
 
   fn save_cell(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
     if let Some(edited) = self.edited_cell.take() {
-      if let Err(err) = self.project_vars.update(cx, |vars, cx| vars.update_variable(edited.data, edited.row, cx)) {
+      if let Err(err) = self
+        .project_vars
+        .update(cx, |vars, cx| vars.update_variable(edited.data, edited.row, cx))
+      {
         window.push_notification(err, cx);
       }
       self._cell_input_sub = None;

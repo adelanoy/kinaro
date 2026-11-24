@@ -1,7 +1,7 @@
 use crate::error::ProjectValidationError;
+use ki_utils::id::KId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
-use ki_utils::id::KId;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[non_exhaustive]

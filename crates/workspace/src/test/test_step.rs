@@ -345,10 +345,7 @@ mod tests {
     let tests = load(Default::default(), Default::default(), cx);
     let step_id = KId::new();
     let file = file_delay_step(step_id, "Step", 10);
-    for parent in [
-      TestPath::Case(KId::new(), KId::new()),
-      TestPath::Suite(KId::new()),
-    ] {
+    for parent in [TestPath::Case(KId::new(), KId::new()), TestPath::Suite(KId::new())] {
       let kept = cx.new(|cx| TestStep::from_file(file.clone(), &parent, tests.downgrade(), false, cx));
       assert_eq!(
         kept.read_with(cx, |step, _| step.path()),

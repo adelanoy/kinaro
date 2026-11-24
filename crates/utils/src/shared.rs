@@ -1,6 +1,6 @@
+use crate::id::KId;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
-use crate::id::KId;
 
 /// Where a node moved onto another one (the target) is placed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
