@@ -508,7 +508,10 @@ mod tests {
     let new_path = case(&tests, p.case_a, cx).update(cx, |case, cx| case.add_delay_step(p.case_a, cx));
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Step A2", "new Delay"]);
     assert!(p.case_a.is_parent(&new_path));
-    assert_eq!(delay_of(&step(&tests, new_path, cx), cx), (1000, TimeUnit::Millisecond));
+    assert_eq!(
+      delay_of(&step(&tests, new_path, cx), cx),
+      (1000.into(), TimeUnit::Millisecond)
+    );
     assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestAdded(new_path)]);
   }
 
@@ -536,7 +539,7 @@ mod tests {
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Step A1_1", "Step A2"]);
     assert!(p.case_a.is_parent(&copy));
     assert_ne!(copy, p.step_a1);
-    assert_eq!(delay_of(&step(&tests, copy, cx), cx), (100, TimeUnit::Millisecond));
+    assert_eq!(delay_of(&step(&tests, copy, cx), cx), (100.into(), TimeUnit::Millisecond));
     assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestAdded(copy)]);
   }
 
@@ -696,7 +699,7 @@ mod tests {
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A1", "Suite step A", "Step A2"]);
     let pasted = subtree(&tests, p.case_a, cx)[2];
     assert_ne!(pasted.id(), p.suite_step_a.id());
-    assert_eq!(delay_of(&step(&tests, pasted, cx), cx), (300, TimeUnit::Millisecond));
+    assert_eq!(delay_of(&step(&tests, pasted, cx), cx), (300.into(), TimeUnit::Millisecond));
   }
 
   #[gpui_kit::test]

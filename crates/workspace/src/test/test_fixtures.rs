@@ -8,9 +8,9 @@ use gpui_kit::{AppContext, ClipboardString, Entity, TestAppContext};
 use ki_project::{
   FileDelayData, FileStepData, FileSuiteChild, FileTestCase, FileTestMetadata, FileTestStep, FileTestSuite, FileTestsContainer,
 };
-use ki_utils::TestPath;
 use ki_utils::id::KId;
 use ki_utils::time::TimeUnit;
+use ki_utils::{ExprValue, SerialExprValue, TestPath};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -29,7 +29,7 @@ pub(crate) fn file_delay_step(id: KId, name: &str, ms: u32) -> FileTestStep {
   FileTestStep {
     info: file_meta(id, name),
     data: FileStepData::Delay(FileDelayData {
-      duration: ms,
+      duration: SerialExprValue::Literal(ms),
       unit: TimeUnit::Millisecond,
     }),
   }
@@ -267,11 +267,11 @@ pub(crate) fn name_at(tests: &Entity<TestsContainer>, path: TestPath, cx: &TestA
 }
 
 /// Returns the duration and unit of the delay step `step`.
-pub(crate) fn delay_of(step: &Entity<TestStep>, cx: &TestAppContext) -> (u32, TimeUnit) {
+pub(crate) fn delay_of(step: &Entity<TestStep>, cx: &TestAppContext) -> (ExprValue<u32>, TimeUnit) {
   cx.read(|cx| match step.read(cx).data() {
     StepData::Delay(delay) => {
       let delay = delay.read(cx);
-      (delay.duration(), delay.unit())
+      (delay.duration().clone(), delay.unit())
     }
     StepData::Rest(_) => panic!("should be a delay step"),
   })

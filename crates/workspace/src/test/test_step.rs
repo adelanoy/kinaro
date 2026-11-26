@@ -165,7 +165,7 @@ impl TestStep {
       data: StepData::Delay(cx.new(|_| DelayData {
         container,
         parent: weak_self,
-        duration: 1000,
+        duration: 1000.into(),
         unit: TimeUnit::Millisecond,
       })),
       history: Default::default(),
@@ -322,6 +322,7 @@ mod tests {
   use crate::test::test_fixtures::*;
   use gpui_kit::TestAppContext;
   use ki_project::{FileDelayData, FileRestBody, FileRestData};
+  use ki_utils::SerialExprValue;
   use ki_utils::http::{ContentType, HttpMethod};
 
   #[gpui_kit::test]
@@ -333,7 +334,7 @@ mod tests {
       assert!(matches!(step.path(), TestPath::Step(suite, case, _) if suite == suite_id && case == case_id));
       assert_eq!(step.name(), "Delay");
     });
-    assert_eq!(delay_of(&step, cx), (1000, TimeUnit::Millisecond));
+    assert_eq!(delay_of(&step, cx), (1000.into(), TimeUnit::Millisecond));
     let suite_step = cx.new(|cx| TestStep::new_delay(&TestPath::Suite(suite_id), "Delay".into(), tests.downgrade(), cx));
     let suite_step_path = suite_step.read_with(cx, |step, _| step.path());
     assert!(matches!(suite_step_path, TestPath::SuiteStep(suite, _) if suite == suite_id));
@@ -351,7 +352,7 @@ mod tests {
         kept.read_with(cx, |step, _| step.path()),
         TestPath::new_step(&parent, step_id)
       );
-      assert_eq!(delay_of(&kept, cx), (10, TimeUnit::Millisecond));
+      assert_eq!(delay_of(&kept, cx), (10.into(), TimeUnit::Millisecond));
       let renewed = cx.new(|cx| TestStep::from_file(file.clone(), &parent, tests.downgrade(), true, cx));
       let renewed = renewed.read_with(cx, |step, _| step.path());
       assert!(parent.is_parent(&renewed));
@@ -397,12 +398,12 @@ mod tests {
     let file = FileTestStep {
       info: file_meta(KId::new(), "Delay"),
       data: FileStepData::Delay(FileDelayData {
-        duration: 3,
+        duration: SerialExprValue::Literal(3),
         unit: TimeUnit::Second,
       }),
     };
     let step = cx.new(|cx| TestStep::from_file(file.clone(), &TestPath::Suite(KId::new()), tests.downgrade(), false, cx));
-    assert_eq!(delay_of(&step, cx), (3, TimeUnit::Second));
+    assert_eq!(delay_of(&step, cx), (3.into(), TimeUnit::Second));
     assert_eq!(
       serde_json::to_value(step.read_with(cx, |step, cx| step.get_file(cx))).unwrap(),
       serde_json::to_value(file).unwrap()
@@ -417,7 +418,7 @@ mod tests {
     let minute = cx.new(|_| DelayData {
       container: tests.downgrade(),
       parent: step.downgrade(),
-      duration: 2,
+      duration: 2.into(),
       unit: TimeUnit::Minute,
     });
     let original = step.read_with(cx, |step, _| step.data().clone());
@@ -430,7 +431,7 @@ mod tests {
         true
       })
     });
-    assert_eq!(delay_of(&step, cx), (2, TimeUnit::Minute));
+    assert_eq!(delay_of(&step, cx), (2.into(), TimeUnit::Minute));
     assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified]);
   }
 
@@ -442,10 +443,10 @@ mod tests {
     let StepData::Delay(delay) = step.read_with(cx, |step, _| step.data().clone()) else {
       panic!("should be a delay step");
     };
-    delay.update(cx, |delay, cx| delay.update(100, TimeUnit::Millisecond, cx));
+    delay.update(cx, |delay, cx| delay.update(100.into(), TimeUnit::Millisecond, cx));
     assert!(events.borrow().is_empty());
-    delay.update(cx, |delay, cx| delay.update(2, TimeUnit::Minute, cx));
-    assert_eq!(delay_of(&step, cx), (2, TimeUnit::Minute));
+    delay.update(cx, |delay, cx| delay.update(2.into(), TimeUnit::Minute, cx));
+    assert_eq!(delay_of(&step, cx), (2.into(), TimeUnit::Minute));
     assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestsModified]);
   }
 
@@ -459,7 +460,7 @@ mod tests {
       assert!(p.case_b.is_parent(&copy.path()));
       assert_ne!(copy.id(), p.step_a1.id());
     });
-    assert_eq!(delay_of(&copy, cx), (100, TimeUnit::Millisecond));
+    assert_eq!(delay_of(&copy, cx), (100.into(), TimeUnit::Millisecond));
     let copy = cx.new(|cx| TestStep::duplicate(&original, "Copy".into(), &p.suite_b, cx));
     assert!(matches!(copy.read_with(cx, |copy, _| copy.path()), TestPath::SuiteStep(suite, _) if suite == p.suite_b.id()));
   }
@@ -472,9 +473,9 @@ mod tests {
     let StepData::Delay(delay) = copy.read_with(cx, |copy, _| copy.data().clone()) else {
       panic!("should be a delay step");
     };
-    delay.update(cx, |delay, cx| delay.update(2, TimeUnit::Minute, cx));
-    assert_eq!(delay_of(&copy, cx), (2, TimeUnit::Minute));
-    assert_eq!(delay_of(&original, cx), (100, TimeUnit::Millisecond));
+    delay.update(cx, |delay, cx| delay.update(2.into(), TimeUnit::Minute, cx));
+    assert_eq!(delay_of(&copy, cx), (2.into(), TimeUnit::Minute));
+    assert_eq!(delay_of(&original, cx), (100.into(), TimeUnit::Millisecond));
   }
 
   #[gpui_kit::test]
@@ -500,13 +501,13 @@ mod tests {
     let StepData::Delay(delay) = copy.read_with(cx, |copy, _| copy.data().clone()) else {
       panic!("should be a delay step");
     };
-    delay.update(cx, |delay, cx| delay.update(2, TimeUnit::Minute, cx));
+    delay.update(cx, |delay, cx| delay.update(2.into(), TimeUnit::Minute, cx));
     assert!(copy.read_with(cx, |copy, _| copy.history.can_undo()));
     assert!(!original.read_with(cx, |original, _| original.history.can_undo()));
 
     copy.update(cx, |copy, cx| copy.undo(cx));
-    assert_eq!(delay_of(&copy, cx), (100, TimeUnit::Millisecond));
-    assert_eq!(delay_of(&original, cx), (100, TimeUnit::Millisecond));
+    assert_eq!(delay_of(&copy, cx), (100.into(), TimeUnit::Millisecond));
+    assert_eq!(delay_of(&original, cx), (100.into(), TimeUnit::Millisecond));
   }
 
   #[gpui_kit::test]

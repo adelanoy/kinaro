@@ -1,5 +1,6 @@
 pub mod conversion;
 pub mod date_time;
+pub mod expr_value;
 pub mod http;
 pub mod id;
 pub mod project;
@@ -11,6 +12,7 @@ use std::sync::LazyLock;
 
 pub use conversion::{from_multiline, to_multiline};
 pub use date_time::*;
+pub use expr_value::*;
 pub use project::*;
 pub use shared::*;
 

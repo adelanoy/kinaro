@@ -1,9 +1,9 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-static VARIABLE_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new("^[a-zA-Z0-9_ ]+$").unwrap());
+static VARIABLE_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_]+$").unwrap());
 
-/// Returns whether `name` can be used as a variable name: non-empty, and made of ASCII letters, digits, `_` and spaces
+/// Returns whether `name` can be used as a variable name: non-empty, and made of ASCII letters, digits and `_`
 pub fn is_variable_name_valid(name: &str) -> bool {
   VARIABLE_NAME_REGEX.is_match(name)
 }
@@ -20,10 +20,8 @@ mod tests {
   }
 
   #[test]
-  fn accepts_inner_spaces() {
-    for name in ["new variable", "new variable_1", "a b c"] {
-      assert!(is_variable_name_valid(name), "{name:?} should be valid");
-    }
+  fn rejects_inner_spaces() {
+    assert!(!is_variable_name_valid("This is a var"));
   }
 
   #[test]

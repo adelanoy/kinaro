@@ -1,3 +1,4 @@
+use ki_utils::SerialExprValue;
 use ki_utils::time::TimeUnit;
 use serde::{Deserialize, Serialize};
 
@@ -5,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FileDelayData {
   /// How long to wait, in `unit`
-  pub duration: u32,
+  pub duration: SerialExprValue<u32>,
   /// The time unit `duration` is expressed in
   pub unit: TimeUnit,
 }
