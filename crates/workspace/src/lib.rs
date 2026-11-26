@@ -16,8 +16,7 @@ pub mod project;
 pub mod test;
 pub mod variable;
 
-pub use project::Project;
-pub use project::ProjectEvent;
+pub use crate::project::{Project, ProjectEvent};
 pub use test::test_case::TestCase;
 pub use test::test_step::TestStep;
 pub use test::test_suite::{TestSuite, TestSuiteChild};

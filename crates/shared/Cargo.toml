@@ -11,3 +11,7 @@ ki_utils.workspace = true
 
 #Externals
 gpui-kit.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }

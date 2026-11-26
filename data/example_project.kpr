@@ -2,7 +2,7 @@
   "name": "example_project",
   "version": 1,
   "created": "2026-09-13T07:43:12",
-  "modified": "2026-11-17T15:36:43",
+  "modified": "2026-11-26T16:23:32",
   "variables": {
     "variables": [
       {
@@ -11,8 +11,8 @@
         "kind": "Text",
         "value": "localhost",
         "overrides": {
-          "b422va50": "api.example.com",
           "0q37r4fe": "test.example.com",
+          "b422va50": "api.example.com",
           "wrpgdwe0": "localhost"
         }
       },
@@ -22,8 +22,8 @@
         "kind": "Text",
         "value": "8080",
         "overrides": {
-          "b422va50": "443",
-          "0q37r4fe": "8443"
+          "0q37r4fe": "8443",
+          "b422va50": "443"
         }
       },
       {
@@ -32,8 +32,8 @@
         "kind": "Text",
         "value": "admin",
         "overrides": {
-          "b422va50": "svc-prod",
           "0q37r4fe": "svc-test",
+          "b422va50": "svc-prod",
           "wrpgdwe0": "admin"
         }
       },
@@ -43,8 +43,8 @@
         "kind": "PasswordClear",
         "value": "",
         "overrides": {
-          "b422va50": "prod-secret",
           "0q37r4fe": "test-secret",
+          "b422va50": "prod-secret",
           "wrpgdwe0": "dev-secret"
         }
       }
@@ -100,7 +100,7 @@
                 "data": {
                   "Rest": {
                     "method": "POST",
-                    "endpoint": "http://localhost:8080",
+                    "endpoint": "http://{{var.host}}:{{var.port}}",
                     "params": [
                       {
                         "type": "header",
@@ -131,7 +131,7 @@
                 "name": "Assert 201 Created",
                 "data": {
                   "Delay": {
-                    "duration": 10000,
+                    "duration": 998,
                     "unit": "Millisecond"
                   }
                 }
@@ -142,7 +142,7 @@
                 "data": {
                   "Rest": {
                     "method": "PUT",
-                    "endpoint": "http://localhost:8080"
+                    "endpoint": "http://{{var.host}}:{{var.port}}"
                   }
                 }
               }

@@ -26,7 +26,7 @@ mod ki_project {
   use std::fs;
   use std::path::{Path, PathBuf};
 
-  #[derive(Serialize, Deserialize, Clone, Debug)]
+  #[derive(Serialize, Deserialize, Debug)]
   #[serde(rename_all = "camelCase")]
   pub struct ProjectFile {
     pub name: String,

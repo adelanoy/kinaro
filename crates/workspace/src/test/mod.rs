@@ -1681,7 +1681,7 @@ mod tests {
     let new_step = TestPath::Step(p.suite_b.id(), p.case_b.id(), p.suite_step_a.id());
     assert_eq!(child_names(&tests, p.suite_a, cx), vec!["Case A"]);
     assert_eq!(step_names(&tests, p.case_b, cx), vec!["Step B1", "Suite step A"]);
-    assert_eq!(delay_of(&step(&tests, new_step, cx), cx), (300, TimeUnit::Millisecond));
+    assert_eq!(delay_of(&step(&tests, new_step, cx), cx), (300.into(), TimeUnit::Millisecond));
     assert_eq!(
       events,
       vec![
@@ -1699,7 +1699,7 @@ mod tests {
       vec!["Case B", "Suite step B", "Suite step A"]
     );
     let back = step(&tests, TestPath::SuiteStep(p.suite_b.id(), p.suite_step_a.id()), cx);
-    assert_eq!(delay_of(&back, cx), (300, TimeUnit::Millisecond));
+    assert_eq!(delay_of(&back, cx), (300.into(), TimeUnit::Millisecond));
   }
 
   #[gpui_kit::test]
@@ -1739,7 +1739,7 @@ mod tests {
     let new_step = TestPath::SuiteStep(p.suite_b.id(), p.step_a1.id());
     assert_eq!(step_names(&tests, p.case_a, cx), vec!["Step A2"]);
     assert_eq!(child_names(&tests, p.suite_b, cx), vec!["Case B", "Suite step B", "Step A1"]);
-    assert_eq!(delay_of(&step(&tests, new_step, cx), cx), (100, TimeUnit::Millisecond));
+    assert_eq!(delay_of(&step(&tests, new_step, cx), cx), (100.into(), TimeUnit::Millisecond));
     assert_eq!(
       events,
       vec![
@@ -1883,7 +1883,7 @@ mod tests {
     assert_eq!(all_paths(&tests, cx), before);
     assert_eq!(case(&tests, p.case_a, cx), case_a);
     assert_eq!(step(&tests, p.step_a1, cx), step_a1);
-    assert_eq!(delay_of(&step_a1, cx), (100, TimeUnit::Millisecond));
+    assert_eq!(delay_of(&step_a1, cx), (100.into(), TimeUnit::Millisecond));
     assert_eq!(*events.borrow(), vec![TestsContainerEvent::TestAdded(p.case_a)]);
 
     redo(&tests, cx);

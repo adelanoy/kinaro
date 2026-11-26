@@ -8,6 +8,7 @@ use ki_utils::TestPath;
 
 pub mod actions;
 pub mod dialog;
+pub mod input;
 pub mod panel;
 pub mod table;
 

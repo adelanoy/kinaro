@@ -25,6 +25,7 @@ mod tests {
   use super::*;
   use crate::test::step_delay::FileDelayData;
   use crate::test::test_step::FileStepData;
+  use ki_utils::SerialExprValue;
   use ki_utils::id::KId;
   use ki_utils::time::TimeUnit;
   use serde_json::json;
@@ -44,7 +45,7 @@ mod tests {
     let step = |id| FileTestStep {
       info: meta(id, "Step"),
       data: FileStepData::Delay(FileDelayData {
-        duration: 10,
+        duration: SerialExprValue::Literal(10),
         unit: TimeUnit::Second,
       }),
     };
